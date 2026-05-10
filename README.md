@@ -1,7 +1,5 @@
 # Twilight Echo
 
-<img src="D:\Project\Twilight_Echo\Twilight_Echo\build\icon.png" alt="icon" style="zoom:10%;" alt="TwilightEcho logo"/><img src="D:\Project\Twilight_Echo\Twilight_Echo\build\logo.png" alt="logo" style="zoom:20%;" />
-
 > Twilight Echo 是一款现代的音乐播放器，有现代的UI和流媒体播放，本地播放功能。
 
 ## 功能特性
