@@ -29,6 +29,8 @@ export type PlayerShortcutAction =
   | 'playPause'
   | 'play'
   | 'pause'
+  | 'volumeUp'
+  | 'volumeDown'
   | { action: 'seek'; positionSeconds: number }
   | { action: 'setVolume'; volume: number }
   | { action: 'jumpQueue'; index: number }

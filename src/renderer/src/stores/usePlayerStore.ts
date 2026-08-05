@@ -3412,6 +3412,14 @@ async function handlePlayerShortcutAction(
       if (isPlaying.value) await togglePlayState()
       return
     }
+    if (action === 'volumeUp') {
+      volume.value = Math.min(1, volume.value + 0.05)
+      return
+    }
+    if (action === 'volumeDown') {
+      volume.value = Math.max(0, volume.value - 0.05)
+      return
+    }
     // playPause
     await togglePlayState()
     return

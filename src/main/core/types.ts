@@ -24,6 +24,8 @@ export type PlayerShortcutAction =
   | 'playPause'
   | 'play'
   | 'pause'
+  | 'volumeUp'
+  | 'volumeDown'
   | { action: 'seek'; positionSeconds: number }
   | { action: 'setVolume'; volume: number }
   | { action: 'jumpQueue'; index: number }
@@ -260,5 +262,7 @@ export const PLAYER_SHORTCUTS: {
 }[] = [
   { accelerator: 'CommandOrControl+Alt+Left', action: 'previous', label: '上一首' },
   { accelerator: 'CommandOrControl+Alt+Right', action: 'next', label: '下一首' },
-  { accelerator: 'CommandOrControl+Alt+Space', action: 'playPause', label: '播放 / 暂停' }
+  { accelerator: 'CommandOrControl+Alt+Space', action: 'playPause', label: '播放 / 暂停' },
+  { accelerator: 'CommandOrControl+Alt+Up', action: 'volumeUp', label: '音量 +' },
+  { accelerator: 'CommandOrControl+Alt+Down', action: 'volumeDown', label: '音量 -' }
 ]

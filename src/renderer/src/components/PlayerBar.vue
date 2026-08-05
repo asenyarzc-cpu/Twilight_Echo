@@ -19,6 +19,7 @@ import pauseIcon from '../assets/icons/pause.svg'
 import playIcon from '../assets/icons/play.svg'
 import previousTrackIcon from '../assets/icons/previous-track.svg'
 import repeatIcon from '../assets/icons/single-song-repeat.svg'
+import listLoopIcon from '../assets/icons/list-loop-repeat.svg'
 import sequentialIcon from '../assets/icons/sequential-playback.svg'
 import shuffleIcon from '../assets/icons/shuffle.svg'
 import { useFavoriteButton } from './player-bar/useFavoriteButton'
@@ -1339,7 +1340,7 @@ onMounted(() => {
           @click="cyclePlayMode"
         >
           <img v-if="playMode === 'sequential'" :src="sequentialIcon" alt="顺序" />
-          <img v-else-if="playMode === 'listLoop'" :src="repeatIcon" alt="列表循环" />
+          <img v-else-if="playMode === 'listLoop'" :src="listLoopIcon" alt="列表循环" />
           <img v-else-if="playMode === 'repeat'" :src="repeatIcon" alt="单曲循环" />
           <img v-else :src="shuffleIcon" alt="随机" />
         </button>
