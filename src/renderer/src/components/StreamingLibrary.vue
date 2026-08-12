@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import type { MediaProviderPlaylistSummary, MediaProviderProfile } from '../providers/mediaProvider'
 import {
   buildProviderHealthPresentation,
@@ -30,6 +30,7 @@ const props = defineProps<{
   pinnedPlaylistIds?: Array<string | number>
   pinningPlaylistId?: string | number | null
   deletingPlaylistId?: string | number | null
+  queueingPlaylistId?: string | number | null
   availableProviders?: ProviderOption[]
   activeProvider?: string
 }>()
@@ -42,6 +43,7 @@ const emit = defineEmits<{
   togglePinnedPlaylist: [playlist: MediaProviderPlaylistSummary]
   createPlaylist: []
   deletePlaylist: [playlist: MediaProviderPlaylistSummary]
+  playPlaylistNext: [playlist: MediaProviderPlaylistSummary]
   openRecent: []
   openRanking: []
   switchProvider: [id: string]
@@ -125,6 +127,68 @@ function isPlaylistDeleting(playlist: MediaProviderPlaylistSummary): boolean {
 function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
   return playlist.owned === false ? '取消收藏歌单' : '删除歌单'
 }
+
+function isPlaylistQueueing(playlist: MediaProviderPlaylistSummary): boolean {
+  return String(props.queueingPlaylistId ?? '') === playlistId(playlist)
+}
+
+const playlistContextMenu = ref<{
+  playlist: MediaProviderPlaylistSummary
+  x: number
+  y: number
+} | null>(null)
+const playlistContextMenuRef = ref<HTMLElement | null>(null)
+
+function closePlaylistContextMenu(): void {
+  playlistContextMenu.value = null
+}
+
+function openPlaylistContextMenu(event: MouseEvent, playlist: MediaProviderPlaylistSummary): void {
+  event.preventDefault()
+  event.stopPropagation()
+  playlistContextMenu.value = { playlist, x: event.clientX, y: event.clientY }
+  void nextTick(() => {
+    const menu = playlistContextMenuRef.value
+    const context = playlistContextMenu.value
+    if (!menu || !context) return
+    const rect = menu.getBoundingClientRect()
+    if (rect.right > window.innerWidth) context.x = Math.max(8, window.innerWidth - rect.width - 8)
+    if (rect.bottom > window.innerHeight)
+      context.y = Math.max(8, window.innerHeight - rect.height - 8)
+  })
+}
+
+function viewPlaylistFromContextMenu(): void {
+  const playlist = playlistContextMenu.value?.playlist
+  closePlaylistContextMenu()
+  if (playlist) emit('openPlaylist', playlist)
+}
+
+function playPlaylistNextFromContextMenu(): void {
+  const playlist = playlistContextMenu.value?.playlist
+  closePlaylistContextMenu()
+  if (playlist) emit('playPlaylistNext', playlist)
+}
+
+function deletePlaylistFromContextMenu(): void {
+  const playlist = playlistContextMenu.value?.playlist
+  closePlaylistContextMenu()
+  if (playlist) emit('deletePlaylist', playlist)
+}
+
+function onPlaylistContextMenuKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') closePlaylistContextMenu()
+}
+
+onMounted(() => {
+  window.addEventListener('click', closePlaylistContextMenu)
+  window.addEventListener('keydown', onPlaylistContextMenuKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('click', closePlaylistContextMenu)
+  window.removeEventListener('keydown', onPlaylistContextMenuKeydown)
+})
 </script>
 
 <template>
@@ -318,6 +382,7 @@ function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
           tabindex="0"
           @click="emit('openPlaylist', playlist)"
           @keydown="onPlaylistKeydown($event, playlist)"
+          @contextmenu="openPlaylistContextMenu($event, playlist)"
         >
           <img v-if="playlist.cover" :src="playlist.cover" class="playlist-item-cover" alt="" />
           <span v-else class="playlist-item-cover playlist-cover-placeholder">
@@ -352,23 +417,66 @@ function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
             ></i>
           </button>
 
-          <button
-            v-if="canDeletePlaylist()"
-            type="button"
-            class="playlist-delete-button"
-            :disabled="isPlaylistDeleting(playlist)"
-            :title="deletePlaylistLabel(playlist)"
-            @click.stop="emit('deletePlaylist', playlist)"
-          >
-            <i :class="isPlaylistDeleting(playlist) ? 'pi pi-spin pi-spinner' : 'pi pi-trash'"></i>
-          </button>
-
           <div class="playlist-item-arrow">
             <i class="pi pi-chevron-right"></i>
           </div>
         </article>
       </div>
     </section>
+
+    <Teleport to="body">
+      <div
+        v-if="playlistContextMenu"
+        ref="playlistContextMenuRef"
+        class="playlist-context-menu"
+        role="menu"
+        :style="{ top: `${playlistContextMenu.y}px`, left: `${playlistContextMenu.x}px` }"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="playlist-context-menu-item"
+          role="menuitem"
+          @click="viewPlaylistFromContextMenu"
+        >
+          <i class="pi pi-eye"></i>
+          <span>查看歌单</span>
+        </button>
+        <button
+          type="button"
+          class="playlist-context-menu-item"
+          role="menuitem"
+          :disabled="isPlaylistQueueing(playlistContextMenu.playlist)"
+          @click="playPlaylistNextFromContextMenu"
+        >
+          <i
+            :class="
+              isPlaylistQueueing(playlistContextMenu.playlist)
+                ? 'pi pi-spin pi-spinner'
+                : 'pi pi-list'
+            "
+          />
+          <span>下一首播放</span>
+        </button>
+        <button
+          v-if="canDeletePlaylist()"
+          type="button"
+          class="playlist-context-menu-item danger"
+          role="menuitem"
+          :disabled="isPlaylistDeleting(playlistContextMenu.playlist)"
+          @click="deletePlaylistFromContextMenu"
+        >
+          <i
+            :class="
+              isPlaylistDeleting(playlistContextMenu.playlist)
+                ? 'pi pi-spin pi-spinner'
+                : 'pi pi-trash'
+            "
+          />
+          <span>{{ deletePlaylistLabel(playlistContextMenu.playlist) }}</span>
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -873,38 +981,6 @@ function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
   box-shadow: 0 10px 24px rgba(var(--te-primary-rgb, 99, 102, 241), 0.16);
 }
 
-.playlist-delete-button {
-  position: absolute;
-  top: 18px;
-  right: 48px;
-  width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: 10px;
-  background: rgba(244, 63, 94, 0.1);
-  color: #e11d48;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  opacity: 0;
-  transition: all 0.2s ease;
-}
-
-.playlist-item:hover .playlist-delete-button,
-.playlist-item:focus-within .playlist-delete-button {
-  opacity: 1;
-}
-
-.playlist-delete-button:hover:not(:disabled) {
-  background: rgba(244, 63, 94, 0.18);
-}
-
-.playlist-delete-button:disabled {
-  opacity: 1;
-  cursor: wait;
-}
-
 .section-header h2 {
   font-size: 22px;
   font-weight: 800;
@@ -1007,6 +1083,61 @@ function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
   font-size: 13px;
   color: var(--te-neutral-500, #64748b);
   font-weight: 500;
+}
+
+.playlist-context-menu {
+  position: fixed;
+  z-index: 1200;
+  min-width: 174px;
+  padding: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 12px;
+  background: var(--te-glass-bg-strong, rgba(255, 255, 255, 0.96));
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.playlist-context-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--te-neutral-700, #334155);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.playlist-context-menu-item i {
+  width: 16px;
+  color: var(--te-primary-500, #6366f1);
+  text-align: center;
+}
+
+.playlist-context-menu-item:hover:not(:disabled),
+.playlist-context-menu-item:focus-visible:not(:disabled) {
+  outline: none;
+  background: var(--te-hover-bg, rgba(99, 102, 241, 0.1));
+}
+
+.playlist-context-menu-item.danger {
+  color: #e11d48;
+}
+
+.playlist-context-menu-item.danger i {
+  color: inherit;
+}
+
+.playlist-context-menu-item:disabled {
+  cursor: wait;
+  opacity: 0.58;
 }
 
 .playlist-item-arrow {

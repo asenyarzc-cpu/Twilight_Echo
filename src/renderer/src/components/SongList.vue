@@ -2283,11 +2283,7 @@ function getTrackSource(track: Pick<Track, 'id' | 'source'>): string {
                   <i class="pi pi-bookmark"></i>
                   <span>从书签继续</span>
                 </div>
-                <div
-                  class="menu-item"
-                  @mouseenter="showPlaylistSubmenu = true"
-                  @mouseleave="showPlaylistSubmenu = false"
-                >
+                <div class="menu-item" @mouseenter="showPlaylistSubmenu = true">
                   <i class="pi pi-plus"></i>
                   <span>加入到歌单{{ contextActionLabel }}</span>
                   <i class="pi pi-chevron-right submenu-icon"></i>

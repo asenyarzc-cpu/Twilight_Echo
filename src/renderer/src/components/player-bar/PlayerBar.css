@@ -3632,7 +3632,6 @@ html[data-window-transparent='on'][data-platform='linux'] .player-bar-liquid .pl
   -webkit-backdrop-filter: none !important;
 }
 
-<<<<<<< HEAD
 /* ===== Mini shape =====
 
    Geometry is keyed off the shell's data attribute so it can out-specify preset

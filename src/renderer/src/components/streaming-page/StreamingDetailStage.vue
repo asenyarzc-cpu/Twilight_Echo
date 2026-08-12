@@ -38,6 +38,8 @@ const props = withDefaults(
     followLoading?: boolean
     followError?: string
     showPlayActions?: boolean
+    showRefresh?: boolean
+    refreshLoading?: boolean
     hasSelection?: boolean
     selectedCount?: number
     selectionAllFavorited?: boolean
@@ -71,6 +73,8 @@ const props = withDefaults(
     followLoading: false,
     followError: '',
     showPlayActions: true,
+    showRefresh: false,
+    refreshLoading: false,
     hasSelection: false,
     selectedCount: 0,
     selectionAllFavorited: false,
@@ -83,6 +87,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   playAll: []
   shufflePlay: []
+  refresh: []
   playTrack: [track: Track, index: number, event?: MouseEvent]
   trackClick: [track: Track, index: number, event: MouseEvent]
   likeTrack: [track: Track, event: MouseEvent]
@@ -251,6 +256,17 @@ function shuffleAndPlay(): void {
             >
               <i class="pi pi-arrow-right-arrow-left"></i>
               <span>随机</span>
+            </button>
+            <button
+              v-if="showRefresh"
+              type="button"
+              class="stage-btn stage-btn-ghost"
+              :disabled="refreshLoading"
+              title="从服务器重新获取最新歌曲"
+              @click="emit('refresh')"
+            >
+              <i :class="refreshLoading ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'"></i>
+              <span>刷新</span>
             </button>
           </template>
         </div>

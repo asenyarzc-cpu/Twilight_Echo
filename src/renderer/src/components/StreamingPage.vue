@@ -491,8 +491,13 @@ const {
 
 const playbackStore = usePlayerStore()
 const { currentTrack, personalizedStreamSession, personalizedStreamRemaining } = playbackStore
-const { playTrack, startPersonalizedStream, appendPersonalizedStreamTracks, formatTime } =
-  playbackStore
+const {
+  playTrack,
+  playNextTrack,
+  startPersonalizedStream,
+  appendPersonalizedStreamTracks,
+  formatTime
+} = playbackStore
 
 function playCloudSong(song: import('../stores/useNcmStore.ts').NcmCloudSong): void {
   playTrack(
@@ -2351,6 +2356,36 @@ async function confirmCreateNcmPlaylist(): Promise<void> {
   }
 }
 
+const queueingPlaylistId = ref<string | number | null>(null)
+
+async function handlePlayPlaylistNext(playlist: MediaProviderPlaylistSummary): Promise<void> {
+  if (queueingPlaylistId.value != null) return
+  queueingPlaylistId.value = playlist.id
+  try {
+    const tracks = isExternalActive.value
+      ? await providerStore.fetchPlaylistTracks(activeProvider.value, playlist.id, true)
+      : await fetchPlaylistTracks(playlist.id, true)
+    if (tracks.length === 0) {
+      pushNotice({ kind: 'info', message: `「${playlist.name}」中没有可加入播放队列的歌曲` })
+      return
+    }
+    for (let index = tracks.length - 1; index >= 0; index--) {
+      playNextTrack(tracks[index])
+    }
+    pushNotice({
+      kind: 'success',
+      message: `已将「${playlist.name}」的 ${tracks.length} 首歌曲加入下一首播放`
+    })
+  } catch (error) {
+    pushNotice({
+      kind: 'error',
+      message: friendlyStreamingError(error, `加载「${playlist.name}」失败`)
+    })
+  } finally {
+    queueingPlaylistId.value = null
+  }
+}
+
 async function handleDeleteNcmPlaylist(playlist: MediaProviderPlaylistSummary): Promise<void> {
   if (!canManageNcmPlaylists.value || deletingNcmPlaylistId.value != null) return
   const label = playlist.owned === false ? '取消收藏该歌单' : '删除该歌单'
@@ -3240,6 +3275,8 @@ onMounted(async () => {
                 :track-activation-mode="settingsStore.settings.value.trackActivationMode"
                 :is-external="isExternalActive"
                 :loading="detailLoading && detailTracks.length === 0"
+                :show-refresh="currentDetail.type === 'playlist' || currentDetail.type === 'liked'"
+                :refresh-loading="detailLoading"
                 :has-selection="hasSelection"
                 :selected-count="selectedCount"
                 :selection-all-favorited="selectionAllFavorited"
@@ -3252,6 +3289,7 @@ onMounted(async () => {
                 :liked-footer="detailLikedFooter"
                 @play-all="playAllDetailTracks"
                 @shuffle-play="shufflePlayDetailTracks"
+                @refresh="retryCurrentView"
                 @play-track="playDetailTrack"
                 @track-click="onTrackClick"
                 @like-track="onLikeTrack"
@@ -3355,6 +3393,7 @@ onMounted(async () => {
             :allow-pin-playlists="false"
             :allow-playlist-mutations="canManageNcmPlaylists"
             :deleting-playlist-id="deletingNcmPlaylistId"
+            :queueing-playlist-id="queueingPlaylistId"
             :pinned-playlist-ids="activeExternalState?.pinnedPlaylistIds ?? []"
             :pinning-playlist-id="activeExternalState?.pinningPlaylistId ?? null"
             :available-providers="libraryProviderOptions"
@@ -3366,6 +3405,7 @@ onMounted(async () => {
             @open-playlist="openPlaylist"
             @create-playlist="openCreateNcmPlaylistDialog()"
             @delete-playlist="handleDeleteNcmPlaylist"
+            @play-playlist-next="handlePlayPlaylistNext"
             @open-recent="openRecent"
             @open-ranking="openRanking"
           />
@@ -3393,6 +3433,7 @@ onMounted(async () => {
           <span>播放</span>
         </div>
         <div
+          v-if="!contextMenuCanLike"
           class="menu-item"
           role="menuitem"
           tabindex="0"
@@ -3424,7 +3465,6 @@ onMounted(async () => {
           v-if="canManageNcmPlaylists"
           class="menu-item"
           @mouseenter="showStreamingPlaylistSubmenu = true"
-          @mouseleave="showStreamingPlaylistSubmenu = false"
         >
           <i class="pi pi-plus"></i>
           <span>添加到歌单{{ streamingContextActionLabel }}</span>
@@ -3492,7 +3532,6 @@ onMounted(async () => {
           tabindex="0"
           data-te-interactive
           @mouseenter="downloadQualityMenuOpen = true"
-          @mouseleave="downloadQualityMenuOpen = false"
         >
           <i class="pi pi-download"></i>
           <span>下载到本地{{ streamingContextActionLabel }}</span>

@@ -1697,8 +1697,9 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- HiFi 右侧覆盖面板 -->
-    <Transition name="hifi-overlay">
-      <div v-if="moreOpen" class="hifi-overlay" :class="{ glass }">
+    <Teleport to="body">
+      <Transition name="hifi-overlay">
+        <div v-if="moreOpen" class="hifi-overlay" :class="{ glass }" @pointerdown.stop>
         <HiFiSidebar
           :glass="glass"
           :accent-color="playButtonColor"
@@ -1800,8 +1801,9 @@ onBeforeUnmount(() => {
           @cancel-rename-bookmark="cancelRenameBookmark"
           @delete-bookmark="deleteBookmark"
         />
-      </div>
-    </Transition>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
