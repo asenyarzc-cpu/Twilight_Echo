@@ -1,3 +1,5 @@
+
+
 # Twilight Echo
 
 <p align="center">
@@ -216,7 +218,7 @@ CoreAudio 与 ALSA 后端已存在，但目前没有经过与 Windows 同等级�
 pnpm install --frozen-lockfile
 pnpm run dev</code></pre>
 
-原生音频引擎和各平台打包还需要额外工具链；请勿把上述三条命令视为完整发布构建说明。
+原生音频引擎和各平台打包还需要额外工具链（构建引擎需 CMake 3.25+ 及 C++20 编译器）；请勿把上述三条命令视为完整发布构建说明。
 
 ## 反馈与贡献
 
