@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 
-const { parseOpraCatalogForTest } = (await import(
+const { OpraCatalog, parseOpraCatalogForTest } = (await import(
   new URL('./opraCatalog.ts', import.meta.url).href
 )) as typeof import('./opraCatalog.ts')
 
@@ -45,7 +48,9 @@ const SAMPLE_CATALOG = [
     data: { name: 'Reference Monitor', type: 'headphones', vendor_id: 'acme' }
   },
   { type: 'vendor', id: 'acme', data: { name: 'ACME Audio' } }
-].map((line) => JSON.stringify(line)).join('\n')
+]
+  .map((line) => JSON.stringify(line))
+  .join('\n')
 
 test('OPRA catalog links vendor, product and EQ profiles for search', async () => {
   const catalog = parseOpraCatalogForTest(SAMPLE_CATALOG)
@@ -58,6 +63,26 @@ test('OPRA catalog links vendor, product and EQ profiles for search', async () =
   assert.equal(results[0].preampDb, -5.5)
 })
 
+test('OPRA cache loading is single-flight for concurrent first searches', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'twilight-opra-cache-'))
+  const cachePath = join(directory, 'database.jsonl')
+  try {
+    await writeFile(cachePath, SAMPLE_CATALOG, 'utf8')
+    const catalog = new OpraCatalog(cachePath)
+    const [first, second] = await Promise.all([
+      catalog.search('acme monitor'),
+      catalog.getProfile('acme:monitor::author_good')
+    ])
+
+    assert.equal(first.length, 2)
+    assert.equal(second?.eqId, 'acme:monitor::author_good')
+    assert.equal(catalog.getStatus().loading, false)
+    assert.equal(catalog.getStatus().source, 'cache')
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test('OPRA parser maps supported bands and rejects unsupported filters', async () => {
   const catalog = parseOpraCatalogForTest(SAMPLE_CATALOG)
   const profile = await catalog.getProfile('acme:monitor::author_good')
@@ -65,11 +90,10 @@ test('OPRA parser maps supported bands and rejects unsupported filters', async (
 
   assert.ok(profile)
   assert.equal(profile.applicable, true)
-  assert.deepEqual(profile.bands.map((band) => band.filterType), [
-    'peak',
-    'lowShelf',
-    'highShelf'
-  ])
+  assert.deepEqual(
+    profile.bands.map((band) => band.filterType),
+    ['peak', 'lowShelf', 'highShelf']
+  )
 
   assert.ok(unsupported)
   assert.equal(unsupported.applicable, false)

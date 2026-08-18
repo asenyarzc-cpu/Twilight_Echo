@@ -7,10 +7,13 @@
  * track info and transport. The rail stays in the DOM behind `display: none`
  * so a future "show rail" option can restore seeking on the mini shape.
  *
- * The now-playing page may use a different shape than the rest of the app, and
- * a mini bar there can auto-hide until the pointer approaches the bottom edge.
- * `resolvePlayerBarPresentation` is the single place that decides which shape
- * and which behaviour apply, so the shell only reads the resolved value.
+ * Visibility is a separate dimension from shape, with three steps: `visible`
+ * keeps the bar on screen, `autoHide` tucks it away until the pointer
+ * approaches the bottom edge, and `hidden` removes it entirely with no reveal
+ * gesture at all. Both dimensions follow the same global + now-playing-override
+ * structure, so the now-playing page can use a different shape, a different
+ * visibility, or both. `resolvePlayerBarPresentation` is the single place that
+ * decides what applies, so the shell only reads the resolved value.
  */
 
 export type PlayerBarMode = 'standard' | 'mini'
@@ -20,13 +23,31 @@ export type PlayerBarPageMode = PlayerBarMode | 'inherit'
 
 export const PLAYER_BAR_MODES: readonly PlayerBarMode[] = ['standard', 'mini']
 
+/**
+ * `autoHide` still needs the mini shape to resolve (a standard bar's inline
+ * progress row is its only progress readout, so it never tucks away), while
+ * `hidden` applies to both shapes — nothing is revealed, so nothing is lost.
+ */
+export type PlayerBarVisibility = 'visible' | 'autoHide' | 'hidden'
+
+/** Playing-page visibility; `inherit` follows the global `visibility`. */
+export type PlayerBarPageVisibility = PlayerBarVisibility | 'inherit'
+
+export const PLAYER_BAR_VISIBILITIES: readonly PlayerBarVisibility[] = [
+  'visible',
+  'autoHide',
+  'hidden'
+]
+
 export interface PlayerBarSettings {
   /** Shape used everywhere except the now-playing page. */
   mode: PlayerBarMode
   /** Shape used on the now-playing page. */
   playingPageMode: PlayerBarPageMode
-  /** Auto-hide the bar on the now-playing page; only applies to the mini shape. */
-  autoHideOnPlayingPage: boolean
+  /** Visibility used everywhere except the now-playing page. */
+  visibility: PlayerBarVisibility
+  /** Visibility used on the now-playing page. */
+  playingPageVisibility: PlayerBarPageVisibility
   /** Pointer must come within this many px of the viewport bottom to reveal. */
   revealThresholdPx: number
   /** Delay before hiding once the pointer leaves the reveal zone. */
@@ -46,7 +67,8 @@ export const PLAYER_BAR_BOUNDS: Readonly<Record<'revealThresholdPx' | 'hideDelay
 export const DEFAULT_PLAYER_BAR_SETTINGS: PlayerBarSettings = {
   mode: 'standard',
   playingPageMode: 'inherit',
-  autoHideOnPlayingPage: false,
+  visibility: 'visible',
+  playingPageVisibility: 'inherit',
   revealThresholdPx: 120,
   hideDelayMs: 900
 }
@@ -65,12 +87,35 @@ export function normalizePlayerBarPageMode(value: unknown): PlayerBarPageMode {
   return 'inherit'
 }
 
+export function normalizePlayerBarVisibility(value: unknown): PlayerBarVisibility {
+  return value === 'autoHide' || value === 'hidden' ? value : 'visible'
+}
+
+export function normalizePlayerBarPageVisibility(value: unknown): PlayerBarPageVisibility {
+  if (value === 'visible' || value === 'autoHide' || value === 'hidden') return value
+  return 'inherit'
+}
+
+/**
+ * Visibility used to be a single `autoHideOnPlayingPage` boolean scoped to the
+ * now-playing page. Settings written before the three-step visibility exists
+ * still carry it, so migrate a stored `true` onto the playing-page override and
+ * leave the global step alone — the bar keeps hiding exactly where it did.
+ */
+function resolvePlayingPageVisibility(value: Record<string, unknown>): PlayerBarPageVisibility {
+  if (value.playingPageVisibility !== undefined) {
+    return normalizePlayerBarPageVisibility(value.playingPageVisibility)
+  }
+  return value.autoHideOnPlayingPage === true ? 'autoHide' : 'inherit'
+}
+
 export function normalizePlayerBarSettings(raw: unknown): PlayerBarSettings {
   const value = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
   return {
     mode: normalizePlayerBarMode(value.mode),
     playingPageMode: normalizePlayerBarPageMode(value.playingPageMode),
-    autoHideOnPlayingPage: value.autoHideOnPlayingPage === true,
+    visibility: normalizePlayerBarVisibility(value.visibility),
+    playingPageVisibility: resolvePlayingPageVisibility(value),
     revealThresholdPx: clamp(
       value.revealThresholdPx,
       PLAYER_BAR_BOUNDS.revealThresholdPx,
@@ -90,8 +135,10 @@ export function clonePlayerBarSettings(value: PlayerBarSettings): PlayerBarSetti
 
 export interface PlayerBarPresentation {
   mode: PlayerBarMode
-  /** Bar stays hidden until the pointer approaches the bottom edge. */
+  /** Bar stays tucked away until the pointer approaches the bottom edge. */
   autoHide: boolean
+  /** Bar is gone with no reveal gesture; settings is the way back. */
+  hidden: boolean
 }
 
 export interface PlayerBarContext {
@@ -99,9 +146,16 @@ export interface PlayerBarContext {
 }
 
 /**
- * Auto-hide needs all three: the now-playing page, the mini shape resolved for
- * that page, and the setting itself. A standard bar never hides, because its
- * inline progress row is the only progress readout it has.
+ * Resolve both dimensions for the current page, then narrow the visibility step
+ * to what the shape can actually do:
+ *
+ * - `hidden` always wins and applies to either shape — nothing is revealed, so
+ *   the standard bar loses nothing it could have shown.
+ * - `autoHide` additionally needs the mini shape, because a standard bar's
+ *   inline progress row is its only progress readout. On a standard bar it
+ *   degrades to plainly visible rather than silently hiding the progress.
+ *
+ * The two flags are mutually exclusive: `hidden` implies not `autoHide`.
  */
 export function resolvePlayerBarPresentation(
   settings: PlayerBarSettings,
@@ -113,10 +167,24 @@ export function resolvePlayerBarPresentation(
       ? settings.mode
       : pageMode
     : settings.mode
-  return {
-    mode,
-    autoHide: context.onPlayingPage && mode === 'mini' && settings.autoHideOnPlayingPage
-  }
+
+  const pageVisibility = settings.playingPageVisibility
+  const visibility: PlayerBarVisibility = context.onPlayingPage
+    ? pageVisibility === 'inherit'
+      ? settings.visibility
+      : pageVisibility
+    : settings.visibility
+
+  const hidden = visibility === 'hidden'
+  return { mode, autoHide: !hidden && visibility === 'autoHide' && mode === 'mini', hidden }
+}
+
+/** Whether `autoHide` can take effect for a page, for disabling dependent UI. */
+export function playerBarAutoHideApplies(
+  settings: PlayerBarSettings,
+  context: PlayerBarContext
+): boolean {
+  return resolvePlayerBarPresentation(settings, context).autoHide
 }
 
 /**

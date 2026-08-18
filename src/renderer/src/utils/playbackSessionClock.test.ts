@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {
-  createPlaybackSessionClock,
-  type PlaybackClockSnapshot
-} from './playbackSessionClock.ts'
+import { createPlaybackSessionClock, type PlaybackClockSnapshot } from './playbackSessionClock.ts'
 
 function makeClock() {
   let now = 0
@@ -126,6 +123,74 @@ test('repeated frozen engine positions leave the shared timeline interpolating',
 
   advance(600)
   assert.equal(clock.estimate()?.position, 0.95)
+})
+
+test('a lagging engine sample does not rewind the interpolated playhead', () => {
+  const { clock, advance } = makeClock()
+  clock.begin({ trackId: 'track', position: 10, duration: 180, state: 'playing' })
+
+  advance(200)
+  assert.equal(clock.estimate()?.position, 10.2)
+
+  const lagged = clock.ingest({
+    trackId: 'track',
+    epoch: clock.epoch(),
+    position: 10.05,
+    sampledAt: 200,
+    state: 'playing',
+    source: 'native-time-pos'
+  })
+  assert.equal(lagged.accepted, true)
+  assert.equal(lagged.advanced, false)
+  assert.equal(clock.snapshot().position, 10.2, 'presentation must not sawtooth backward')
+
+  advance(200)
+  assert.ok(Math.abs((clock.estimate()?.position ?? 0) - 10.4) < 1e-9)
+})
+
+test('lagging samples still count as heartbeats so interpolation does not stall', () => {
+  const { clock, advance } = makeClock()
+  clock.begin({ trackId: 'track', position: 5, duration: 180, state: 'playing' })
+  advance(200)
+  clock.estimate()
+
+  for (let step = 0; step < 8; step += 1) {
+    advance(200)
+    const now = (step + 2) * 200
+    const result = clock.ingest({
+      trackId: 'track',
+      epoch: clock.epoch(),
+      position: 5 + now / 1000 - 0.12,
+      sampledAt: now,
+      state: 'playing',
+      source: 'native-time-pos'
+    })
+    assert.equal(result.accepted, true)
+  }
+
+  const estimated = clock.estimate()
+  assert.equal(estimated?.state, 'playing')
+  assert.equal(estimated?.needsResync, false)
+  assert.ok((estimated?.position ?? 0) > 6.5)
+})
+
+test('an expected rewind may still jump the presentation clock backward', () => {
+  const { clock, advance } = makeClock()
+  clock.begin({ trackId: 'track', position: 10, duration: 180, state: 'playing' })
+  advance(200)
+  clock.estimate()
+
+  const rewound = clock.ingest({
+    trackId: 'track',
+    epoch: clock.epoch(),
+    position: 2,
+    sampledAt: 200,
+    state: 'playing',
+    expectedRewind: true,
+    source: 'native-time-pos'
+  })
+  assert.equal(rewound.accepted, true)
+  assert.equal(rewound.snapshot.position, 2)
 })
 
 test('snapshot shape remains serializable for presentation consumers', () => {

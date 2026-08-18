@@ -20,6 +20,8 @@ function line(partial: Partial<LyricLine> & { time: number | null }): LyricLine 
     romanization: null,
     timed: partial.timed ?? partial.time != null,
     words: partial.words,
+    voices: partial.voices,
+    rowKey: partial.rowKey,
     time: partial.time
   }
 }
@@ -186,6 +188,40 @@ test('nothing is an interlude while a line is still presented', () => {
   const timeline = buildLyricTimeline(LINES)
   assert.equal(findLyricInterlude(timeline, stateAt([], [0], 0), 3), null)
   assert.equal(isDisplayableInterlude(null), false)
+})
+
+test('voice word timings extend a grouped duet and make it dynamic', () => {
+  const grouped = line({
+    time: 10,
+    text: 'lead',
+    voices: [
+      {
+        voiceKey: 'lead',
+        role: 'lead',
+        lane: 'start',
+        time: 10,
+        text: 'lead',
+        words: [
+          { text: 'le', time: 10, endTime: 10.5 },
+          { text: 'ad', time: 10.5, endTime: 11 }
+        ]
+      },
+      {
+        voiceKey: 'harmony',
+        role: 'harmony',
+        lane: 'end',
+        time: 10.5,
+        text: 'held harmony',
+        words: [{ text: 'held harmony', time: 10.5, endTime: 13 }]
+      }
+    ]
+  })
+  const timeline = buildLyricTimeline([grouped, line({ time: 12 })])
+  assert.equal(timeline[0].endTime, 13, 'the harmony tail must not be cut at the next row')
+  assert.ok(!isNonDynamicTimeline([grouped]))
+  const hot = advanceLyricPlayhead(timeline, createLyricPlayheadState(), 12.5).hot
+  assert.ok(hot.has(0), 'the grouped harmony must still be singing at 12.5s')
+  assert.ok(hot.has(1), 'the following line may sing at the same time')
 })
 
 test('line-only lyrics are reported as non-dynamic', () => {

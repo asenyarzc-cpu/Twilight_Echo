@@ -27,13 +27,42 @@ export function resolveUnifiedRecentTracks({
   return tracks
 }
 
+interface UnifiedRecentResolverIndexes {
+  tracks: Track[]
+  localById: Map<string, Track>
+  localByLogicalKey: Map<string, LogicalTrack>
+}
+
+let cachedResolverIndexes: UnifiedRecentResolverIndexes | null = null
+let resolverRebuildCount = 0
+
+/**
+ * The music store replaces `tracks` wholesale (`setTracks` is its only write
+ * point), so array identity is a valid cache key: one full logical-track merge
+ * per library revision, shared by every component that resolves recent stats.
+ */
 export function createUnifiedRecentTrackResolver(
   localTracks: Track[]
 ): (stat: UnifiedRecentStat) => Track | null {
-  const localById = buildLocalTrackIdMap(localTracks)
-  const localByLogicalKey = buildLocalLogicalTrackMap(localTracks)
+  if (cachedResolverIndexes?.tracks !== localTracks) {
+    cachedResolverIndexes = {
+      tracks: localTracks,
+      localById: buildLocalTrackIdMap(localTracks),
+      localByLogicalKey: buildLocalLogicalTrackMap(localTracks)
+    }
+    resolverRebuildCount += 1
+  }
+  const indexes = cachedResolverIndexes
+  return (stat) => resolveRecentTrack(stat, indexes.localById, indexes.localByLogicalKey)
+}
 
-  return (stat) => resolveRecentTrack(stat, localById, localByLogicalKey)
+export function getUnifiedRecentResolverRebuildCount(): number {
+  return resolverRebuildCount
+}
+
+export function resetUnifiedRecentResolverCacheForTests(): void {
+  cachedResolverIndexes = null
+  resolverRebuildCount = 0
 }
 
 function resolveRecentTrack(

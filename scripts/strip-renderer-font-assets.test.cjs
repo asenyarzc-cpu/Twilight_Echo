@@ -28,7 +28,13 @@ test('strips legacy Outfit/Nunito and non-WOFF2 Phosphor; keeps Inter/Jakarta + 
     fs.writeFileSync(path.join(fontDir, 'Nunito-latin-wght-normal.woff2'), 'x')
     fs.writeFileSync(path.join(fontDir, 'Inter-latin-wght-normal.woff2'), 'x')
     fs.writeFileSync(path.join(fontDir, 'PlusJakartaSans-latin-wght-normal.woff2'), 'x')
+    fs.writeFileSync(path.join(fontDir, 'Lora-latin-wght-normal.woff2'), 'x')
+    fs.writeFileSync(path.join(fontDir, 'JetBrainsMono-latin-wght-normal.woff2'), 'x')
+    fs.writeFileSync(path.join(fontDir, 'SpaceGrotesk-latin-wght-normal.woff2'), 'x')
     fs.writeFileSync(path.join(fontDir, 'OFL-Inter.txt'), 'x')
+    fs.writeFileSync(path.join(fontDir, 'OFL-Lora.txt'), 'x')
+    fs.writeFileSync(path.join(fontDir, 'OFL-JetBrainsMono.txt'), 'x')
+    fs.writeFileSync(path.join(fontDir, 'OFL-SpaceGrotesk.txt'), 'x')
     fs.writeFileSync(path.join(fontDir, 'stray-font.woff2'), 'x')
     fs.writeFileSync(path.join(misans, 'MiSans-Regular.21.woff2'), 'x')
     fs.writeFileSync(path.join(misans, 'MiSans-Regular.latin.woff2'), 'x')
@@ -47,8 +53,14 @@ test('strips legacy Outfit/Nunito and non-WOFF2 Phosphor; keeps Inter/Jakarta + 
     assert.deepEqual(fs.readdirSync(assets).sort(), ['Phosphor-x.woff2', 'primeicons.woff2'])
     assert.deepEqual(fs.readdirSync(fontDir).sort(), [
       'Inter-latin-wght-normal.woff2',
+      'JetBrainsMono-latin-wght-normal.woff2',
+      'Lora-latin-wght-normal.woff2',
       'OFL-Inter.txt',
+      'OFL-JetBrainsMono.txt',
+      'OFL-Lora.txt',
+      'OFL-SpaceGrotesk.txt',
       'PlusJakartaSans-latin-wght-normal.woff2',
+      'SpaceGrotesk-latin-wght-normal.woff2',
       'misans'
     ])
     assert.deepEqual(fs.readdirSync(misans).sort(), [

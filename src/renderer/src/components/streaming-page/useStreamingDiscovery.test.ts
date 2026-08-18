@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { NcmPlaylistSummary } from '../../stores/useNcmStore.ts'
 
 const { useStreamingDiscovery, DISCOVERY_PAGE_SIZE } = (await import(
   new URL('./useStreamingDiscovery.ts', import.meta.url).href
@@ -19,7 +20,7 @@ const catalogueFixture = {
   ]
 }
 
-function playlist(id: number) {
+function playlist(id: number): NcmPlaylistSummary {
   return {
     id,
     name: `playlist-${id}`,
@@ -120,7 +121,7 @@ test('stale responses are discarded when a newer request resolves first', async 
     [2]
   )
 
-  resolveSlow?.(discoveryPage([1]))
+  ;(resolveSlow as ((page: ReturnType<typeof discoveryPage>) => void) | null)?.(discoveryPage([1]))
   await first
   assert.deepEqual(
     discovery.playlists.value.map((item) => item.id),
@@ -178,7 +179,7 @@ test('list errors populate listError and retry refetches from the start', async 
 
   await discovery.ensureLoaded()
   assert.equal(discovery.listError.value, '网络异常')
-  assert.deepEqual(discovery.playlists.value, [])
+  assert.deepEqual(discovery.playlists.value, [] as NcmPlaylistSummary[])
 
   fail = false
   discovery.retry()

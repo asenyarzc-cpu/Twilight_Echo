@@ -8,6 +8,29 @@ import { createSleepTimerState } from '../shared/sleepTimer.ts'
 import { registerNativeSleepTimerBoundaries } from './audio/sleepTimerNativeBoundary.ts'
 import { SleepTimerService } from './sleepTimerCore.ts'
 
+function readPreloadSources(): string {
+  const root = new URL('../preload/', import.meta.url)
+  return [
+    'index.ts',
+    'types.ts',
+    'index.d.ts',
+    'sleepTimerEvents.ts',
+    'domains/dataApi.ts',
+    'domains/audioEngineApi.ts',
+    'domains/desktopLyricsApi.ts',
+    'domains/libraryApi.ts',
+    'domains/mediaSubscriptionsApi.ts',
+    'domains/networkSourcesApi.ts',
+    'domains/settingsApi.ts',
+    'domains/themesApi.ts',
+    'domains/pluginsApi.ts',
+    'domains/systemApi.ts',
+    'domains/versionedData.ts'
+  ]
+    .map((rel) => readFileSync(new URL(rel, root), 'utf8'))
+    .join('\n')
+}
+
 import type {
   AudioEngineServiceNativeBinding,
   AudioDeviceOption,
@@ -1079,6 +1102,7 @@ class FakeAudioServiceBinding extends EventEmitter implements AudioEngineService
     this.queue = JSON.parse(queueJson) as AudioEngineQueueItem[]
     this.queueIndex = startIndex
   }
+  SetPlayMode = (_mode: PlayMode): void => {}
   SetDspConfig = (json: string): void => {
     this.dspConfig = JSON.parse(json) as Partial<AudioProcessingSettings>
   }
@@ -6727,15 +6751,23 @@ test('loudnorm status event, library RG queue fields, and cancel IPC are wired e
     new URL('../renderer/src/components/SettingsPage.vue', import.meta.url),
     'utf8'
   )
+  const dspSettingsSource = readFileSync(
+    new URL('../renderer/src/components/settings-page/DspSettingsSection.vue', import.meta.url),
+    'utf8'
+  )
   const playerStoreSource = readFileSync(
     new URL('../renderer/src/stores/usePlayerStore.ts', import.meta.url),
+    'utf8'
+  )
+  const playerSessionTrackSource = readFileSync(
+    new URL('../renderer/src/utils/playerSessionTrack.ts', import.meta.url),
     'utf8'
   )
   const dspStoreSource = readFileSync(
     new URL('../renderer/src/stores/useAudioOutputDspStore.ts', import.meta.url),
     'utf8'
   )
-  const preloadSource = readFileSync(new URL('../preload/index.ts', import.meta.url), 'utf8')
+  const preloadSource = readPreloadSources()
   const preloadDtsSource = readFileSync(new URL('../preload/index.d.ts', import.meta.url), 'utf8')
   const pipelineSource = readFileSync(
     new URL('../../audio-engine/core/AudioPipeline.cpp', import.meta.url),
@@ -6765,7 +6797,12 @@ test('loudnorm status event, library RG queue fields, and cancel IPC are wired e
   )
   assert.ok(managerSource.includes('this.destroyed'))
   assert.ok(engineIpcSource.includes("on('loudnorm-status'"))
-  assert.ok(engineIpcSource.includes('audioEngine:loudnorm-status'))
+  assert.ok(
+    readFileSync(new URL('../shared/ipcChannels.ts', import.meta.url), 'utf8').includes(
+      "'audioEngine:loudnorm-status'"
+    )
+  )
+  assert.ok(engineIpcSource.includes('IPC.audioEngine.loudnormStatus'))
   assert.ok(engineIpcSource.includes('replayGainTrackGainDb'))
   assert.ok(engineIpcSource.includes('r128TrackGainDb'))
   assert.ok(loudnessIpcSource.includes('loudnessAnalysis:cancel'))
@@ -6775,19 +6812,28 @@ test('loudnorm status event, library RG queue fields, and cancel IPC are wired e
   assert.ok(queuePrepSource.includes('replayGainTrackGainDb'))
   assert.ok(queuePrepSource.includes('r128AlbumGainDb'))
   assert.ok(preloadSource.includes('onLoudnormStatus'))
-  assert.ok(preloadSource.includes('audioEngine:loudnorm-status'))
+  assert.ok(preloadSource.includes('IPC.audioEngine.loudnormStatus'))
   assert.ok(preloadSource.includes('loudnessAnalysis:cancel'))
   assert.ok(playerStoreSource.includes('loudnormStatus'))
   assert.ok(playerStoreSource.includes('onLoudnormStatus'))
-  assert.ok(playerStoreSource.includes('replayGainTrackGainDb'))
+  assert.ok(playerSessionTrackSource.includes('replayGainTrackGainDb'))
   assert.ok(dspStoreSource.includes('loudnormStatus: player.loudnormStatus'))
   assert.ok(hifiSource.includes('loudnormStatusCopy'))
   assert.ok(hifiSource.includes('loudnormStatusText'))
-  assert.ok(settingsSource.includes('loudnormStatusCopy'))
-  assert.ok(settingsSource.includes('settings-loudnorm-status'))
+  assert.ok(dspSettingsSource.includes('loudnormStatusCopy'))
+  assert.ok(dspSettingsSource.includes('settings-loudnorm-status'))
   assert.ok(settingsSource.includes('确认清理 Loudnorm'))
-  assert.ok(preloadDtsSource.includes('replayGainTrackGainDb'))
-  assert.ok(preloadDtsSource.includes('r128AlbumGainDb'))
+  assert.ok(
+    readFileSync(new URL('../shared/audioEngineTypes.ts', import.meta.url), 'utf8').includes(
+      'replayGainTrackGainDb'
+    )
+  )
+  assert.ok(
+    readFileSync(new URL('../shared/audioEngineTypes.ts', import.meta.url), 'utf8').includes(
+      'r128AlbumGainDb'
+    )
+  )
+  assert.ok(preloadDtsSource.includes('TrackData'))
   assert.ok(pipelineSource.includes('refreshQueueReplayGainTags'))
   assert.ok(engineCppSource.includes('refreshQueueReplayGainTags'))
   assert.ok(pipelineSource.includes('lastPreloadFormatMismatch_'))
@@ -6799,4 +6845,87 @@ test('loudnorm status event, library RG queue fields, and cancel IPC are wired e
       'notifyLoudnessCacheCleared'
     )
   )
+})
+
+test('paused native polling throttles service refreshes to one per four ticks', async () => {
+  let now = 500
+  const nativeBinding = new FakeNativeBinding()
+  const manager = makeManager(
+    {
+      exclusiveMode: true,
+      audioOutput: 'wasapi',
+      audioDevice: 'auto'
+    },
+    nativeBinding,
+    {
+      now: () => now
+    }
+  )
+
+  await manager.play('track.flac', 0)
+  nativeBinding.playbackInfo = {
+    ...nativeBinding.playbackInfo,
+    state: 'paused',
+    position: 3
+  }
+  const tickManager = manager as unknown as { tick: () => void }
+  tickManager.tick()
+
+  let nativeReads = 0
+  const original = nativeBinding.GetPlaybackInfo
+  nativeBinding.GetPlaybackInfo = () => {
+    nativeReads += 1
+    return original.call(nativeBinding)
+  }
+
+  for (let index = 0; index < 8; index += 1) {
+    now += 250
+    tickManager.tick()
+  }
+  assert.equal(nativeReads, 2)
+
+  nativeBinding.GetPlaybackInfo = original
+  const info = await manager.getPlaybackInfo()
+  assert.equal(info.state, 'paused')
+})
+
+test('failed service-mode queue load rolls the native queue back to the local mirror', async () => {
+  const service = new FakeAudioServiceBinding()
+  const manager = new AudioEngineManager(
+    { exclusiveMode: false },
+    {
+      audioServiceFactory: () => service,
+      scheduler: TEST_SCHEDULER,
+      deviceOptionsProvider: () => DEVICE_OPTIONS
+    }
+  )
+  const firstQueue: AudioEngineQueueItem[] = [{ id: 'one', source: 'first.flac', title: 'First' }]
+  const secondQueue: AudioEngineQueueItem[] = [
+    { id: 'two', source: 'second.flac', title: 'Second' }
+  ]
+  await manager.loadQueue(firstQueue, 0)
+  assert.deepEqual(service.queue, firstQueue)
+
+  let loadQueueCalls = 0
+  const originalLoadQueue = service.LoadQueue
+  service.LoadQueue = (queueJson: string, startIndex: number): void => {
+    loadQueueCalls += 1
+    originalLoadQueue.call(service, queueJson, startIndex)
+  }
+  let failedOnce = false
+  service.SetPlayMode = (): void => {
+    if (!failedOnce) {
+      failedOnce = true
+      throw new Error('transient play-mode failure')
+    }
+  }
+
+  await assert.rejects(manager.loadQueue(secondQueue, 0), /原生播放模式同步失败/)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.deepEqual(service.queue, firstQueue)
+  assert.equal(service.queueIndex, 0)
+  assert.equal(loadQueueCalls, 2)
+
+  manager.destroy()
 })

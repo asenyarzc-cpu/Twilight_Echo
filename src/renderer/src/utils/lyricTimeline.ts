@@ -88,17 +88,24 @@ export function buildLyricTimeline(lines: readonly LyricLine[]): LyricTimelineEn
 
     let endTime: number | null = null
     if (time != null) {
-      const words = line.words?.length ? resolveLyricWordTimings(line.words, nextTime) : []
+      const voiceStarts = line.voices
+        ?.map((voice) => voice.time)
+        .filter((value): value is number => value != null && Number.isFinite(value))
+      const latestVoiceStart = Math.max(time, ...(voiceStarts ?? []))
+      const wordLayers = [line.words, ...(line.voices?.map((voice) => voice.words) ?? [])]
       let wordEnd = Number.NEGATIVE_INFINITY
-      for (const word of words) wordEnd = Math.max(wordEnd, word.endTime)
+      for (const layer of wordLayers) {
+        const words = layer?.length ? resolveLyricWordTimings(layer, nextTime) : []
+        for (const word of words) wordEnd = Math.max(wordEnd, word.endTime)
+      }
 
       // Deliberately not clamped to the next line's start. A held tail that runs
       // past its successor is what produces Apple's hand-off, where the finishing
       // line stays lit while the next one begins. Clamping here would collapse
       // that into a snap.
       if (wordEnd > time) endTime = wordEnd
-      else if (nextTime != null) endTime = nextTime
-      else endTime = time + LYRIC_TRAILING_LINE_SECONDS
+      else if (nextTime != null && nextTime > latestVoiceStart) endTime = nextTime
+      else endTime = latestVoiceStart + LYRIC_TRAILING_LINE_SECONDS
     }
 
     entries.push({ index, time, endTime, timed })
@@ -109,7 +116,10 @@ export function buildLyricTimeline(lines: readonly LyricLine[]): LyricTimelineEn
 
 /** True when no line carries word-level timing, i.e. plain or line-only lyrics. */
 export function isNonDynamicTimeline(lines: readonly LyricLine[]): boolean {
-  return !lines.some((line) => (line.words?.length ?? 0) > 1)
+  return !lines.some((line) => {
+    if ((line.words?.length ?? 0) > 1) return true
+    return line.voices?.some((voice) => (voice.words?.length ?? 0) > 1) ?? false
+  })
 }
 
 function setsEqual(left: ReadonlySet<number>, right: ReadonlySet<number>): boolean {

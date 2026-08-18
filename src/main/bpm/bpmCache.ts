@@ -3,26 +3,11 @@ import { mkdir, readFile, rm, stat, writeFile } from 'fs/promises'
 import { dirname } from 'path'
 import { isDeepStrictEqual } from 'util'
 import { tryParseJsonWithNestingLimit } from '../security/jsonSafety.ts'
+import type { BpmAnalysisResult, BpmTempoSegment } from '../../shared/audioEngineTypes.ts'
+
+export type { BpmAnalysisResult, BpmTempoSegment }
 
 export const BPM_ANALYSIS_ALGORITHM_VERSION = 1
-
-export interface BpmTempoSegment {
-  startMs: number
-  endMs: number
-  bpm: number
-  confidence: number
-}
-
-export interface BpmAnalysisResult {
-  bpm: number
-  confidence: number
-  source: 'analyzed'
-  analyzedAt: string
-  algorithmVersion: number
-  variableTempo?: boolean
-  bpmRange?: [number, number]
-  tempoMap?: BpmTempoSegment[]
-}
 
 export interface BpmAnalysisCacheIdentity {
   filePath: string

@@ -2,7 +2,15 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-const { dedupeProviderRegistrations, findProviderRoute, providerSupportsMethod } = (await import(
+const {
+  dedupeProviderRegistrations,
+  findProviderRoute,
+  getProviderCallTimeoutMs,
+  getProviderMethodStats,
+  normalizeProviderHealth,
+  normalizeProviderUi,
+  providerSupportsMethod
+} = (await import(
   new URL('./providerRouting.ts', import.meta.url).href
 )) as typeof import('./providerRouting')
 const { isRecoverableBundledPluginFailure } = (await import(
@@ -76,7 +84,10 @@ test('routes download lifecycle calls only to providers declaring download capab
   ] as const) {
     assert.equal(providerSupportsMethod(downloadProvider.providers[0], method), true)
     assert.equal(providerSupportsMethod(skeleton.providers[0], method), false)
-    assert.equal(findProviderRoute([skeleton, downloadProvider], 'am', method)?.pluginId, downloadProvider.pluginId)
+    assert.equal(
+      findProviderRoute([skeleton, downloadProvider], 'am', method)?.pluginId,
+      downloadProvider.pluginId
+    )
   }
 })
 
@@ -86,6 +97,120 @@ test('prefers the latest registration when multiple plugins expose the same prov
     fullProvider.pluginId
   )
   assert.deepEqual(dedupeProviderRegistrations([skeleton, fullProvider]), fullProvider.providers)
+})
+
+test('classifies provider call timeouts by method latency class', () => {
+  assert.equal(getProviderCallTimeoutMs('fetchPlaylistTracks'), 120_000)
+  assert.equal(getProviderCallTimeoutMs('getPlaybackUrl'), 30_000)
+  assert.equal(getProviderCallTimeoutMs('likeTrack'), 15_000)
+})
+
+test('normalizes provider health records from plugin registration metadata', () => {
+  const health = normalizeProviderHealth(
+    {
+      totalCalls: 3.9,
+      successfulCalls: 2,
+      failedCalls: -1,
+      lastError: '  transient failure  ',
+      methodStats: {
+        getPlaybackUrl: { totalCalls: 1, successfulCalls: 1, failedCalls: 0, lastError: null },
+        unknownMethod: { totalCalls: 1, successfulCalls: 1, failedCalls: 0 },
+        getLyrics: 'invalid'
+      }
+    },
+    'ncm',
+    'com.twilightecho.provider.ncm'
+  )
+
+  assert.deepEqual(health, {
+    providerId: 'ncm',
+    pluginId: 'com.twilightecho.provider.ncm',
+    totalCalls: 3,
+    successfulCalls: 2,
+    failedCalls: 0,
+    methodStats: {
+      getPlaybackUrl: {
+        totalCalls: 1,
+        successfulCalls: 1,
+        failedCalls: 0,
+        lastError: null,
+        lastCheckedAt: null
+      }
+    },
+    lastError: 'transient failure',
+    lastCheckedAt: null
+  })
+  assert.equal(normalizeProviderHealth(null, 'ncm', 'plugin'), null)
+})
+
+test('normalizes provider UI metadata defaults and filters malformed sections', () => {
+  const ui = normalizeProviderUi({
+    icon: 'pi pi-cloud',
+    authType: 'browser',
+    qrStatusCodes: { waiting: 1, scanned: 2, expired: 3, denied: 4, success: 5 },
+    streamingSections: [
+      { id: 'weekly', title: 'Weekly', method: 'fetchRecommendSongs' },
+      { title: 'Missing Method' }
+    ],
+    loginExtraActions: [{ label: 'Open Web', method: 'openOfficialLogin' }, { method: 'missing' }]
+  })
+
+  assert.deepEqual(ui, {
+    icon: 'pi pi-cloud',
+    color: undefined,
+    description: undefined,
+    authType: 'qr',
+    loginInstructions: undefined,
+    qrStatusCodes: { waiting: 1, scanned: 2, expired: 3, denied: 4, success: 5 },
+    showBrowserButton: undefined,
+    loginExtraActions: [
+      { label: 'Open Web', icon: 'pi pi-external-link', method: 'openOfficialLogin' }
+    ],
+    streamingSections: [
+      {
+        id: 'weekly',
+        title: 'Weekly',
+        icon: 'pi pi-music',
+        method: 'fetchRecommendSongs',
+        args: undefined
+      }
+    ],
+    streamingLibraryTab: undefined,
+    streamingSearch: undefined,
+    unifiedLibrary: undefined
+  })
+  assert.equal(normalizeProviderUi(undefined), undefined)
+})
+
+test('derives provider method health success rates without mutating records', () => {
+  const stats = getProviderMethodStats({
+    providerId: 'ncm',
+    pluginId: 'plugin',
+    totalCalls: 2,
+    successfulCalls: 1,
+    failedCalls: 1,
+    methodStats: {
+      getPlaybackUrl: {
+        totalCalls: 2,
+        successfulCalls: 1,
+        failedCalls: 1,
+        lastError: 'timeout',
+        lastCheckedAt: '2026-01-01T00:00:00.000Z'
+      }
+    },
+    lastError: 'timeout',
+    lastCheckedAt: '2026-01-01T00:00:00.000Z'
+  })
+
+  assert.deepEqual(stats.getPlaybackUrl, {
+    totalCalls: 2,
+    successfulCalls: 1,
+    failedCalls: 1,
+    successRate: 0.5,
+    lastError: 'timeout',
+    lastCheckedAt: '2026-01-01T00:00:00.000Z'
+  })
+  assert.deepEqual(getProviderMethodStats(undefined), {})
 })
 
 test('treats bundled plugin host-exit failures as recoverable startup state', () => {
@@ -100,7 +225,9 @@ test('omits utility process env option when no proxy env is configured', () => {
 
   assert.match(source, /\.\.\.\(Object\.keys\(proxyEnv\)\.length > 0 \? \{ env:/)
   assert.equal(
-    /const env = Object\.keys\(proxyEnv\)\.length > 0[\s\S]*utilityProcess\.fork[\s\S]*\benv\b/.test(source),
+    /const env = Object\.keys\(proxyEnv\)\.length > 0[\s\S]*utilityProcess\.fork[\s\S]*\benv\b/.test(
+      source
+    ),
     false,
     'Electron utilityProcess.fork rejects an explicit env: undefined option'
   )
@@ -113,7 +240,7 @@ test('bundled provider missing-method errors mention restarting the app', () => 
 })
 
 test('plugin host exposes account login provider methods', () => {
-  const source = readFileSync(new URL('../pluginHost.ts', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('./host.ts', import.meta.url), 'utf8')
 
   assert.match(source, /'sendCaptcha'/)
   assert.match(source, /'loginByPhonePassword'/)

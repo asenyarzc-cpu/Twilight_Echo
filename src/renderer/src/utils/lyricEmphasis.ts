@@ -22,14 +22,17 @@ import { chunkSpan, isCJK, type LyricWordChunk, type ResolvedLyricWord } from '.
 export const EMPHASIS_FRAME_COUNT = 32
 
 /** Below this, a word just fills; at or above it, the word is emphasised. */
-export const EMPHASIS_MIN_DURATION_MS = 1000
+export const EMPHASIS_MIN_DURATION_MS = 1200
 
 /** Latin words longer than this read as a phrase, not a held note. */
 export const EMPHASIS_MAX_LATIN_LENGTH = 7
 
 export const EMPHASIS_EASING_MID = 0.5
-export const EMPHASIS_AMOUNT_CAP = 1.2
-export const EMPHASIS_BLUR_CAP = 0.8
+export const EMPHASIS_AMOUNT_CAP = 1
+export const EMPHASIS_BLUR_CAP = 0.18
+export const EMPHASIS_SCALE_GAIN = 0.025
+export const EMPHASIS_LIFT_EM = 0.004
+export const EMPHASIS_GLOW_ALPHA_CAP = 0.18
 
 /** The last word of a line carries the phrase, so it is pushed harder. */
 export const EMPHASIS_LAST_WORD_AMOUNT_GAIN = 1.6
@@ -37,9 +40,9 @@ export const EMPHASIS_LAST_WORD_BLUR_GAIN = 1.5
 export const EMPHASIS_LAST_WORD_DURATION_GAIN = 1.2
 
 /** Every word lifts slightly while it is sung, emphasised or not. */
-export const FLOAT_RISE_EM = 0.05
+export const FLOAT_RISE_EM = 0.012
+export const FLOAT_SECONDARY_RISE_EM = 0.008
 export const FLOAT_MIN_DURATION_MS = 1000
-export const FLOAT_BACKGROUND_MULTIPLIER = 2
 
 /** The emphasis float runs longer than the word and starts slightly early. */
 export const EMPHASIS_FLOAT_DURATION_GAIN = 1.4
@@ -47,6 +50,99 @@ export const EMPHASIS_FLOAT_LEAD_MS = 400
 
 /** Karaoke sweep width, in multiples of the font size. 0.5 matches iPad. */
 export const DEFAULT_WORD_FADE_WIDTH = 0.5
+
+export const MAX_EMPHASIS_GRAPHEMES = 24
+
+export type LyricAnimationVoiceRole = 'lead' | 'background' | 'harmony'
+export type LyricDirection = 'ltr' | 'rtl'
+
+interface GraphemeSegmenter {
+  segment: (text: string) => Iterable<{ segment: string }>
+}
+
+let cachedGraphemeSegmenter: GraphemeSegmenter | null | undefined
+
+function graphemeSegmenter(): GraphemeSegmenter | null {
+  if (cachedGraphemeSegmenter !== undefined) return cachedGraphemeSegmenter
+  const Segmenter = (
+    Intl as typeof Intl & {
+      Segmenter?: new (
+        locales?: string | string[],
+        options?: { granularity: 'grapheme' }
+      ) => GraphemeSegmenter
+    }
+  ).Segmenter
+  if (!Segmenter) {
+    cachedGraphemeSegmenter = null
+    return null
+  }
+  try {
+    cachedGraphemeSegmenter = new Segmenter(undefined, { granularity: 'grapheme' })
+  } catch {
+    cachedGraphemeSegmenter = null
+  }
+  return cachedGraphemeSegmenter
+}
+
+const MARK_RE = /^\p{Mark}$/u
+
+function codePoint(character: string): number {
+  return character.codePointAt(0) ?? 0
+}
+
+function isRegionalIndicator(character: string): boolean {
+  const value = codePoint(character)
+  return value >= 0x1f1e6 && value <= 0x1f1ff
+}
+
+function extendsPreviousGrapheme(character: string): boolean {
+  const value = codePoint(character)
+  return (
+    MARK_RE.test(character) ||
+    (value >= 0xfe00 && value <= 0xfe0f) ||
+    (value >= 0xe0100 && value <= 0xe01ef) ||
+    (value >= 0x1f3fb && value <= 0x1f3ff) ||
+    (value >= 0xe0020 && value <= 0xe007f)
+  )
+}
+
+export function splitGraphemesFallback(text: string): string[] {
+  const result: string[] = []
+  for (const character of text) {
+    const previous = result[result.length - 1]
+    if (!previous) {
+      result.push(character)
+      continue
+    }
+
+    const previousCharacters = Array.from(previous)
+    const previousCharacter = previousCharacters[previousCharacters.length - 1]
+    const regionalCount = previousCharacters.filter(isRegionalIndicator).length
+    if (
+      character === '\u200d' ||
+      previousCharacter === '\u200d' ||
+      extendsPreviousGrapheme(character) ||
+      (isRegionalIndicator(character) && regionalCount % 2 === 1)
+    ) {
+      result[result.length - 1] += character
+    } else {
+      result.push(character)
+    }
+  }
+  return result
+}
+
+export function splitGraphemes(text: string): string[] {
+  const segmenter = graphemeSegmenter()
+  return segmenter
+    ? Array.from(segmenter.segment(text), (entry) => entry.segment)
+    : splitGraphemesFallback(text)
+}
+
+export function emphasisGraphemes(text: string): string[] | null {
+  const graphemes = splitGraphemes(text)
+  return graphemes.length <= MAX_EMPHASIS_GRAPHEMES ? graphemes : null
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -63,11 +159,7 @@ export function cubicBezier(x1: number, y1: number, x2: number, y2: number): (x:
   }
   const slope = (a: number, b: number, t: number): number => {
     const inverse = 1 - t
-    return (
-      3 * inverse * inverse * a +
-      6 * inverse * t * (b - a) +
-      3 * t * t * (1 - b)
-    )
+    return 3 * inverse * inverse * a + 6 * inverse * t * (b - a) + 3 * t * t * (1 - b)
   }
 
   return (x: number): number => {
@@ -116,12 +208,14 @@ const emphasisEasing = makeEmphasisEasing()
  * A single CJK glyph is a whole syllable, so duration alone decides. Latin needs
  * a length guard, otherwise a slow line of prose would emphasise wholesale.
  */
-export function shouldEmphasize(word: Pick<ResolvedLyricWord, 'text' | 'time' | 'endTime'>): boolean {
+export function shouldEmphasize(
+  word: Pick<ResolvedLyricWord, 'text' | 'time' | 'endTime'>
+): boolean {
   const durationMs = (word.endTime - word.time) * 1000
   if (durationMs < EMPHASIS_MIN_DURATION_MS) return false
   if (isCJK(word.text)) return true
 
-  const length = word.text.trim().length
+  const length = splitGraphemes(word.text.trim()).length
   return length > 1 && length <= EMPHASIS_MAX_LATIN_LENGTH
 }
 
@@ -183,7 +277,7 @@ export function buildEmphasisAnimation(
   characterCount: number,
   strength: EmphasisStrength,
   startDelayMs: number,
-  isBackground = false
+  voiceRole: LyricAnimationVoiceRole = 'lead'
 ): EmphasisAnimationPlan {
   const { amount, blur, durationMs } = strength
   const count = Math.max(1, characterCount)
@@ -193,27 +287,26 @@ export function buildEmphasisAnimation(
   const glow: Keyframe[] = []
   const float: Keyframe[] = []
 
-  for (let frame = 0; frame < EMPHASIS_FRAME_COUNT; frame += 1) {
-    const offset = (frame + 1) / EMPHASIS_FRAME_COUNT
-    const envelope = emphasisEasing(offset)
+  if (voiceRole === 'lead') {
+    for (let frame = 0; frame < EMPHASIS_FRAME_COUNT; frame += 1) {
+      const offset = (frame + 1) / EMPHASIS_FRAME_COUNT
+      const envelope = emphasisEasing(offset)
+      const scale = 1 + envelope * EMPHASIS_SCALE_GAIN * amount
+      const offsetX = -envelope * 0.012 * amount * (count / 2 - characterIndex)
+      const offsetY = -envelope * EMPHASIS_LIFT_EM * amount
+      const glowAlpha = Math.min(EMPHASIS_GLOW_ALPHA_CAP, envelope * blur)
 
-    const scale = 1 + envelope * 0.1 * amount
-    // Characters drift away from the word's centre, so the word breathes open.
-    const offsetX = -envelope * 0.03 * amount * (count / 2 - characterIndex)
-    const offsetY = -envelope * 0.025 * amount
-    const glowAlpha = envelope * blur
+      glow.push({
+        offset,
+        transform:
+          `matrix3d(${scale}, 0, 0, 0, 0, ${scale}, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)` +
+          ` translate(${offsetX.toFixed(5)}em, ${offsetY.toFixed(5)}em)`,
+        textShadow: `0 0 ${Math.min(0.3, blur * 0.3).toFixed(4)}em rgba(255, 255, 255, ${glowAlpha.toFixed(4)})`
+      })
 
-    glow.push({
-      offset,
-      transform:
-        `matrix3d(${scale}, 0, 0, 0, 0, ${scale}, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)` +
-        ` translate(${offsetX.toFixed(5)}em, ${offsetY.toFixed(5)}em)`,
-      textShadow: `0 0 ${Math.min(0.3, blur * 0.3).toFixed(4)}em rgba(255, 255, 255, ${glowAlpha.toFixed(4)})`
-    })
-
-    let lift = Math.sin(offset * Math.PI)
-    if (isBackground) lift *= FLOAT_BACKGROUND_MULTIPLIER
-    float.push({ offset, transform: `translateY(${(-lift * FLOAT_RISE_EM).toFixed(5)}em)` })
+      const lift = Math.sin(offset * Math.PI)
+      float.push({ offset, transform: `translateY(${(-lift * EMPHASIS_LIFT_EM).toFixed(5)}em)` })
+    }
   }
 
   return {
@@ -244,11 +337,11 @@ export function buildEmphasisAnimation(
 export function buildWordFloatAnimation(
   word: ResolvedLyricWord,
   lineStartTime: number,
-  isBackground = false
+  voiceRole: LyricAnimationVoiceRole = 'lead'
 ): { keyframes: Keyframe[]; timing: KeyframeAnimationOptions } {
   const delay = (word.time - lineStartTime) * 1000
   const duration = Math.max(FLOAT_MIN_DURATION_MS, (word.endTime - word.time) * 1000)
-  const rise = isBackground ? FLOAT_RISE_EM * FLOAT_BACKGROUND_MULTIPLIER : FLOAT_RISE_EM
+  const rise = voiceRole === 'lead' ? FLOAT_RISE_EM : FLOAT_SECONDARY_RISE_EM
 
   return {
     keyframes: [{ transform: 'translateY(0px)' }, { transform: `translateY(${-rise}em)` }],
@@ -272,6 +365,7 @@ export interface KaraokeMaskPlan {
   maskImage: string
   /** `mask-size`, as a percentage pair. */
   maskSize: string
+  maskOrigin: 'left' | 'right'
   keyframes: Keyframe[]
   timing: KeyframeAnimationOptions
 }
@@ -283,6 +377,7 @@ export interface KaraokeMaskPlan {
  */
 export function buildFadeGradient(
   widthRatio: number,
+  direction: LyricDirection = 'ltr',
   bright = 'rgba(0,0,0,var(--lyric-bright-mask-alpha, 1))',
   dark = 'rgba(0,0,0,var(--lyric-dark-mask-alpha, 1))'
 ): { gradient: string; totalAspect: number } {
@@ -291,7 +386,7 @@ export function buildFadeGradient(
   const leftPos = (1 - widthInTotal) / 2
   return {
     gradient:
-      `linear-gradient(to right,${bright} ${leftPos * 100}%,` +
+      `linear-gradient(to ${direction === 'rtl' ? 'left' : 'right'},${bright} ${leftPos * 100}%,` +
       `${dark} ${(leftPos + widthInTotal) * 100}%)`,
     totalAspect
   }
@@ -322,6 +417,7 @@ export function buildKaraokeMaskPlan(
   wordIndex: number,
   lineStartTime: number,
   lineEndTime: number,
+  direction: LyricDirection = 'ltr',
   fadeWidthRatio = DEFAULT_WORD_FADE_WIDTH
 ): KaraokeMaskPlan | null {
   const word = words[wordIndex]
@@ -334,7 +430,7 @@ export function buildKaraokeMaskPlan(
 
   const fadeWidth = measurement.height * fadeWidthRatio
   const fullWidth = measurement.width + measurement.padding * 2
-  const { gradient, totalAspect } = buildFadeGradient(fadeWidth / fullWidth)
+  const { gradient, totalAspect } = buildFadeGradient(fadeWidth / fullWidth, direction)
 
   const widthBeforeSelf =
     measurements.slice(0, wordIndex).reduce((sum, entry) => sum + entry.width, 0) + fadeWidth
@@ -346,6 +442,8 @@ export function buildKaraokeMaskPlan(
   let timeOffset = 0
   let lastTime = 0
   const frames: Keyframe[] = []
+  const maskPosition = (value: number): string =>
+    `${direction === 'rtl' ? -clampOffset(value) : clampOffset(value)}px 0`
 
   const pushFrame = (): void => {
     const moveOffset = curPos - lastPos
@@ -359,16 +457,16 @@ export function buildKaraokeMaskPlan(
     if (curPos > minOffset && lastPos < minOffset) {
       frames.push({
         offset: lastTime + Math.abs(lastPos - minOffset) * rate,
-        maskPosition: `${clampOffset(lastPos)}px 0`
+        maskPosition: maskPosition(lastPos)
       })
     }
     if (curPos > 0 && lastPos < 0) {
       frames.push({
         offset: lastTime + Math.abs(lastPos) * rate,
-        maskPosition: `${clampOffset(curPos)}px 0`
+        maskPosition: maskPosition(curPos)
       })
     }
-    frames.push({ offset: time, maskPosition: `${clampOffset(curPos)}px 0` })
+    frames.push({ offset: time, maskPosition: maskPosition(curPos) })
     lastPos = curPos
     lastTime = time
   }
@@ -401,10 +499,19 @@ export function buildKaraokeMaskPlan(
     }
   })
 
+  const keyframes = normalizeKeyframes(frames)
+  const finalFrame = keyframes[keyframes.length - 1]
+  if (finalFrame?.offset === 1) {
+    keyframes[keyframes.length - 1] = { ...finalFrame, maskPosition: '0px 0' }
+  } else {
+    keyframes.push({ offset: 1, maskPosition: '0px 0' })
+  }
+
   return {
     maskImage: gradient,
     maskSize: `${totalAspect * 100}% 100%`,
-    keyframes: normalizeKeyframes(frames),
+    maskOrigin: direction === 'rtl' ? 'right' : 'left',
+    keyframes,
     timing: { duration: totalFadeDuration, fill: 'both' }
   }
 }

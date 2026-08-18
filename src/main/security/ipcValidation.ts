@@ -63,5 +63,29 @@ export function normalizeIpcArray<T>(
   mapItem: (item: unknown, index: number) => T | null
 ): T[] {
   if (!Array.isArray(value)) return []
-  return value.slice(0, maxItems).map(mapItem).filter((item): item is T => item !== null)
+  return value
+    .slice(0, maxItems)
+    .map(mapItem)
+    .filter((item): item is T => item !== null)
+}
+
+export const MAX_LOCAL_PATH_LENGTH = 4096
+
+export function isSafeLocalPath(path: unknown): path is string {
+  if (typeof path !== 'string') return false
+  const normalized = path.trim()
+  if (!normalized) return false
+  if (normalized.length > MAX_LOCAL_PATH_LENGTH) return false
+  const hasUrlScheme = /^[a-z][a-z0-9+.-]*:/i.test(normalized)
+  // A drive letter reads as a URL scheme, so both native separators must be accepted here:
+  // Electron dialogs and realpath() return backslashes on Windows.
+  const isWindowsDrivePath = /^[a-zA-Z]:[\\/]/.test(normalized)
+  if (hasUrlScheme && !isWindowsDrivePath) return false
+  return true
+}
+
+export function normalizeLocalPath(path: unknown, field: string): string {
+  const normalized = normalizeIpcString(path, field, MAX_LOCAL_PATH_LENGTH)
+  if (!isSafeLocalPath(normalized)) throw new Error(`${field} is not a safe local path`)
+  return normalized
 }

@@ -4,9 +4,18 @@ import test from 'node:test'
 
 import { compileStyle } from '@vue/compiler-sfc'
 
-const playerBar = readFileSync(new URL('../PlayerBar.vue', import.meta.url), 'utf8')
-const playerBarCss = readFileSync(new URL('./PlayerBar.css', import.meta.url), 'utf8')
-const app = readFileSync(new URL('../../App.vue', import.meta.url), 'utf8')
+// Normalize line endings: these structural assertions use fixed-width windows
+// (e.g. {0,320}) so a CRLF checkout would silently widen every gap and break
+// them even though the attribute order is unchanged.
+const playerBar = readFileSync(new URL('../PlayerBar.vue', import.meta.url), 'utf8').replaceAll(
+  '\r\n',
+  '\n'
+)
+const playerBarCss = readFileSync(new URL('./PlayerBar.css', import.meta.url), 'utf8').replaceAll(
+  '\r\n',
+  '\n'
+)
+const app = readFileSync(new URL('../../App.vue', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
 
 type Specificity = [ids: number, classes: number, types: number]
 
@@ -99,8 +108,26 @@ test('the shell forwards the resolved shape and hidden state as data attributes'
     /'data-te-playbar-hidden':\s*playbarHidden\.value\s*\?\s*'true'\s*:\s*'false'/
   )
   assert.match(playerBar, /class="player-bar-shell"[\s\S]{0,200}v-bind="shellDataAttrs"/)
-  // Hidden is derived, never a raw prop: auto-hide off must always read as present.
+  // The tucked-away half stays derived from the reveal state, never a raw prop.
   assert.match(playerBar, /autoHideActive\.value\s*&&\s*!playbarRevealed\.value/)
+})
+
+test('fully hidden is a separate step that outranks auto-hide', () => {
+  // Distinct attribute, so CSS can treat "tucked away" and "gone" differently.
+  assert.match(playerBar, /'data-te-playbar-visibility':\s*fullyHidden\.value/)
+  // Either way of being hidden sets the flag the geometry consumers read.
+  assert.match(playerBar, /fullyHidden\.value\s*\|\|\s*\(autoHideActive\.value/)
+  // Fully hidden disarms auto-hide, so the pointer listeners never attach.
+  assert.match(playerBar, /props\.autoHide\s*&&\s*!fullyHidden\.value/)
+  // The settings preview must keep showing a bar whatever the live state is.
+  assert.match(
+    playerBar,
+    /fullyHidden\s*=\s*computed\(\(\)\s*=>\s*props\.hiddenBar\s*&&\s*!props\.preview\)/
+  )
+  // `hiddenBar`, not `hidden`: the global attribute would fall through onto the
+  // shell and display:none the element both geometry consumers query.
+  assert.match(playerBar, /hiddenBar\?:\s*boolean/)
+  assert.doesNotMatch(playerBar, /\n\s{4}hidden\?:\s*boolean/)
 })
 
 test('App.vue resolves the shape through the shared policy rather than inline logic', () => {
@@ -108,6 +135,7 @@ test('App.vue resolves the shape through the shared policy rather than inline lo
   assert.match(app, /onPlayingPage:\s*showPlayingPage\.value/)
   assert.match(app, /:mode="playerBarPresentation\.mode"/)
   assert.match(app, /:auto-hide="playerBarPresentation\.autoHide"/)
+  assert.match(app, /:hidden-bar="playerBarPresentation\.hidden"/)
 })
 
 test('the mini shape drops the cover, the inline progress row and the time labels', () => {
@@ -240,6 +268,32 @@ test('the hidden state translates the bar away and stops swallowing pointer inpu
   assert.match(hidden[0], /opacity:\s*0/)
 })
 
+test('fully hidden works on either shape and leaves the tab order', () => {
+  const rule = playerBarCss.match(
+    /\.player-bar-shell\[data-te-playbar-visibility='hidden'\]\s+\.player-bar[^{]*\{[^}]*\}/
+  )
+  assert.ok(rule, 'a fully-hidden rule must exist')
+  // Shape-agnostic: unlike auto-hide it must not require .player-bar-mini.
+  assert.doesNotMatch(rule[0].split('{')[0], /player-bar-mini/)
+  // Repeated class beats the preset theme layouts, same trick as mini geometry.
+  assert.match(rule[0], /\.player-bar\.player-bar\.player-bar/)
+  assert.doesNotMatch(rule[0], /!important/)
+  // opacity alone still lets Tab reach invisible transport buttons.
+  assert.match(rule[0], /visibility:\s*hidden/)
+  assert.match(rule[0], /pointer-events:\s*none/)
+
+  // The shell keeps its box for measurement but must not intercept clicks, in
+  // the default layout and in the custom shell layout that re-asserts `auto`.
+  assert.match(
+    playerBarCss,
+    /\.player-bar-shell\[data-te-playbar-visibility='hidden'\]\s*\{[^}]*pointer-events:\s*none/
+  )
+  assert.match(
+    app,
+    /data-te-shell-layout='custom'\][\s\S]{0,160}\[data-te-playbar-visibility='hidden'\]\s*\{[^}]*pointer-events:\s*none/
+  )
+})
+
 test('the mini rail is hidden by default but keeps its liquid-glass override', () => {
   // `.player-bar-liquid > *:not(.player-bar-warp)` forces position: relative, which
   // would knock an absolutely positioned rail off the bottom border if a future
@@ -255,6 +309,60 @@ test('the mini rail is hidden by default but keeps its liquid-glass override', (
   assert.match(rail[0], /position:\s*absolute/)
   assert.match(rail[0], /pointer-events:\s*auto/)
   assert.match(rail[0], /height:\s*14px/)
+})
+
+/**
+ * A conflict marker committed into a stylesheet is invisible to every other
+ * guard here. postcss's selector parsing is permissive, so once comments are
+ * stripped a stray `<<<<<<< HEAD` simply glues itself onto the next selector
+ * and `compileStyle` still reports zero errors — while a real browser rejects
+ * the selector and drops the whole rule. That is how the mini geometry block
+ * (height, padding, and the transform transition the reveal animates on) went
+ * missing after a merge while every test stayed green.
+ */
+test('stylesheets carry no merge conflict markers and no rule with a garbled selector', () => {
+  const styleRoots = [
+    new URL('./', import.meta.url),
+    new URL('../', import.meta.url),
+    new URL('../../assets/', import.meta.url),
+    new URL('../../assets/theme-layouts/', import.meta.url)
+  ]
+
+  const sheets: { name: string; source: string }[] = []
+  for (const root of styleRoots) {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.css')) continue
+      sheets.push({
+        name: entry.name,
+        source: readFileSync(new URL(entry.name, root), 'utf8')
+      })
+    }
+  }
+  // A silent zero-file glob would make this test vacuously pass.
+  assert.ok(sheets.length >= 2, `expected to find stylesheets, found ${sheets.length}`)
+
+  for (const sheet of sheets) {
+    for (const marker of ['<<<<<<<', '=======', '>>>>>>>']) {
+      const lines = sheet.source
+        .split(/\r?\n/)
+        .map((line, index) => ({ line, number: index + 1 }))
+        .filter(({ line }) => line.startsWith(marker))
+      assert.equal(
+        lines.length,
+        0,
+        `${sheet.name} has a merge conflict marker at line ${lines[0]?.number}: ${lines[0]?.line}`
+      )
+    }
+
+    // Catch the same damage from any other cause: a selector may only hold the
+    // characters these stylesheets legitimately use.
+    for (const rule of parseRules(sheet.source)) {
+      assert.ok(
+        /^[\w\s.#:[\]='"()>+~*,^$|/-]+$/.test(rule.selector),
+        `${sheet.name} has an unparseable selector: ${rule.selector.slice(0, 120)}`
+      )
+    }
+  }
 })
 
 test('mini CSS compiles under scoped mode without leaking rules onto ancestors', () => {

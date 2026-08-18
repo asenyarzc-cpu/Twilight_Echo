@@ -706,7 +706,7 @@ bool AsioBackend::start(RenderCallback callback, OutputEventCallback eventCallba
     if (error) *error = "ASIO 后端尚未打开";
     return false;
   }
-  stopRequested_ = false;
+  stopAndJoinRecoveryWorker();
   {
     std::lock_guard lock(mutex_);
     callback_ = std::move(callback);
@@ -728,7 +728,7 @@ bool AsioBackend::startTyped(
     if (error) *error = "ASIO 后端尚未打开";
     return false;
   }
-  stopRequested_ = false;
+  stopAndJoinRecoveryWorker();
   {
     std::lock_guard lock(mutex_);
     typedCallback_ = std::move(callback);
@@ -739,6 +739,20 @@ bool AsioBackend::startTyped(
     nativeDsdTypedCallbackMissing_ = false;
   }
   return createAndStartHost(error);
+}
+
+void AsioBackend::stopAndJoinRecoveryWorker() {
+  // A device-failure recovery may still be mid-reopen on its own thread; the
+  // render path must not race it for the session/host state. recover() checks
+  // stopRequested_ between every driver step, so the worker exits promptly.
+  {
+    std::lock_guard queueLock(recoveryQueueMutex_);
+    stopRequested_ = true;
+    recoveryRequests_.clear();
+  }
+  recoveryQueueCv_.notify_all();
+  joinRecoveryThread();
+  stopRequested_ = false;
 }
 
 void AsioBackend::stop() {

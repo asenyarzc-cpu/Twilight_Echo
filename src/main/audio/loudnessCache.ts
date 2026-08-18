@@ -3,24 +3,15 @@ import { mkdir, readFile, rm, stat, writeFile } from 'fs/promises'
 import { dirname } from 'path'
 import { isDeepStrictEqual } from 'util'
 import { tryParseJsonWithNestingLimit } from '../security/jsonSafety.ts'
+import type { LoudnessAnalysisResult } from '../../shared/audioEngineTypes.ts'
+
+export type { LoudnessAnalysisResult }
 
 export const LOUDNESS_ANALYSIS_ALGORITHM_VERSION = 1
 export const LOUDNORM_DEFAULT_TARGET_LUFS = -23.0
 export const LOUDNORM_DEFAULT_TRUE_PEAK_CEILING_DB = -1.0
 /** Soft cap on cached identities; oldest analyzedAt entries are evicted first. */
 export const LOUDNESS_ANALYSIS_CACHE_MAX_ENTRIES = 512
-
-export interface LoudnessAnalysisResult {
-  integratedLufs: number
-  truePeakDb: number
-  source: 'analyzed'
-  analyzedAt: string
-  algorithmVersion: number
-  sampleRate?: number
-  channels?: number
-  analyzedFrames?: number
-  available?: boolean
-}
 
 export interface LoudnessAnalysisCacheIdentity {
   filePath: string
@@ -67,7 +58,10 @@ export class LoudnessAnalysisCache {
     return isLoudnessAnalysisResult(result) ? result : null
   }
 
-  async set(identity: LoudnessAnalysisCacheIdentity, analysis: LoudnessAnalysisResult): Promise<void> {
+  async set(
+    identity: LoudnessAnalysisCacheIdentity,
+    analysis: LoudnessAnalysisResult
+  ): Promise<void> {
     await this.enqueueMutation(async () => {
       const file = await this.read()
       file.entries[buildLoudnessAnalysisCacheKey(identity)] = analysis

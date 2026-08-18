@@ -138,6 +138,37 @@
   // ── LRC / YRC Parser ──
   // NetEase lyric/new metadata & prose: {"t":-1,"c":[{"tx":"作词: "},{"tx":"ACO"}]}
   var NETEASE_JSON_LINE_RE = /^\s*\{[\s\S]*"c"\s*:\s*\[[\s\S]*\]\s*\}\s*$/;
+  var VOICE_TAG_RE = /\[te:voice\s+([^\]]+)\]/g;
+
+  function isValidVoiceTag(tag) {
+    var match = /^\[te:voice\s+([^\]]+)\]$/.exec(tag);
+    if (!match) return false;
+    var values = Object.create(null);
+    var fields = match[1].trim().split(/\s+/);
+    for (var i = 0; i < fields.length; i++) {
+      var separator = fields[i].indexOf('=');
+      if (separator <= 0 || separator === fields[i].length - 1) return false;
+      var key = fields[i].slice(0, separator);
+      var value = fields[i].slice(separator + 1);
+      if (!/^(role|lane|speaker|group)$/.test(key) || values[key]) return false;
+      if (!/^(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+$/.test(value)) return false;
+      try {
+        var decoded = decodeURIComponent(value);
+        if (!decoded || decoded.length > 96 || /[\u0000-\u001f\u007f]/.test(decoded)) return false;
+      } catch (e) {
+        return false;
+      }
+      values[key] = value;
+    }
+    return /^(lead|background|harmony)$/.test(values.role || '') &&
+      /^(center|start|end)$/.test(values.lane || '');
+  }
+
+  function stripValidVoiceTag(raw) {
+    return String(raw || '').replace(VOICE_TAG_RE, function (tag) {
+      return isValidVoiceTag(tag) ? '' : tag;
+    });
+  }
 
   function looksLikeYrc(lyrics) {
     return typeof lyrics === 'string' && /^\[\d+,\d+\]/m.test(lyrics) && /\(\d+,\d+,\d+\)/.test(lyrics);
@@ -194,7 +225,8 @@
       }
       if (isRawNeteaseJsonLyricLine(trimmed)) continue;
 
-      var m = lineRe.exec(trimmed);
+      var stripped = stripValidVoiceTag(trimmed);
+      var m = lineRe.exec(stripped);
       if (!m) continue;
       var startMs = parseInt(m[1], 10);
       var rest = m[3] || '';
@@ -279,16 +311,17 @@
       }
       if (isRawNeteaseJsonLyricLine(trimmed)) continue;
 
+      var stripped = stripValidVoiceTag(trimmed);
       var timestamps = [];
       var match;
       lineRe.lastIndex = 0;
-      while ((match = lineRe.exec(trimmed)) !== null) {
+      while ((match = lineRe.exec(stripped)) !== null) {
         timestamps.push(parseTimestampParts(match[1], match[2], match[3]));
       }
-      var enhanced = parseEnhancedWords(trimmed);
+      var enhanced = parseEnhancedWords(stripped);
       var text = enhanced
         ? enhanced.text
-        : trimmed.replace(lineRe, '').replace(/<[^>]+>/g, '').trim();
+        : stripped.replace(lineRe, '').replace(/<[^>]+>/g, '').trim();
       var words = enhanced ? enhanced.words : null;
       if (!text || timestamps.length === 0) continue;
       for (var ti = 0; ti < timestamps.length; ti++) {
@@ -309,7 +342,7 @@
         var jsonLine = parseNeteaseJsonLyricLine(line);
         if (jsonLine) return jsonLine.text;
         if (isRawNeteaseJsonLyricLine(line)) return '';
-        return line.replace(timeTagRe, '').replace(/<[^>]+>/g, '').trim();
+        return stripValidVoiceTag(line).replace(timeTagRe, '').replace(/<[^>]+>/g, '').trim();
       })
       .filter(function (line) { return line.length > 0 && !metadataTagRe.test(line); });
   }

@@ -1,3 +1,48 @@
+import { randomUUID } from 'crypto'
+import type { TwilightMediaProviderMethod } from './types.ts'
+
+export const PLUGIN_RPC_IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
+const IDEMPOTENT_PROVIDER_WRITE_METHODS = new Set<TwilightMediaProviderMethod>([
+  'likeTrack',
+  'followArtist',
+  'followUser',
+  'createPlaylist',
+  'deletePlaylist',
+  'addTracksToPlaylist',
+  'removeTracksFromPlaylist',
+  'completeCloudUpload',
+  'createDownload'
+])
+
+export function resolveProviderIdempotencyKey(
+  method: TwilightMediaProviderMethod,
+  suppliedKey: string | undefined
+): string | undefined {
+  if (!IDEMPOTENT_PROVIDER_WRITE_METHODS.has(method)) return undefined
+  const key = suppliedKey?.trim() || randomUUID()
+  if (!PLUGIN_RPC_IDEMPOTENCY_KEY_PATTERN.test(key)) {
+    throw new Error('Provider idempotency key is invalid.')
+  }
+  return key
+}
+
+export function normalizeInternalNcmRequestOptions(raw: unknown): { idempotencyKey?: string } {
+  if (raw == null) return {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('ncmRequest options 必须是对象')
+  }
+  const record = raw as Record<string, unknown>
+  if (Object.keys(record).some((key) => key !== 'idempotencyKey')) {
+    throw new Error('ncmRequest options 包含不支持的字段')
+  }
+  const key = record.idempotencyKey
+  if (key == null) return {}
+  if (typeof key !== 'string' || !PLUGIN_RPC_IDEMPOTENCY_KEY_PATTERN.test(key)) {
+    throw new Error('ncmRequest idempotency key 无效')
+  }
+  return { idempotencyKey: key }
+}
+
 export const DEFAULT_MAX_PLUGIN_RPC_CONCURRENCY = 4
 export const DEFAULT_MAX_PLUGIN_RPC_QUEUE = 32
 export const DEFAULT_PLUGIN_RPC_CIRCUIT_FAILURE_THRESHOLD = 3
@@ -31,9 +76,7 @@ export interface PluginRpcRequestOptions<TMetadata> {
   idempotency?: PluginRpcIdempotency
 }
 
-export type PluginRpcResult =
-  | { ok: true; value: unknown }
-  | { ok: false; error: string }
+export type PluginRpcResult = { ok: true; value: unknown } | { ok: false; error: string }
 
 export type PluginRpcCompletion<TMetadata> =
   | { status: 'settled'; metadata: TMetadata; result: PluginRpcResult }
@@ -166,19 +209,25 @@ export class PluginRpcCoordinator {
   }
 
   request<T, TMetadata = unknown>(options: PluginRpcRequestOptions<TMetadata>): Promise<T> {
-    if (!options.requestId.trim()) return Promise.reject(new Error('Plugin RPC request id is required.'))
-    if (!options.pluginId.trim()) return Promise.reject(new Error('Plugin RPC plugin id is required.'))
+    if (!options.requestId.trim())
+      return Promise.reject(new Error('Plugin RPC request id is required.'))
+    if (!options.pluginId.trim())
+      return Promise.reject(new Error('Plugin RPC plugin id is required.'))
     if (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0) {
       return Promise.reject(new Error('Plugin RPC timeout must be a positive number.'))
     }
     if (options.signal?.aborted) return Promise.reject(abortError(options.signal))
     this.pruneExpiredEntries()
     if (this.pendingById.has(options.requestId)) {
-      return Promise.reject(new Error(`Plugin RPC request id is already pending: ${options.requestId}`))
+      return Promise.reject(
+        new Error(`Plugin RPC request id is already pending: ${options.requestId}`)
+      )
     }
     if (this.lateResults.has(options.requestId)) {
       return Promise.reject(
-        new Error(`Plugin RPC request id is quarantined after a prior settlement: ${options.requestId}`)
+        new Error(
+          `Plugin RPC request id is quarantined after a prior settlement: ${options.requestId}`
+        )
       )
     }
     const idempotency = options.idempotency ? this.prepareIdempotency<T>(options.idempotency) : null
@@ -375,7 +424,15 @@ export class PluginRpcCoordinator {
     pending: PendingPluginRpc<unknown>,
     outcome:
       | { kind: 'success'; value: unknown }
-      | { kind: 'remote-error' | 'timeout-active' | 'timeout-queued' | 'cancelled-active' | 'cancelled-queued'; error: Error }
+      | {
+          kind:
+            | 'remote-error'
+            | 'timeout-active'
+            | 'timeout-queued'
+            | 'cancelled-active'
+            | 'cancelled-queued'
+          error: Error
+        }
   ): void {
     if (pending.settled) return
     pending.settled = true
@@ -463,7 +520,11 @@ export class PluginRpcCoordinator {
     }
   }
 
-  private reserveCircuitProbe(state: PluginRpcState, pluginId: string, requestId: string): Error | null {
+  private reserveCircuitProbe(
+    state: PluginRpcState,
+    pluginId: string,
+    requestId: string
+  ): Error | null {
     const openUntil = state.circuit.openUntil
     if (openUntil === null) return null
     if (this.now() < openUntil) return this.circuitError(pluginId, openUntil)
@@ -474,7 +535,10 @@ export class PluginRpcCoordinator {
     return null
   }
 
-  private circuitBlocksQueuedRequest(state: PluginRpcState, pending: PendingPluginRpc<unknown>): boolean {
+  private circuitBlocksQueuedRequest(
+    state: PluginRpcState,
+    pending: PendingPluginRpc<unknown>
+  ): boolean {
     const openUntil = state.circuit.openUntil
     if (openUntil === null) return false
     if (pending.circuitProbe) return this.now() < openUntil
@@ -490,9 +554,10 @@ export class PluginRpcCoordinator {
     if (state.circuit.probeRequestId === requestId) state.circuit.probeRequestId = null
   }
 
-  private prepareIdempotency<T>(
-    idempotency: PluginRpcIdempotency
-  ): { existing?: Promise<T>; record?: { cacheKey: string; fingerprint: string } } {
+  private prepareIdempotency<T>(idempotency: PluginRpcIdempotency): {
+    existing?: Promise<T>
+    record?: { cacheKey: string; fingerprint: string }
+  } {
     if (!idempotency.scope || !idempotency.key || !idempotency.fingerprint) {
       return { existing: Promise.reject(new Error('Plugin RPC idempotency data is incomplete.')) }
     }

@@ -4,8 +4,8 @@ import test from 'node:test'
 import type { AudioProcessingSettings } from './audioEngineManager'
 
 const { buildEffectiveAudioProcessingSettings } = (await import(
-  new URL('./audioProcessingEffective.ts', import.meta.url).href
-)) as typeof import('./audioProcessingEffective.ts')
+  new URL('./audio/audioProcessingEffective.ts', import.meta.url).href
+)) as typeof import('./audio/audioProcessingEffective.ts')
 
 test('effective processing keeps manual EQ unchanged when OPRA is disabled', () => {
   const manual: Partial<AudioProcessingSettings> = {

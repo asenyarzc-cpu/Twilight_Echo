@@ -1827,7 +1827,21 @@ void TwilightAudioEngine::clockLoop() {
       std::optional<QueueItem> upcoming;
       {
         std::lock_guard lock(mutex_);
-        queue_.advanceAfterEnd();
+        // next() advances the queue itself and then swallows the
+        // track-started flag. If this clock tick observes the flag inside that
+        // window instead, the queue is already on the started item and
+        // advancing again would skip a track. Compare by item id; fall back to
+        // source + CUE identity when the host supplied no id.
+        const auto current = queue_.current();
+        const bool queueAlreadyOnStartedItem =
+            current.has_value() && startedItem.source == current->source &&
+            (!startedItem.id.empty()
+                 ? startedItem.id == current->id
+                 : startedItem.cueStartSeconds == current->cueStartSeconds &&
+                       startedItem.cueEndSeconds == current->cueEndSeconds);
+        if (!queueAlreadyOnStartedItem) {
+          queue_.advanceAfterEnd();
+        }
         applyPipelineStatusLocked(pipelineStatus);
         info_.queueIndex = queue_.currentIndex();
         info_.playMode = queue_.playModeId();

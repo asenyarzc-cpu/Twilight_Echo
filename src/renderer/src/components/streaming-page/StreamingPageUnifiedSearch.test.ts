@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { compileStyle, parse } from '@vue/compiler-sfc'
+import { compileStyle } from '@vue/compiler-sfc'
 import type { LocalLibraryRemoveResult } from '../../../../shared/localLibrary.ts'
 import type { Track } from '../../types/music.ts'
 
@@ -34,11 +34,7 @@ test('streaming page exposes unified song search beyond the NetEase-only surface
 test('streaming detail, social, and HiFi surfaces compile working dark-theme selectors', () => {
   const detailStyles = readFileSync(new URL('./StreamingDetailStage.css', import.meta.url), 'utf8')
   const socialStyles = readFileSync(new URL('./StreamingSocialStage.css', import.meta.url), 'utf8')
-  const hifiSource = readFileSync(new URL('../player-bar/HiFiSidebar.vue', import.meta.url), 'utf8')
-  const hifiSfc = parse(hifiSource, { filename: 'HiFiSidebar.vue' })
-  const hifiStyle = hifiSfc.descriptor.styles.find((style) => style.scoped)
-
-  assert.ok(hifiStyle)
+  const hifiSource = readFileSync(new URL('../player-bar/HiFiSidebar.css', import.meta.url), 'utf8')
 
   const detailCode = compileStyle({
     source: detailStyles,
@@ -53,8 +49,8 @@ test('streaming detail, social, and HiFi surfaces compile working dark-theme sel
     scoped: true
   }).code
   const hifiCode = compileStyle({
-    source: hifiStyle.content,
-    filename: 'HiFiSidebar.vue',
+    source: hifiSource,
+    filename: 'HiFiSidebar.css',
     id: 'data-v-hifi-dark',
     scoped: true
   }).code

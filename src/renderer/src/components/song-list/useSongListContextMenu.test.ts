@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { computed, effectScope } from 'vue'
+import type { Track } from '../../types/music'
 
 const { useSongListContextMenu } = (await import(
   new URL('./useSongListContextMenu.ts', import.meta.url).href
@@ -29,12 +30,12 @@ const localTrack = {
 
 function createMenu(
   overrides: {
-    rematchTrack?: (track: typeof providerTrack) => Promise<void> | void
-    rematchMetadata?: (track: typeof providerTrack) => Promise<void> | void
-    clearMetadataMatch?: (track: typeof providerTrack) => Promise<void> | void
-    playNext?: (track: typeof providerTrack) => void
-    viewArtist?: (track: typeof providerTrack) => void
-    viewAlbum?: (track: typeof providerTrack) => void
+    rematchTrack?: (track: Track) => Promise<void> | void
+    rematchMetadata?: (track: Track) => Promise<void> | void
+    clearMetadataMatch?: (track: Track) => Promise<void> | void
+    playNext?: (track: Track) => void
+    viewArtist?: (track: Track) => void
+    viewAlbum?: (track: Track) => void
   } = {}
 ): ReturnType<typeof useSongListContextMenu> {
   ;(globalThis as Record<string, unknown>).window = {

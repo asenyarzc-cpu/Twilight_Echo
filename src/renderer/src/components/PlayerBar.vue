@@ -14,6 +14,11 @@ import {
   resolvePointerOffset,
   staticPointerCssVariables
 } from '../utils/liquidGlassPointer.ts'
+import {
+  LIQUID_GLASS_PRESS_TARGET_SCALE,
+  LiquidGlassPressController,
+  liquidGlassPressCssVariables
+} from '../utils/liquidGlassPress.ts'
 import { useMediaProviders } from '../providers'
 import { normalizeAccentColor } from '../utils/colorExtractor'
 import { useSmoothedValue } from '../utils/useSmoothedValue'
@@ -55,10 +60,23 @@ const props = withDefaults(
     mode?: PlayerBarMode
     /** Hide until the pointer approaches the bottom edge. Mini shape only. */
     autoHide?: boolean
+    /**
+     * Fully hidden: no reveal gesture at all, either shape. Named `hiddenBar`
+     * rather than `hidden` so Vue does not fall the global `hidden` attribute
+     * through onto the shell, which would `display: none` the element the
+     * geometry consumers query.
+     */
+    hiddenBar?: boolean
     /** Lyrics page (now-playing) is open; the mini lyrics toggle reflects it. */
     playingPageOpen?: boolean
   }>(),
-  { preview: false, mode: 'standard', autoHide: false, playingPageOpen: false }
+  {
+    preview: false,
+    mode: 'standard',
+    autoHide: false,
+    hiddenBar: false,
+    playingPageOpen: false
+  }
 )
 
 const isMini = computed(() => props.mode === 'mini')
@@ -165,7 +183,10 @@ const playerBarButtons = computed(() =>
   uiContributions.value.filter((contribution) => contribution.kind === 'playerBarButton')
 )
 const { settings, updateSettings } = useSettingsStore()
-const liquidGlassActive = computed(() => settings.value.surfaceMaterial === 'liquidGlass')
+const liquidGlassActive = computed(
+  () =>
+    settings.value.surfaceMaterial === 'liquidGlass' || settings.value.liquidGlass.playbarEnabled
+)
 const lyricsManagement = useLyricsManagement()
 const desktopLyricsOn = ref(settings.value.desktopLyrics.enabled)
 const miniPlayerOpening = ref(false)
@@ -591,7 +612,12 @@ function dismissAllFloatingPanels(): void {
 
 useEscapeToClose(floatingPanelOpen, dismissAllFloatingPanels)
 
-const autoHideActive = computed(() => props.autoHide && !props.preview)
+/** The settings preview always shows the bar, whatever the live state resolves to. */
+const fullyHidden = computed(() => props.hiddenBar && !props.preview)
+// Fully hidden wins, so the pointer listeners never arm for a bar that has no
+// reveal gesture. `resolvePlayerBarPresentation` already keeps the two flags
+// exclusive; this holds even if a caller forwards both.
+const autoHideActive = computed(() => props.autoHide && !fullyHidden.value && !props.preview)
 
 const {
   favoriteButtonVisible,
@@ -1150,6 +1176,84 @@ function onGlassPointerMove(event: PointerEvent): void {
   glassPointerFrames.schedule({ x: event.clientX, y: event.clientY })
 }
 
+function setGlassPressOrigin(event: PointerEvent): void {
+  const element = playerBarRef.value
+  if (!element || !liquidGlassActive.value) return
+  const rect = element.getBoundingClientRect()
+  element.style.setProperty('--te-lg-press-x', `${event.clientX - rect.left}px`)
+  element.style.setProperty('--te-lg-press-y', `${event.clientY - rect.top}px`)
+  if (event.button !== 0) return
+  stopGlassPress()
+  glassPress.press()
+  window.addEventListener('pointerup', onGlassPressReleaseEvent, { passive: true })
+  window.addEventListener('pointercancel', onGlassPressReleaseEvent, { passive: true })
+  if (!motionAllowsPointer()) {
+    writeGlassPressVariables(LIQUID_GLASS_PRESS_TARGET_SCALE)
+    return
+  }
+  glassPressLastTime = 0
+  glassPressFrame = requestAnimationFrame(tickGlassPress)
+}
+
+/* Press "squish": the bar compresses toward the press point on the shared press
+   spring and relaxes on release. One rAF loop runs while a press is in flight;
+   the release listeners are window-level so a press that ends off-bar still
+   settles. */
+
+const glassPress = new LiquidGlassPressController()
+let glassPressFrame: number | null = null
+let glassPressLastTime = 0
+
+function writeGlassPressVariables(scale: number): void {
+  const element = playerBarRef.value
+  if (!element) return
+  for (const [name, value] of Object.entries(liquidGlassPressCssVariables(scale))) {
+    if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value)
+  }
+}
+
+function tickGlassPress(now: number): void {
+  glassPressFrame = null
+  const step =
+    glassPressLastTime > 0 ? Math.min(0.05, (now - glassPressLastTime) / 1000) : 1 / 60
+  glassPressLastTime = now
+  const state = glassPress.update(step)
+  writeGlassPressVariables(state.scale)
+  if (state.settled && !glassPress.isPressed()) {
+    stopGlassPress()
+    return
+  }
+  if (!state.settled) glassPressFrame = requestAnimationFrame(tickGlassPress)
+}
+
+function stopGlassPress(): void {
+  if (glassPressFrame !== null) {
+    cancelAnimationFrame(glassPressFrame)
+    glassPressFrame = null
+  }
+  glassPressLastTime = 0
+  const element = playerBarRef.value
+  if (element) {
+    element.style.removeProperty('--te-lg-press-scale')
+    element.style.removeProperty('--te-lg-press-glow')
+  }
+}
+
+function onGlassPressReleaseEvent(): void {
+  window.removeEventListener('pointerup', onGlassPressReleaseEvent)
+  window.removeEventListener('pointercancel', onGlassPressReleaseEvent)
+  if (!glassPress.isPressed()) return
+  glassPress.release()
+  if (!motionAllowsPointer()) {
+    stopGlassPress()
+    return
+  }
+  if (glassPressFrame === null) {
+    glassPressLastTime = 0
+    glassPressFrame = requestAnimationFrame(tickGlassPress)
+  }
+}
+
 function onGlassPointerLeave(): void {
   if (!glassPointerEnabled || !glassPointerOverBar) return
   resetGlassPointer()
@@ -1202,17 +1306,34 @@ const {
   barRef: playerBarRef
 })
 
-const playbarHidden = computed(() => autoHideActive.value && !playbarRevealed.value)
+/**
+ * Both features want the bar's pointerleave: auto-hide arms its hide timer, and
+ * liquid glass releases the refraction offset. Neither reads the event, so the
+ * order does not matter -- they just both have to run.
+ */
+function onBarPointerLeaveWithGlass(): void {
+  onBarPointerLeave()
+  onGlassPointerLeave()
+}
+
+const playbarHidden = computed(
+  () => fullyHidden.value || (autoHideActive.value && !playbarRevealed.value)
+)
 
 /**
  * Surface the resolved state on the shell. The two geometry consumers
  * (side-menu clearance, now-playing lyric centering) measure `.player-bar-shell`
  * and a transformed bar keeps its layout height, so they need this to tell a
  * hidden bar from a present one.
+ *
+ * `data-te-playbar-visibility` separates the two ways of being hidden: auto-hide
+ * tucks the bar away behind a transform it can slide back from, while `hidden`
+ * takes it out of hit-testing and the tab order entirely.
  */
 const shellDataAttrs = computed(() => ({
   'data-te-playbar-mode': props.mode,
-  'data-te-playbar-hidden': playbarHidden.value ? 'true' : 'false'
+  'data-te-playbar-hidden': playbarHidden.value ? 'true' : 'false',
+  'data-te-playbar-visibility': fullyHidden.value ? 'hidden' : 'auto'
 }))
 
 // A track change or play/pause is feedback the user asked for; surface it briefly
@@ -1230,6 +1351,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   glassPointerEnabled = false
   resetGlassPointer()
+  window.removeEventListener('pointerup', onGlassPressReleaseEvent)
+  window.removeEventListener('pointercancel', onGlassPressReleaseEvent)
+  glassPress.reset()
+  stopGlassPress()
 })
 </script>
 
@@ -1404,13 +1529,9 @@ onBeforeUnmount(() => {
         '--play-button-color': playButtonColor
       }"
       @pointerenter="onBarPointerEnter"
+      @pointerdown="setGlassPressOrigin"
       @pointermove="onGlassPointerMove"
-      @pointerleave="
-        (e) => {
-          onBarPointerLeave(e)
-          onGlassPointerLeave()
-        }
-      "
+      @pointerleave="onBarPointerLeaveWithGlass"
       @focusin="onBarFocusIn"
       @focusout="onBarFocusOut"
     >

@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/asenyarzc-cpu/Twilight_Echo/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/asenyarzc-cpu/Twilight_Echo?display_name=tag&style=flat-square" /></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%2F%2011-2563eb?style=flat-square&logo=windows11&logoColor=white" />
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.5-0f766e?style=flat-square" />
+  <img alt="Version" src="https://img.shields.io/badge/version-1.1.4-0f766e?style=flat-square" />
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-64748b?style=flat-square" /></a>
 </p>
 
@@ -183,7 +183,7 @@ Twilight Echo 希望把散落在硬盘、歌单和不同音乐服务里的收藏
 
 当前 Windows 安装包由个人开发者发布，**没有商业代码签名证书**，因此 Windows SmartScreen 可能显示“未知发布者”。请只从本项目的 GitHub Releases 下载，并核对发布页提供的 SHA-256。可在 PowerShell 中运行：
 
-<pre><code>Get-FileHash ./TwilightEcho-1.0.5-setup.exe -Algorithm SHA256</code></pre>
+<pre><code>Get-FileHash ./TwilightEcho-1.1.4-setup.exe -Algorithm SHA256</code></pre>
 
 项目发布检查仍会验证安装包品牌信息、依赖闭包、原生二进制剥离、体积预算和 SHA-256 生成；代码签名不属于个人项目的发布门槛。
 

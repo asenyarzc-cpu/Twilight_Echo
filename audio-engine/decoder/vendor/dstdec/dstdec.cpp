@@ -168,7 +168,10 @@ bool readMap(BitReader& bits, Table* table, std::array<unsigned, kDstMaxChannels
   if (!bits.getBit(&firstBit, error)) return false;
   if (!firstBit) {
     for (int ch = 1; ch < channels; ++ch) {
-      const unsigned bitCount = static_cast<unsigned>(std::bit_width(table->elements)) + 1U;
+      // FFmpeg upstream read_map: bits = av_log2(elements) + 1 == bit_width(elements).
+      // The extra +1 shifted every per-channel map entry by one bit and broke
+      // decoding of stereo/multichannel DST frames that use per-channel maps.
+      const unsigned bitCount = static_cast<unsigned>(std::bit_width(table->elements));
       unsigned value = 0;
       if (!bits.getBits(bitCount, &value, error)) return false;
       if (value == table->elements) {

@@ -263,7 +263,10 @@ bool parseTwilightAreaToc(
       bool validTable = frameCount > 0;
       for (uint32_t frameIndex = 0; frameIndex < frameCount; ++frameIndex) {
         const uint32_t frameSize = readLe32(bytes.data() + offset + 16 + frameIndex * 4);
-        validTable = validTable && frameSize > 0;
+        // Frame sizes come from the file and drive the decode read buffer.
+        // Entries beyond the Scarletbook DST frame ceiling are corrupt or
+        // hostile: reject the whole table rather than allocating for it.
+        validTable = validTable && frameSize > 0 && frameSize <= sacd::kScarletbookMaxDstFrameBytes;
         frameBytes += frameSize;
         trackIt->dstFrameSizes.push_back(frameSize);
       }
@@ -831,6 +834,12 @@ size_t SacdIsoDemuxer::readDstBytes(const SacdIsoTrackInfo& track, uint8_t* outp
       if (readSize == 0 || readSize > remaining) {
         impl_->eof = true;
         break;
+      }
+      // Defense in depth: the table entry controls the file.read length below.
+      // Never let it exceed the scratch buffer it lands in — grow the scratch
+      // (entries are capped at kScarletbookMaxDstFrameBytes during parsing).
+      if (readSize > impl_->compressedFrameBuffer.size()) {
+        sacd::resizeByteScratchForOverwrite(impl_->compressedFrameBuffer, readSize);
       }
     }
     if (!impl_->file.seekg(static_cast<std::streamoff>(track.dataOffset + impl_->dstCompressedOffset), std::ios::beg) ||

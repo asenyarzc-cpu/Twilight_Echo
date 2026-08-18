@@ -1,14 +1,14 @@
-﻿# Twilight Echo 技术文档
+# Twilight Echo 技术文档
 
 本文档面向 Twilight Echo 维护者，说明仓库结构、运行架构、关键数据流、性能约束和验证命令。插件系统的权威契约以 [twilight-echo-plugin-spec.md](./twilight-echo-plugin-spec.md) 与 [twilight-echo-plugin-plan.md](./twilight-echo-plugin-plan.md) 为准；本文只描述 app 仓库如何接入和承载插件能力。
 
 ## 技术栈
 
-Twilight Echo 是 Electron + Vue 3 + TypeScript 应用，使用 electron-vite 构建，electron-builder 打包。当前包信息为 `TwilightEcho@1.0.5`，许可证为 Apache-2.0。
+Twilight Echo 是 Electron + Vue 3 + TypeScript 应用，使用 electron-vite 构建，electron-builder 打包。当前包信息为 `TwilightEcho@1.1.4`，许可证为 Apache-2.0。
 
 核心依赖：
 
-- Electron `^39.2.6`
+- Electron `^43.0.0`
 - Vue `^3.5.25`
 - TypeScript `^5.9.3`
 - electron-vite `^5.0.0`

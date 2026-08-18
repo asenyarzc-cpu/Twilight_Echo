@@ -110,3 +110,28 @@ test('searchLocalStreamingArtists maps local library items to provider summaries
     { id: 'Luna Sea', name: 'Luna Sea', picUrl: null, musicSize: 8 }
   ])
 })
+
+test('song search blobs do not match across field boundaries', () => {
+  const tracks = [track('x', { title: 'Foo', artist: 'Bar', album: 'Baz' })]
+  assert.equal(searchLocalStreamingSongs(tracks, 'obar').total, 0)
+  assert.equal(searchLocalStreamingSongs(tracks, 'foo').total, 1)
+  assert.equal(searchLocalStreamingSongs(tracks, 'bar').total, 1)
+})
+
+test('song search reuses normalized blobs across queries on 20k tracks', () => {
+  const tracks = Array.from({ length: 20000 }, (_, index) =>
+    track(String(index), {
+      title: `Song ${index}`,
+      artist: `Artist ${index % 500}`,
+      album: `Album ${index % 1000}`
+    })
+  )
+  searchLocalStreamingSongs(tracks, 'song 19999')
+
+  const start = performance.now()
+  const result = searchLocalStreamingSongs(tracks, 'song 19')
+  const elapsed = performance.now() - start
+
+  assert.ok(elapsed < 50, `warm blob search took ${elapsed.toFixed(2)}ms, expected < 50ms`)
+  assert.ok(result.total > 0)
+})

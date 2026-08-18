@@ -476,7 +476,7 @@ test('store cleanup: clearTracks cancels pending scheduled rebuild', async () =>
   store.clearTracks()
 
   // Let microtasks flush — the cancelled microtask should be a no-op
-  await new Promise((resolve) => queueMicrotask(resolve))
+  await new Promise<void>((resolve) => queueMicrotask(resolve))
 
   assert.equal(
     store.getRebuildCount(),
@@ -973,6 +973,12 @@ test('scan root folders aggregate tracks from nested directories at path boundar
       },
       {
         ...generateMockTracks(1)[0],
+        id: 'deep-track',
+        filePath: 'C:\\music\\nested\\deep\\song.flac',
+        dir: 'C:\\music\\nested\\deep'
+      },
+      {
+        ...generateMockTracks(1)[0],
         id: 'outside-track',
         filePath: 'C:\\music-other\\outside.flac',
         dir: 'C:\\music-other'
@@ -980,20 +986,26 @@ test('scan root folders aggregate tracks from nested directories at path boundar
     ],
     { deferRebuild: false }
   )
-  store.syncFolders(['C:\\music', 'C:\\music\\nested'])
+  store.syncFolders(['C:\\music'])
   store.flushRebuild()
 
   assert.deepEqual(
     store.folders.value
       .find((folder) => folder.path === 'C:\\music')
       ?.tracks.map((track) => track.id),
-    ['root-track', 'nested-track']
+    ['root-track', 'nested-track', 'deep-track']
   )
   assert.deepEqual(
     store.folders.value
       .find((folder) => folder.path === 'C:\\music\\nested')
       ?.tracks.map((track) => track.id),
-    ['nested-track']
+    ['nested-track', 'deep-track']
+  )
+  assert.deepEqual(
+    store.folders.value
+      .find((folder) => folder.path === 'C:\\music\\nested\\deep')
+      ?.tracks.map((track) => track.id),
+    ['deep-track']
   )
   assert.equal(
     store.folders.value.some((folder) => folder.path === 'C:\\music-other'),
@@ -1306,7 +1318,7 @@ test('a save scheduled during deferred removal persists metadata against the ret
     resolveRemoval = resolve
   })
   const savedSnapshots: Array<{ revision: number; tracks: MockTrack[]; folders: string[] }> = []
-  let capturedRequest: Parameters<typeof createRemovalResult>[0] | null = null
+  let capturedRequest!: Parameters<typeof createRemovalResult>[0] | null
 
   ;(globalThis as Record<string, unknown>).window = {
     api: {
@@ -1574,9 +1586,9 @@ test('deferred exclusion restore rebases concurrent metadata and add even when s
   }>((resolve) => {
     resolveRestore = resolve
   })
-  let capturedRestoreRequest: {
+  let capturedRestoreRequest!: {
     library: { revision: number; tracks: MockTrack[]; folders: string[] }
-  } | null = null
+  } | null
   const saveSnapshots: Array<{ revision: number; tracks: MockTrack[] }> = []
 
   ;(globalThis as Record<string, unknown>).window = {
@@ -2004,7 +2016,7 @@ test('loadLibrary enriches missing local metadata from provider search without c
   saveCallCount = 0
   scanCallCount = 0
   let providerSearchCalls = 0
-  let releaseProviderSearch: ((value: unknown) => void) | null = null
+  let releaseProviderSearch!: ((value: unknown) => void) | null
   let markProviderSearchStarted: (() => void) | null = null
   const providerSearchStarted = new Promise<void>((resolve) => {
     markProviderSearchStarted = resolve
@@ -2361,7 +2373,7 @@ const vue = await import('vue')
 
 test('dashboard memo: byIdMap not rebuilt when only listeningStats changes', () => {
   const tracks = vue.shallowRef(generateMockTracks(100))
-  const stats = vue.ref({ plays: 0 })
+  const stats = vue.ref<{ plays: number; duration?: number }>({ plays: 0 })
 
   let mapBuildCount = 0
   const byIdMap = vue.computed(() => {

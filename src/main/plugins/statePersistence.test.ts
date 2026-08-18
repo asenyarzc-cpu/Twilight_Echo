@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import {
+  cloneStateRecord,
   PluginStatePersistence,
   pluginStateBackupPath,
   pluginStateCorruptPath
@@ -21,6 +22,23 @@ function state(activeVersion: string): PluginStateFile {
     }
   }
 }
+
+test('cloneStateRecord copies native DSP parameters without sharing mutation', () => {
+  const record = state('1.0.0')['com.example.transactional']
+  record.nativeDspParameters = { gain: 1 }
+  const cloned = cloneStateRecord(record)
+  assert.deepEqual(cloned, {
+    enabled: true,
+    installedAt: '2026-07-16T08:00:00.000Z',
+    updatedAt: '2026-07-16T08:00:00.000Z',
+    source: 'tep',
+    activeVersion: '1.0.0',
+    nativeDspParameters: { gain: 1 }
+  })
+  cloned.nativeDspParameters!.gain = 2
+  assert.equal(record.nativeDspParameters.gain, 1)
+  assert.equal(cloneStateRecord(undefined), undefined)
+})
 
 test('plugin state writes serialize snapshots and retain a durable previous version', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'twilight-plugin-state-queue-'))
@@ -120,8 +138,14 @@ test('plugin state corruption without a valid backup is visible instead of silen
   assert.match(loaded.warning, /no valid backup/i)
   assert.deepEqual(
     loaded.corruptCopyPaths.sort(),
-    [pluginStateCorruptPath(filePath), pluginStateCorruptPath(pluginStateBackupPath(filePath))].sort()
+    [
+      pluginStateCorruptPath(filePath),
+      pluginStateCorruptPath(pluginStateBackupPath(filePath))
+    ].sort()
   )
   assert.equal(await readFile(pluginStateCorruptPath(filePath), 'utf-8'), '{not-json')
-  assert.equal(await readFile(pluginStateCorruptPath(pluginStateBackupPath(filePath)), 'utf-8'), '[]')
+  assert.equal(
+    await readFile(pluginStateCorruptPath(pluginStateBackupPath(filePath)), 'utf-8'),
+    '[]'
+  )
 })

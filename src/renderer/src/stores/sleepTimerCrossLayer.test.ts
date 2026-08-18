@@ -42,7 +42,7 @@ test('one main-process trigger yields one stop through preload, controller, and 
   timer.boundary('queueEnd')
 
   assert.equal(stops, 1)
-  assert.equal(state?.triggered, true)
+  assert.equal((state as SleepTimerState | null)?.triggered, true)
   // The terminal status follows the trigger and must remain passive.
   listeners.get('sleepTimer:status')?.({}, state)
   assert.equal(stops, 1)

@@ -21,11 +21,12 @@ const DEFAULT_MASS = 1
 const DEFAULT_DAMPING = 10
 const DEFAULT_STIFFNESS = 100
 
-/** Vertical travel. Underdamped (zeta ~= 0.833) so lines overshoot and settle back. */
+/** Vertical travel settles at its destination without reversing through it. */
 export const LYRIC_POS_Y_SPRING: Partial<LyricSpringParams> = {
   mass: 0.9,
   damping: 15,
-  stiffness: 90
+  stiffness: 90,
+  soft: true
 }
 
 /**

@@ -1,4 +1,4 @@
-﻿/* ===== Shell ===== */
+/* ===== Shell ===== */
 .player-bar-shell {
   position: fixed;
   bottom: 14px;
@@ -6,19 +6,8 @@
   right: 18px;
   z-index: 1002;
   pointer-events: none;
-  will-change: left, translate, opacity;
-  opacity: 0.15;
-  translate: 0 12px;
-  transition:
-    left 0.32s var(--te-ease-soft),
-    opacity 0.2s ease,
-    translate 0.24s var(--te-ease-spring, ease-out);
-}
-
-.player-bar-shell:hover,
-.player-bar-shell:focus-within {
-  opacity: 1;
-  translate: 0 0;
+  will-change: left;
+  transition: left 0.32s var(--te-ease-soft);
 }
 
 .player-bar-shell.menu-open {
@@ -3516,15 +3505,19 @@ html[data-theme='dark'] .player-bar:not(.player-bar-glass) .player-cover-placeho
 
 .player-bar-liquid {
   --te-lg-sheen-rgb: 255, 255, 255;
-  --te-lg-surface-rgb: 255, 255, 255;
-  --te-lg-shade-rgb: 0, 0, 0;
-  --te-lg-drop-rgb: 15, 23, 42;
+  --te-lg-surface-rgb: var(--te-lg-context-rgb, 241, 245, 249);
+  --te-lg-shade-rgb: var(--te-lg-context-label-rgb, 15, 23, 42);
+  --te-lg-drop-rgb: var(--te-lg-context-label-rgb, 15, 23, 42);
+  /* Color form of the shade base for the color-mix rim light below; defined once
+     here so the gradient layers need no literal color functions. */
+  --te-lg-shade: var(--te-lg-context-label, rgb(15 23 42));
   --te-lg-rim-strength: 0.55;
   --te-lg-top-wash-alpha: 0.11;
   --te-lg-bottom-density-alpha: 0.1;
   --te-lg-shade-alpha: 0.08;
   --te-lg-drop-near-alpha: 0.07;
-  --te-lg-drop-alpha: 0.16;
+  --te-lg-drop-alpha: var(--te-lg-context-shadow-alpha, 0.16);
+  --te-lg-press-color: transparent;
   background: transparent !important;
   border-color: transparent !important;
   /* Rim stays outside the filter so it reads crisp instead of smeared. */
@@ -3550,17 +3543,40 @@ html[data-theme='dark'] .player-bar:not(.player-bar-glass) .player-cover-placeho
   transform: translate(var(--te-lg-elastic-x, 0px), var(--te-lg-elastic-y, 0px));
   background:
     radial-gradient(
+      circle at var(--te-lg-press-x, 50%) var(--te-lg-press-y, 50%),
+      var(--te-lg-press-color) 0%,
+      transparent 30%
+    ),
+    radial-gradient(
       135% 210% at var(--te-lg-light-x, 50%) var(--te-lg-light-y, 42%),
       rgba(var(--te-lg-sheen-rgb), calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 0.36)) 0%,
       rgba(var(--te-lg-sheen-rgb), calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 0.12))
         27%,
       transparent 67%
     ),
+    /* Shape-aware rim light: bright bevel on the light side, faint counter-shade
+       opposite, clear through the middle. */
+    linear-gradient(
+        var(--te-lg-angle, 135deg),
+        color-mix(
+            in srgb,
+            white calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 40%),
+            transparent
+          )
+          0%,
+        transparent 10%,
+        transparent 90%,
+        color-mix(
+            in srgb,
+            var(--te-lg-shade) calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 16%),
+            transparent
+          )
+          100%
+      ),
     linear-gradient(
       var(--te-lg-angle, 135deg),
-      rgba(var(--te-lg-sheen-rgb), 0) 0%,
-      rgba(var(--te-lg-sheen-rgb), calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 0.24))
-        36%,
+      transparent 0%,
+      rgba(var(--te-lg-sheen-rgb), calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 0.2)) 36%,
       rgba(var(--te-lg-sheen-rgb), calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 0.055))
         65%,
       transparent 100%
@@ -3573,18 +3589,19 @@ html[data-theme='dark'] .player-bar:not(.player-bar-glass) .player-cover-placeho
       rgba(var(--te-lg-shade-rgb), var(--te-lg-bottom-density-alpha)) 100%
     ),
     rgba(var(--te-lg-surface-rgb), var(--te-lg-tint, 0.12));
-  /* A fixed full-width backdrop would otherwise be recomputed on every main-page
-     scroll. Keep the inexpensive tint at rest and promote blur/refraction only
-     while the user is actually interacting with the player. */
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  filter: none;
-}
-
-.player-bar-liquid:is(:hover, :focus-within) .player-bar-warp {
   backdrop-filter: blur(var(--te-lg-blur, 16px)) saturate(var(--te-lg-saturate, 140%));
   -webkit-backdrop-filter: blur(var(--te-lg-blur, 16px)) saturate(var(--te-lg-saturate, 140%));
   filter: url(#te-lg-playbar);
+}
+
+html[data-te-liquid-glass-source='solid'] .player-bar-liquid .player-bar-warp {
+  background:
+    radial-gradient(
+      135% 210% at var(--te-lg-light-x, 50%) var(--te-lg-light-y, 42%),
+      color-mix(in srgb, var(--te-lg-context-rim) 24%, transparent),
+      transparent 67%
+    ),
+    var(--te-lg-context-material);
 }
 
 /* Grid children are not positioned by default, so they would paint below a z-index 0
@@ -3592,6 +3609,19 @@ html[data-theme='dark'] .player-bar:not(.player-bar-glass) .player-cover-placeho
 .player-bar-liquid > *:not(.player-bar-warp) {
   position: relative;
   z-index: 1;
+}
+
+/* Press squish: the container compresses toward the press point while the
+   pointer is down; the press spring writes --te-lg-press-scale each frame, so
+   no transform transition is layered on top of it. */
+.player-bar-liquid {
+  transform-origin: var(--te-lg-press-x, 50%) var(--te-lg-press-y, 50%);
+  transform: scale(var(--te-lg-press-scale, 1));
+}
+
+.player-bar-liquid:active {
+  --te-lg-press-color: color-mix(in srgb, var(--te-lg-context-rim) 52%, transparent);
+  transition-duration: 90ms;
 }
 
 /* Dark tone only needs to move the bases: the sheen stays light because it is a
@@ -3604,14 +3634,16 @@ html[data-theme='dark'] .player-bar:not(.player-bar-glass) .player-cover-placeho
    this component, so a plain descendant selector is already correct: scoping
    appends the id to the subject and leaves the document-level ancestor alone. */
 html[data-theme='dark'] .player-bar-liquid {
-  --te-lg-surface-rgb: 126, 134, 152;
   --te-lg-drop-rgb: var(--te-lg-shade-rgb);
-  --te-lg-rim-strength: 0.4;
-  --te-lg-top-wash-alpha: 0.055;
-  --te-lg-bottom-density-alpha: 0.18;
-  --te-lg-shade-alpha: 0.24;
-  --te-lg-drop-near-alpha: 0.2;
-  --te-lg-drop-alpha: 0.44;
+  /* Apple's dark glass reads clear, not smoked: legibility comes from blur and
+     the saturated backdrop, so the density/shade stack stays restrained while
+     the rim brightens. */
+  --te-lg-rim-strength: 0.5;
+  --te-lg-top-wash-alpha: 0.05;
+  --te-lg-bottom-density-alpha: 0.1;
+  --te-lg-shade-alpha: 0.16;
+  --te-lg-drop-near-alpha: 0.16;
+  --te-lg-drop-alpha: 0.36;
 }
 
 /* Degradation mirrors the card contracts: refraction without its blurred backdrop
@@ -3630,6 +3662,29 @@ html[data-window-transparent='on'][data-platform='linux'] .player-bar-liquid .pl
   filter: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .player-bar-liquid .player-bar-warp {
+    background: var(--te-lg-context-surface-solid);
+    filter: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .player-bar-liquid {
+    border-color: CanvasText !important;
+    box-shadow: none !important;
+  }
+
+  .player-bar-liquid .player-bar-warp {
+    background: Canvas;
+    filter: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* ===== Mini shape =====
@@ -3672,6 +3727,30 @@ html[data-window-transparent='on'][data-platform='linux'] .player-bar-liquid .pl
   .player-bar.player-bar-mini.player-bar-mini.player-bar-mini {
   transform: translateY(calc(100% + 24px));
   opacity: 0;
+  pointer-events: none;
+}
+
+/* Fully hidden ("完全隐藏") is the third visibility step and a different thing
+   from auto-hide: there is no reveal gesture, so the bar must also leave the tab
+   order and the accessibility tree — `opacity: 0` alone still lets Tab land on
+   invisible transport buttons. `visibility` does that while keeping the element
+   in the DOM, which is what the two geometry consumers query for the flag.
+
+   Unlike the rule above this one is shape-agnostic: a standard bar can be hidden
+   outright because nothing has to be revealed, so nothing is lost. The class is
+   repeated to out-specify the preset theme layouts, same as mini geometry. */
+.player-bar-shell[data-te-playbar-visibility='hidden'] .player-bar.player-bar.player-bar {
+  transform: translateY(calc(100% + 24px));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The shell keeps its box (grid area, clearance measurement) but must not
+   intercept anything either. It is already `pointer-events: none` in the default
+   layout; the custom shell layout re-asserts `auto` on it, and App.vue carries
+   the matching override for that case. */
+.player-bar-shell[data-te-playbar-visibility='hidden'] {
   pointer-events: none;
 }
 
@@ -3829,11 +3908,3 @@ html[data-window-transparent='on'][data-platform='linux'] .player-bar-liquid .pl
 html[data-theme='dark'] .player-bar-mini .mini-progress-track {
   background: color-mix(in srgb, var(--accent-color, #60a5fa) 30%, rgba(255, 255, 255, 0.14));
 }
-
-:global(html[data-te-motion='reduced'] .player-bar-shell),
-:global(html[data-te-motion='off'] .player-bar-shell) {
-  opacity: 1 !important;
-  translate: 0 0 !important;
-  transition-duration: 0.12s !important;
-}
-

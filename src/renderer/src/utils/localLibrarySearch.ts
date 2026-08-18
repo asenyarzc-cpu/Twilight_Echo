@@ -7,8 +7,30 @@ export interface LocalGridSearchItem {
   tracks?: Track[]
 }
 
-function normalizeSearchText(value: string): string {
+export function normalizeSearchText(value: string): string {
   return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
+}
+
+const searchBlobByTrack = new WeakMap<Track, string>()
+
+/**
+ * Per-track normalized search blob (`title\0artist\0album`), cached by track
+ * identity. Tracks are immutable snapshots replaced wholesale by the store, so
+ * identity-keyed caching stays valid for the track's lifetime. The \u0000
+ * separator cannot appear in a normalized query, which blocks cross-field
+ * substring matches.
+ */
+export function getTrackSearchBlob(track: Track): string {
+  let blob = searchBlobByTrack.get(track)
+  if (blob === undefined) {
+    blob = [
+      normalizeSearchText(track.title),
+      normalizeSearchText(track.artist),
+      normalizeSearchText(track.album)
+    ].join('\u0000')
+    searchBlobByTrack.set(track, blob)
+  }
+  return blob
 }
 
 function includesQuery(value: string | undefined | null, query: string): boolean {
@@ -31,13 +53,15 @@ export function filterLocalGridItems<T extends LocalGridSearchItem>(
       return true
     }
 
-    return item.tracks?.some(
-      (track) =>
-        includesQuery(track.title, q) ||
-        includesQuery(track.artist, q) ||
-        includesQuery(track.album, q) ||
-        includesQuery(track.fileName, q) ||
-        includesQuery(track.filePath, q)
-    ) === true
+    return (
+      item.tracks?.some(
+        (track) =>
+          includesQuery(track.title, q) ||
+          includesQuery(track.artist, q) ||
+          includesQuery(track.album, q) ||
+          includesQuery(track.fileName, q) ||
+          includesQuery(track.filePath, q)
+      ) === true
+    )
   })
 }

@@ -98,7 +98,7 @@ export const LYRICS_FONT_FAMILY_STACKS: Readonly<
   inherit: 'inherit',
   system: "system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif",
   inter: "'Inter', 'MiSans', 'Microsoft YaHei', sans-serif",
-  lxgw: "'LXGW WenKai', 'MiSans', 'Microsoft YaHei', sans-serif",
+  lxgw: "'LXGW WenKai', '霞鹜文楷', 'KaiTi', 'STKaiti', 'MiSans', 'Microsoft YaHei', serif",
   sarasa: "'Sarasa Gothic SC', 'MiSans', 'Microsoft YaHei', sans-serif",
   comic: "'Comic Sans MS', 'MiSans', 'Microsoft YaHei', sans-serif"
 }

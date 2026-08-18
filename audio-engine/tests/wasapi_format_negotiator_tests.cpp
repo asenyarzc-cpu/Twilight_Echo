@@ -351,15 +351,20 @@ void testWasapiExclusiveRecoveryStopsBeforeReopenOrNotifyAfterClose() {
   const std::string recoveryBody = extractFunctionBody(source, "bool attemptRecovery(const std::string& reason)");
   const std::string queuedRecoveryBody = extractFunctionBody(source, "void runQueuedRecovery(std::string reason)");
 
-  const size_t sleepPos = recoveryBody.find("std::this_thread::sleep_for");
+  // The backoff is an interruptible wait on stopRequested (stop()/close() must
+  // never be parked for the full backoff ladder), and every driver-touching
+  // step stays gated by a stop check.
+  const size_t backoffPos = recoveryBody.find("threadCv.wait_for");
   const size_t reopenPos = recoveryBody.find("reopenDevice()");
   const size_t startPos = recoveryBody.find("audioClient->Start()");
-  assert(sleepPos != std::string::npos);
+  assert(backoffPos != std::string::npos);
   assert(reopenPos != std::string::npos);
   assert(startPos != std::string::npos);
-  assert(recoveryBody.find("stopRequested.load()", sleepPos) < reopenPos);
+  assert(recoveryBody.find("std::this_thread::sleep_for") == std::string::npos);
+  assert(recoveryBody.find("stopRequested.load()", backoffPos) < reopenPos);
   assert(recoveryBody.find("stopRequested.load()", reopenPos) < startPos);
-  assert(queuedRecoveryBody.find("!stopRequested.load() && eventCallback") != std::string::npos);
+  assert(queuedRecoveryBody.find("!stopRequested.load()") != std::string::npos);
+  assert(queuedRecoveryBody.find("eventCallback") != std::string::npos);
 }
 
 void testWasapiExclusiveOpenClearsDeferredRenderFailureState() {

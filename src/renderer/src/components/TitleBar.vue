@@ -7,6 +7,7 @@ withDefaults(
   defineProps<{
     menuOpen: boolean
     glass?: boolean
+    liquidMaterial?: boolean
     streaming?: boolean
     hideStart?: boolean
     titleSurface?: 'default' | 'settings' | 'streaming'
@@ -28,6 +29,15 @@ defineEmits<{
 const { isLoggedIn, profile } = useNcmStore()
 const avatarLoadFailed = ref(false)
 
+function setPressOrigin(event: PointerEvent): void {
+  const button =
+    event.target instanceof Element ? event.target.closest<HTMLElement>('button') : null
+  if (!button) return
+  const rect = button.getBoundingClientRect()
+  button.style.setProperty('--te-lg-press-x', `${event.clientX - rect.left}px`)
+  button.style.setProperty('--te-lg-press-y', `${event.clientY - rect.top}px`)
+}
+
 function minimize(): void {
   window.api.window.minimize()
 }
@@ -46,13 +56,14 @@ function close(): void {
     class="title-bar drag-region"
     :class="{
       'title-bar-glass': glass,
+      'title-bar-liquid': liquidMaterial,
       'title-bar-settings': titleSurface === 'settings',
       'title-bar-streaming': titleSurface === 'streaming',
       'title-bar-menu-open': menuOpen
     }"
   >
     <div class="title-bar-background" aria-hidden="true"></div>
-    <div v-if="!glass && !hideStart" class="title-bar-start no-drag">
+    <div v-if="!glass && !hideStart" class="title-bar-start no-drag" @pointerdown="setPressOrigin">
       <button class="menu-btn" title="菜单" @click="$emit('toggleMenu')">
         <svg
           width="18"
@@ -91,7 +102,7 @@ function close(): void {
         <i v-else class="pi pi-user"></i>
       </button>
     </div>
-    <div class="title-bar-controls no-drag">
+    <div class="title-bar-controls no-drag" @pointerdown="setPressOrigin">
       <button class="control-btn minimize" title="最小化" @click="minimize">
         <svg width="14" height="14" viewBox="0 0 10 10">
           <rect x="0" y="4.5" width="10" height="1" fill="currentColor" />
@@ -102,8 +113,8 @@ function close(): void {
           <rect x="2.5" y="2.5" width="7" height="7" rx="1" stroke="currentColor" />
         </svg>
       </button>
-      <button class="control-btn close" title="关闭" @click="close">
-        <i class="pi pi-times" />
+      <button class="control-btn close" title="关闭窗口" aria-label="关闭窗口" @click="close">
+        <i class="pi pi-times" aria-hidden="true" />
       </button>
     </div>
   </div>
@@ -176,15 +187,19 @@ function close(): void {
   background-attachment: fixed, fixed;
 }
 
-:global(html[data-theme='dark'] .title-bar),
-:global(html[data-theme='dark'] .title-bar.title-bar-streaming),
-:global(
-  html[data-theme='dark']
-    .title-bar.title-bar-streaming.title-bar-menu-open:not(.title-bar-glass):not(
-      .title-bar-settings
-    )
-),
-:global(html[data-theme='dark'] .title-bar.title-bar-glass) {
+/* Dark tone must not wrap the whole chain in `:global()`: Vue's scoped transform
+   rewrites only the last compound, so `:global(html .title-bar…)` compiles to the
+   bare ancestor and the declarations land on <html> instead of this component.
+   Both compounds here belong to this component; scoping appends the id to the
+   subject and leaves the document-level ancestor alone — same contract as the
+   playbar glass rules in PlayerBar.css. */
+html[data-theme='dark'] .title-bar,
+html[data-theme='dark'] .title-bar.title-bar-streaming,
+html[data-theme='dark']
+  .title-bar.title-bar-streaming.title-bar-menu-open:not(.title-bar-glass):not(
+    .title-bar-settings
+  ),
+html[data-theme='dark'] .title-bar.title-bar-glass {
   background: transparent !important;
 }
 
@@ -350,5 +365,96 @@ function close(): void {
 .control-btn.close:hover {
   background: #e81123;
   color: #fff;
+}
+
+.title-bar-liquid {
+  isolation: isolate;
+  color: var(--te-lg-context-label);
+}
+
+.title-bar-liquid .title-bar-background {
+  display: block;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--te-lg-context-rim) 18%, transparent),
+      transparent 82%
+    ),
+    color-mix(in srgb, var(--te-lg-context-surface) 56%, transparent) !important;
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--te-lg-context-label) 8%, transparent);
+  backdrop-filter: blur(16px) saturate(124%);
+  -webkit-backdrop-filter: blur(16px) saturate(124%);
+}
+
+:global(html[data-te-liquid-glass-source='solid'] .title-bar-liquid .title-bar-background) {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--te-lg-context-rim) 22%, transparent),
+      transparent 82%
+    ),
+    var(--te-lg-context-material) !important;
+}
+
+html[data-te-liquid-glass-scrolled='on'] .title-bar-liquid .title-bar-background {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--te-lg-context-rim) 24%, transparent),
+      transparent 66%
+    ),
+    color-mix(in srgb, var(--te-lg-context-surface) 72%, transparent) !important;
+  box-shadow:
+    inset 0 -1px 0 color-mix(in srgb, var(--te-lg-context-label) 13%, transparent),
+    0 6px 18px color-mix(in srgb, var(--te-lg-context-label) 8%, transparent);
+}
+
+.title-bar-liquid :is(.menu-btn, .settings-btn, .plugins-btn, .login-btn, .control-btn) {
+  position: relative;
+  overflow: hidden;
+  color: inherit;
+}
+
+.title-bar-liquid :is(.menu-btn, .settings-btn, .plugins-btn, .login-btn, .control-btn)::after {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at var(--te-lg-press-x, 50%) var(--te-lg-press-y, 50%),
+    color-mix(in srgb, var(--te-lg-context-rim) 56%, transparent),
+    transparent 58%
+  );
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease-out;
+}
+
+.title-bar-liquid :is(.menu-btn, .settings-btn, .plugins-btn, .login-btn, .control-btn):active {
+  transform: scale(0.94);
+  transition-duration: 90ms;
+}
+
+.title-bar-liquid
+  :is(.menu-btn, .settings-btn, .plugins-btn, .login-btn, .control-btn):active::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .title-bar-liquid .title-bar-background {
+    background: var(--te-lg-context-surface-solid) !important;
+    border-bottom: 1px solid var(--te-lg-context-label);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .title-bar-liquid .title-bar-background {
+    background: Canvas !important;
+    border-bottom: 1px solid CanvasText;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 </style>

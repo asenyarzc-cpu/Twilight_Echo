@@ -378,7 +378,17 @@ napi_value readJson(napi_env env, TAE_Result (*fn)(TAE_EngineHandle, char*, size
   size_t required = 0;
   fn(g_engine, nullptr, 0, &required);
   std::vector<char> buffer(required == 0 ? 1 : required);
-  const TAE_Result result = fn(g_engine, buffer.data(), buffer.size(), &required);
+  TAE_Result result = TAE_RESULT_OK;
+  // The engine's clock thread mutates state every 100ms, so the JSON can grow
+  // between the size probe and the fill; copyStringResult then reports
+  // INVALID_ARGUMENT with a larger required size. Re-probe until a snapshot
+  // fits — the same pattern GetVisualizationData already uses.
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    result = fn(g_engine, buffer.data(), buffer.size(), &required);
+    if (result == TAE_RESULT_OK) break;
+    if (result != TAE_RESULT_INVALID_ARGUMENT || required <= buffer.size()) break;
+    buffer.assign(required, '\0');
+  }
   if (result != TAE_RESULT_OK) return throwOnError(env, result);
   napi_value json;
   napi_create_string_utf8(env, buffer.data(), NAPI_AUTO_LENGTH, &json);
@@ -703,7 +713,14 @@ napi_value GetMetadata(napi_env env, napi_callback_info info) {
   size_t required = 0;
   TAE_GetMetadata(g_engine, source.c_str(), nullptr, 0, &required);
   std::vector<char> buffer(required == 0 ? 1 : required);
-  const TAE_Result result = TAE_GetMetadata(g_engine, source.c_str(), buffer.data(), buffer.size(), &required);
+  TAE_Result result = TAE_RESULT_OK;
+  // Same probe/fill growth race as readJson: retry while the snapshot grew.
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    result = TAE_GetMetadata(g_engine, source.c_str(), buffer.data(), buffer.size(), &required);
+    if (result == TAE_RESULT_OK) break;
+    if (result != TAE_RESULT_INVALID_ARGUMENT || required <= buffer.size()) break;
+    buffer.assign(required, '\0');
+  }
   if (result != TAE_RESULT_OK) return throwOnError(env, result);
   napi_value json;
   napi_create_string_utf8(env, buffer.data(), NAPI_AUTO_LENGTH, &json);

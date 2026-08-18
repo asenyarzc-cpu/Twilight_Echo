@@ -3,6 +3,7 @@ import type {
   MediaProviderArtistSummary,
   MediaProviderPlaylistSummary
 } from '../../providers/mediaProvider'
+import { getTrackSearchBlob } from '../../utils/localLibrarySearch.ts'
 
 export interface LocalPlaylistSearchItem {
   id: number | string
@@ -69,10 +70,7 @@ export function searchLocalStreamingSongs(
     query,
     limit,
     offset,
-    (track, q) =>
-      normalizeLocalStreamingQuery(track.title).includes(q) ||
-      normalizeLocalStreamingQuery(track.artist).includes(q) ||
-      normalizeLocalStreamingQuery(track.album).includes(q),
+    (track, q) => getTrackSearchBlob(track).includes(q),
     (track) => track
   )
 

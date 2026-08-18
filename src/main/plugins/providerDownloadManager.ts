@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { access, mkdir, open, rename, rm } from 'node:fs/promises'
-import { basename, extname, join, parse, resolve, sep } from 'node:path'
+import { basename, extname, join, parse } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { Readable, Transform } from 'node:stream'
 import type { TwilightPluginManager } from '../plugins/manager.ts'
 import { filterAuthorizedLibraryRoots } from '../security/localPaths.ts'
+import { isCanonicalPathInside, lexicalPathKey } from '../security/pathGrants.ts'
 import type { LocalLibraryIndexCoordinator } from '../library/libraryIndexCoordinator.ts'
 import type {
   ProviderDownloadCreateInput,
@@ -108,7 +109,8 @@ export class ProviderDownloadManager {
       track,
       requestedQuality: quality,
       actualQuality: remote.actualQuality ?? null,
-      status: remote.status === 'ready' ? 'preparing' : remote.status === 'failed' ? 'failed' : 'queued',
+      status:
+        remote.status === 'ready' ? 'preparing' : remote.status === 'failed' ? 'failed' : 'queued',
       progress: clampProgress(remote.progress),
       queuePosition: normalizeOptionalInteger(remote.queuePosition),
       targetPath: null,
@@ -128,7 +130,9 @@ export class ProviderDownloadManager {
     if (TERMINAL_STATUSES.has(task.status)) return
     this.abortControllers.get(task.id)?.abort(new Error('用户取消下载'))
     try {
-      await this.options.pluginManager.callProvider(task.providerId, 'cancelDownload', [task.providerJobId])
+      await this.options.pluginManager.callProvider(task.providerId, 'cancelDownload', [
+        task.providerJobId
+      ])
     } catch {
       // Local cancellation still wins if the remote task already reached a terminal state.
     }
@@ -147,7 +151,11 @@ export class ProviderDownloadManager {
     })
   }
 
-  private async run(taskId: string, targetRoot: string, initial: RemoteDownloadTask): Promise<void> {
+  private async run(
+    taskId: string,
+    targetRoot: string,
+    initial: RemoteDownloadTask
+  ): Promise<void> {
     const controller = new AbortController()
     this.abortControllers.set(taskId, controller)
     try {
@@ -155,7 +163,10 @@ export class ProviderDownloadManager {
       while (remote.status !== 'ready') {
         if (controller.signal.aborted) throw controller.signal.reason
         if (remote.status === 'failed' || remote.status === 'expired') {
-          throw new Error(remote.error || (remote.status === 'expired' ? '远端下载任务已过期' : '远端下载任务失败'))
+          throw new Error(
+            remote.error ||
+              (remote.status === 'expired' ? '远端下载任务已过期' : '远端下载任务失败')
+          )
         }
         if (remote.status === 'cancelled') {
           this.patch(taskId, { status: 'cancelled', error: null })
@@ -170,7 +181,9 @@ export class ProviderDownloadManager {
         await wait(POLL_INTERVAL_MS, controller.signal)
         const task = this.requireTask(taskId)
         remote = normalizeRemoteTask(
-          await this.options.pluginManager.callProvider(task.providerId, 'getDownloadStatus', [task.providerJobId])
+          await this.options.pluginManager.callProvider(task.providerId, 'getDownloadStatus', [
+            task.providerJobId
+          ])
         )
       }
       await this.receiveFile(taskId, targetRoot, remote, controller.signal)
@@ -195,9 +208,15 @@ export class ProviderDownloadManager {
     const task = this.requireTask(taskId)
     await mkdir(targetRoot, { recursive: true })
     const file = normalizeRemoteFile(
-      await this.options.pluginManager.callProvider(task.providerId, 'getDownloadFile', [task.providerJobId])
+      await this.options.pluginManager.callProvider(task.providerId, 'getDownloadFile', [
+        task.providerJobId
+      ])
     )
-    const targetPath = await availableTargetPath(targetRoot, file.fileName || remote.fileName, task.track)
+    const targetPath = await availableTargetPath(
+      targetRoot,
+      file.fileName || remote.fileName,
+      task.track
+    )
     assertWithinRoot(targetRoot, targetPath)
     const partPath = `${targetPath}.${task.id}.part`
     this.patch(taskId, {
@@ -213,7 +232,8 @@ export class ProviderDownloadManager {
       if (!response.ok || !response.body) throw new Error(`下载文件请求失败 (${response.status})`)
       const declaredSize = parseContentLength(response.headers.get('content-length'))
       const expectedSize = normalizeOptionalSize(file.fileSize ?? remote.fileSize) ?? declaredSize
-      if (expectedSize != null && expectedSize > MAX_DOWNLOAD_BYTES) throw new Error('下载文件超过 4 GiB 限制')
+      if (expectedSize != null && expectedSize > MAX_DOWNLOAD_BYTES)
+        throw new Error('下载文件超过 4 GiB 限制')
       let received = 0
       const progress = new Transform({
         transform: (chunk: Buffer, _encoding, callback) => {
@@ -241,7 +261,9 @@ export class ProviderDownloadManager {
         await handle.close()
       }
       await rename(partPath, targetPath)
-      this.options.libraryIndexCoordinator()?.enqueueWatcherChanges([{ kind: 'add', path: targetPath }])
+      this.options
+        .libraryIndexCoordinator()
+        ?.enqueueWatcherChanges([{ kind: 'add', path: targetPath }])
       this.patch(taskId, {
         status: 'completed',
         progress: 1,
@@ -279,7 +301,8 @@ function normalizeProviderId(value: unknown): string {
 }
 
 function normalizeTrack(value: unknown): ProviderDownloadCreateInput['track'] {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('下载曲目信息无效')
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('下载曲目信息无效')
   const record = value as Record<string, unknown>
   const id = typeof record.id === 'string' || typeof record.id === 'number' ? record.id : ''
   const title = typeof record.title === 'string' ? record.title.trim() : ''
@@ -294,11 +317,15 @@ function normalizeQuality(value: unknown): ProviderDownloadQuality {
 }
 
 function normalizeRemoteTask(value: unknown): RemoteDownloadTask {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Provider 下载任务响应无效')
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Provider 下载任务响应无效')
   const record = value as Record<string, unknown>
   const jobId = typeof record.jobId === 'string' ? record.jobId.trim() : ''
   const status = record.status
-  if (!jobId || !['queued', 'preparing', 'ready', 'failed', 'cancelled', 'expired'].includes(String(status))) {
+  if (
+    !jobId ||
+    !['queued', 'preparing', 'ready', 'failed', 'cancelled', 'expired'].includes(String(status))
+  ) {
     throw new Error('Provider 下载任务响应缺少有效 jobId 或状态')
   }
   return {
@@ -316,7 +343,8 @@ function normalizeRemoteTask(value: unknown): RemoteDownloadTask {
 }
 
 function normalizeRemoteFile(value: unknown): RemoteDownloadFile {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Provider 下载文件响应无效')
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Provider 下载文件响应无效')
   const record = value as Record<string, unknown>
   const url = typeof record.url === 'string' ? record.url.trim() : ''
   const parsed = new URL(url)
@@ -352,8 +380,8 @@ function clampProgress(value: number): number {
 
 function selectTargetRoot(requested: unknown, roots: string[]): string {
   if (typeof requested !== 'string' || !requested.trim()) return roots[0]
-  const target = resolve(requested)
-  const match = roots.find((root) => resolve(root).toLowerCase() === target.toLowerCase())
+  const targetKey = lexicalPathKey(requested)
+  const match = roots.find((root) => lexicalPathKey(root) === targetKey)
   if (!match) throw new Error('下载目录必须是已授权的本地音乐库根目录')
   return match
 }
@@ -383,8 +411,11 @@ async function availableTargetPath(
 }
 
 function sanitizeSegment(value: string): string {
-  const sanitized = value
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+  const sanitized = Array.from(value, (character) => {
+    const code = character.charCodeAt(0)
+    return code < 0x20 || '<>:"/\\|?*'.includes(character) ? '_' : character
+  })
+    .join('')
     .replace(/[. ]+$/g, '')
     .trim()
     .slice(0, 180)
@@ -392,9 +423,7 @@ function sanitizeSegment(value: string): string {
 }
 
 function assertWithinRoot(root: string, target: string): void {
-  const normalizedRoot = `${resolve(root)}${sep}`.toLowerCase()
-  const normalizedTarget = resolve(target).toLowerCase()
-  if (!normalizedTarget.startsWith(normalizedRoot)) throw new Error('下载目标路径越界')
+  if (!isCanonicalPathInside(root, target)) throw new Error('下载目标路径越界')
 }
 
 function parseContentLength(value: string | null): number | null {

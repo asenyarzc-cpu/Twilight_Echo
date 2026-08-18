@@ -1,0 +1,7 @@
+diff --git a/src/regular/style.css b/src/regular/style.css
+index 333f23ce5855d4345b49488d373dcbf6993704c3..a65070123ab876becb5fef37b7558fa828bd46b7 100644
+--- a/src/regular/style.css
++++ b/src/regular/style.css
+@@ -10 +10 @@
+-  font-display: block;
++  font-display: swap;

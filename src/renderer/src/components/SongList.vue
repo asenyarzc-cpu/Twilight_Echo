@@ -11,6 +11,7 @@ import { useProviderStore } from '../stores/useProviderStore'
 import { getRecentTracks, useListeningStatsStore } from '../stores/useListeningStatsStore'
 import type { Track } from '../types/music'
 import { resolveUnifiedRecentTracks } from '../utils/unifiedRecentTracks'
+import { getTrackSearchBlob, normalizeSearchText } from '../utils/localLibrarySearch'
 import { getTrackSource as getLogicalTrackSource } from '../utils/logicalTrackModel'
 import { useEscapeToClose } from '../app/useDismissLayer.ts'
 import { buildMetadataMatchCandidates } from '../utils/musicMetadataMatching'
@@ -451,13 +452,9 @@ const searchedTracks = computed(() => {
   if (shouldUseUnifiedSearch.value) {
     return unifiedSearch.items.value.map((item) => item.track)
   }
-  const normalizedQuery = q.toLowerCase()
-  return baseDisplayTracks.value.filter(
-    (t) =>
-      t.title.toLowerCase().includes(normalizedQuery) ||
-      t.artist.toLowerCase().includes(normalizedQuery) ||
-      t.album.toLowerCase().includes(normalizedQuery)
-  )
+  const normalizedQuery = normalizeSearchText(q)
+  if (!normalizedQuery) return baseDisplayTracks.value
+  return baseDisplayTracks.value.filter((t) => getTrackSearchBlob(t).includes(normalizedQuery))
 })
 
 const displayTracks = computed(() =>

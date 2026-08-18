@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { nextTick, ref } from 'vue'
+import type { PlaybackSession, Track } from '../types/music.ts'
 
 const { createPlaybackSessionPersistence } = (await import(
   new URL('./usePlaybackSessionPersistence.ts', import.meta.url).href
@@ -39,7 +40,9 @@ test('restore clears persisted session when resume mode is off', async () => {
     isPlaying: ref(false),
     restorePlaybackSession: () => calls.push('restore'),
     createPlaybackSession: () => null,
-    syncPluginProviders: async () => calls.push('sync'),
+    syncPluginProviders: async () => {
+      calls.push('sync')
+    },
     sessionWriter: writer,
     dataApi: {
       clearPlaybackSession: async (expectedRevision) => {
@@ -63,7 +66,9 @@ test('restore clears persisted session when resume mode is off', async () => {
           position: 30
         }
       }),
-      savePlaybackSession: async () => calls.push('save')
+      savePlaybackSession: async () => {
+        calls.push('save')
+      }
     }
   })
 
@@ -82,9 +87,13 @@ test('local playback resume restores without waiting for plugin providers', asyn
     isPlaying: ref(false),
     restorePlaybackSession: (session) => calls.push(`restore:${session.position}`),
     createPlaybackSession: () => null,
-    syncPluginProviders: async () => calls.push('sync'),
+    syncPluginProviders: async () => {
+      calls.push('sync')
+    },
     dataApi: {
-      clearPlaybackSession: async () => calls.push('clear'),
+      clearPlaybackSession: async () => {
+        calls.push('clear')
+      },
       loadPlaybackSession: async () => ({
         version: 1,
         savedAt: '',
@@ -92,7 +101,9 @@ test('local playback resume restores without waiting for plugin providers', asyn
         track,
         position: 30
       }),
-      savePlaybackSession: async () => calls.push('save')
+      savePlaybackSession: async () => {
+        calls.push('save')
+      }
     }
   })
 
@@ -126,12 +137,12 @@ test('CUE queue/session restore preserves ranges, queue index, and ReplayGain me
     cueEncoding: 'gb18030' as const,
     replayGainTrackGainDb: -9
   }
-  let restored: {
+  let restored!: {
     track: typeof second
     queue?: Array<typeof first | typeof second>
     queueIndex?: number
     position: number
-  } | null = null
+  } | null
   const persistence = createPlaybackSessionPersistence({
     settings: ref({ playbackResumeMode: 'trackAndPosition' as const }),
     currentTrack: ref(null),
@@ -160,12 +171,13 @@ test('CUE queue/session restore preserves ranges, queue index, and ReplayGain me
   await persistence.restoreSavedPlaybackSession('trackAndPosition')
 
   assert.ok(restored)
-  assert.equal(restored.position, 17)
-  assert.equal(restored.queueIndex, 1)
-  assert.deepEqual(restored.track.cueRange, second.cueRange)
-  assert.equal(restored.track.replayGainTrackGainDb, -9)
+  const restoredSession = restored as NonNullable<typeof restored>
+  assert.equal(restoredSession.position, 17)
+  assert.equal(restoredSession.queueIndex, 1)
+  assert.deepEqual(restoredSession.track.cueRange, second.cueRange)
+  assert.equal(restoredSession.track.replayGainTrackGainDb, -9)
   assert.deepEqual(
-    restored.queue?.map((item) => item.cueRange),
+    restoredSession.queue?.map((item) => item.cueRange),
     [first.cueRange, second.cueRange]
   )
 })
@@ -180,9 +192,13 @@ test('plugin playback resume waits for plugin providers before restoring a saved
     isPlaying: ref(false),
     restorePlaybackSession: (session) => calls.push(`restore:${session.position}`),
     createPlaybackSession: () => null,
-    syncPluginProviders: async () => calls.push('sync'),
+    syncPluginProviders: async () => {
+      calls.push('sync')
+    },
     dataApi: {
-      clearPlaybackSession: async () => calls.push('clear'),
+      clearPlaybackSession: async () => {
+        calls.push('clear')
+      },
       loadPlaybackSession: async () => ({
         version: 1,
         savedAt: '',
@@ -190,7 +206,9 @@ test('plugin playback resume waits for plugin providers before restoring a saved
         track: pluginTrack,
         position: 30
       }),
-      savePlaybackSession: async () => calls.push('save')
+      savePlaybackSession: async () => {
+        calls.push('save')
+      }
     }
   })
 
@@ -225,9 +243,13 @@ test('autosave clears, saves track-only, and saves track position according to r
     autosaveDelayMs: 0,
     positionAutosaveMs: 0,
     dataApi: {
-      clearPlaybackSession: async () => saved.push('clear'),
+      clearPlaybackSession: async () => {
+        saved.push('clear')
+      },
       loadPlaybackSession: async () => null,
-      savePlaybackSession: async (session) => saved.push(session)
+      savePlaybackSession: async (session) => {
+        saved.push(session)
+      }
     }
   })
 
@@ -275,7 +297,9 @@ test('a track change persists immediately instead of retaining the previous debo
     dataApi: {
       clearPlaybackSession: async () => undefined,
       loadPlaybackSession: async () => null,
-      savePlaybackSession: async (session) => savedTrackIds.push(session!.track.id)
+      savePlaybackSession: async (session) => {
+        savedTrackIds.push(session!.track.id)
+      }
     }
   })
 
@@ -309,7 +333,9 @@ test('captures a track that was selected before autosave watchers were installed
     dataApi: {
       clearPlaybackSession: async () => undefined,
       loadPlaybackSession: async () => null,
-      savePlaybackSession: async (session) => savedTrackIds.push(session!.track.id)
+      savePlaybackSession: async (session) => {
+        savedTrackIds.push(session!.track.id)
+      }
     }
   })
 
@@ -383,7 +409,7 @@ test('a deferred old autosave cannot overwrite a later pruned queue session', as
     filePath: 'D:/Music/removed.flac',
     fileName: 'removed.flac'
   }
-  let queue = [track, removedTrack]
+  let queue: Track[] = [track, removedTrack]
   let persisted: { queue?: Array<{ id: string }> } | null = null
   let releaseOldWrite!: () => void
   let signalOldWriteStarted!: () => void
@@ -452,13 +478,13 @@ test('a deferred old autosave cannot overwrite a later pruned queue session', as
     queueIndex: pruned.queueIndex
   })
   await Promise.resolve()
-  assert.equal(persisted, null)
+  assert.equal(persisted ?? null, null)
 
   releaseOldWrite()
   await Promise.all([oldSave, prunedWrite.completion])
 
   assert.deepEqual(
-    persisted?.queue?.map((item) => item.id),
+    (persisted as { queue?: Array<{ id: string }> } | null)?.queue?.map((item) => item.id) ?? null,
     [track.id]
   )
   assert.equal(writer.getCommittedSequence(), prunedWrite.sequence)
@@ -636,7 +662,7 @@ test('queued stale session writes recover before the exit snapshot reaches stora
   let revision = 16
   const api = {
     clearPlaybackSession: async () => undefined,
-    savePlaybackSession: async (session: typeof currentSession, expectedRevision: number) => {
+    savePlaybackSession: async (session: PlaybackSession, expectedRevision: number) => {
       expectedRevisions.push(expectedRevision)
       if (expectedRevision !== revision) {
         throw new PersistentDataRevisionConflictError(
@@ -688,7 +714,7 @@ test('exhausting CAS retries still adopts the authoritative revision for a later
   }
   const api = {
     clearPlaybackSession: async () => undefined,
-    savePlaybackSession: async (_session: typeof session, expectedRevision: number) => {
+    savePlaybackSession: async (_session: PlaybackSession, expectedRevision: number) => {
       attempts += 1
       if (attempts <= 3) {
         // Concurrent writer advances past every retry of the first close.
@@ -745,11 +771,15 @@ test('failed restore leaves autosave available to replace the unusable old sessi
     syncPluginProviders: async () => undefined,
     autosaveDelayMs: 0,
     dataApi: {
-      clearPlaybackSession: async () => writes.push('clear'),
+      clearPlaybackSession: async () => {
+        writes.push('clear')
+      },
       loadPlaybackSession: async () => {
         throw new Error('primary and backup are corrupt')
       },
-      savePlaybackSession: async () => writes.push('save')
+      savePlaybackSession: async () => {
+        writes.push('save')
+      }
     }
   })
 

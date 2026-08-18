@@ -129,7 +129,7 @@ test('flush waits for persistence that is already in progress', async () => {
   await Promise.resolve()
   assert.equal(secondFlushFinished, false)
   assert.ok(releaseSave)
-  releaseSave(candidate)
+  ;(releaseSave as ((settings: typeof DEFAULT_MINI_PLAYER_SETTINGS) => void) | null)?.(candidate)
   await Promise.all([firstFlush, secondFlush])
   assert.equal(secondFlushFinished, true)
   draft.dispose()

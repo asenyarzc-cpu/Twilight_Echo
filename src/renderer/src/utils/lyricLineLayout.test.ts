@@ -5,13 +5,17 @@ import {
   isLyricLineInSight,
   LYRIC_BLUR_MAX,
   LYRIC_CASCADE_BASE_DELAY,
+  LYRIC_CASCADE_MAX_DELAY,
+  LYRIC_OPACITY_FUTURE,
   LYRIC_OPACITY_HIDDEN,
   LYRIC_OPACITY_NON_DYNAMIC,
-  LYRIC_OPACITY_NORMAL,
+  LYRIC_OPACITY_PAST,
   LYRIC_OPACITY_PRESENTED,
+  LYRIC_OPACITY_SINGING,
   LYRIC_SCALE_ACTIVE,
   LYRIC_SCALE_BACKGROUND,
   LYRIC_SCALE_INACTIVE,
+  LYRIC_SCALE_PRESENTED,
   type LyricLayoutLine
 } from './lyricLineLayout.ts'
 
@@ -35,20 +39,23 @@ function layout(count: number, scrollToIndex: number, buffered: number[], extra 
   })
 }
 
-test('the cascade delay grows downward and its step tightens', () => {
+test('the cascade tightens downward and caps its total delay', () => {
   const result = layout(6, 0, [0])
   const delays = result.lines.map((line) => line.delay)
 
   assert.equal(delays[0], 0, 'the anchor itself must not wait')
   for (let index = 1; index < delays.length; index += 1) {
-    assert.ok(delays[index] > delays[index - 1], `line ${index} should trail line ${index - 1}`)
+    assert.ok(delays[index] >= delays[index - 1], `line ${index} must not leave earlier`)
   }
 
-  // The wave tightens rather than smearing out: each step is smaller than the last.
   const steps = delays.slice(1).map((delay, index) => delay - delays[index])
   assert.ok(Math.abs(steps[0] - LYRIC_CASCADE_BASE_DELAY) < 1e-9)
+  assert.ok(
+    delays.every((delay) => delay <= LYRIC_CASCADE_MAX_DELAY),
+    'long lyric lists must not accumulate an unbounded departure delay'
+  )
   for (let index = 1; index < steps.length; index += 1) {
-    assert.ok(steps[index] < steps[index - 1], `step ${index} should be tighter`)
+    assert.ok(steps[index] <= steps[index - 1], `step ${index} should be no wider`)
   }
 })
 
@@ -62,9 +69,10 @@ test('a long backlog above the viewport does not spend the delay budget', () => 
 
   assert.equal(result.lines[0].delay, 0)
   assert.equal(result.lines[20].delay, 0, 'far off-screen lines must contribute nothing')
+  assert.ok(result.lines[30].delay > 0, 'the visible approach still receives a cascade')
   assert.ok(
-    result.lines[31].delay > result.lines[30].delay,
-    'the wave still travels downward past the anchor'
+    result.lines[31].delay >= result.lines[30].delay,
+    'the wave cannot reverse after reaching its cap'
   )
 })
 
@@ -94,17 +102,23 @@ test('reserved bottom space shrinks the area the anchor is measured against', ()
   assert.equal(result.lines[2].top, 110)
 })
 
-test('only the presented line stays at full scale', () => {
-  const result = layout(6, 2, [2])
+test('singing, held, past and future lines have distinct visual weight', () => {
+  const result = layout(6, 2, [1, 2], { hot: new Set([2]) })
+
   assert.equal(result.lines[2].scale, LYRIC_SCALE_ACTIVE)
-  assert.equal(result.lines[1].scale, LYRIC_SCALE_INACTIVE)
+  assert.equal(result.lines[2].opacity, LYRIC_OPACITY_SINGING)
+  assert.equal(result.lines[1].scale, LYRIC_SCALE_PRESENTED)
+  assert.equal(result.lines[1].opacity, LYRIC_OPACITY_PRESENTED)
+  assert.equal(result.lines[0].scale, LYRIC_SCALE_INACTIVE)
+  assert.equal(result.lines[0].opacity, LYRIC_OPACITY_PAST)
   assert.equal(result.lines[3].scale, LYRIC_SCALE_INACTIVE)
+  assert.equal(result.lines[3].opacity, LYRIC_OPACITY_FUTURE)
 
   const flat = layout(6, 2, [2], { enableScale: false })
-  assert.equal(flat.lines[3].scale, LYRIC_SCALE_ACTIVE, 'scaling off keeps every line at 100')
+  assert.equal(flat.lines[2].scale, LYRIC_SCALE_INACTIVE, 'scaling off keeps every line at 100')
 
   const paused = layout(6, 2, [2], { isPlaying: false })
-  assert.equal(paused.lines[3].scale, LYRIC_SCALE_ACTIVE, 'paused lyrics do not shrink')
+  assert.equal(paused.lines[3].scale, LYRIC_SCALE_INACTIVE, 'paused lyrics stay at natural size')
 })
 
 test('blur grows with index distance and caps', () => {
@@ -137,14 +151,13 @@ test('a narrow viewport softens the blur', () => {
   assert.ok(narrow.lines[3].blur < wide.lines[3].blur)
 })
 
-test('presented lines are dimmer than idle ones, which is deliberate', () => {
+test('the singing line is the unique brightness focus', () => {
   const result = layout(6, 2, [2])
-  assert.equal(result.lines[2].opacity, LYRIC_OPACITY_PRESENTED)
-  assert.equal(result.lines[4].opacity, LYRIC_OPACITY_NORMAL)
-  assert.ok(
-    result.lines[2].opacity < result.lines[4].opacity,
-    'depth is carried by blur, not by making the active line brightest'
-  )
+  assert.equal(result.lines[2].opacity, LYRIC_OPACITY_SINGING)
+  assert.equal(result.lines[1].opacity, LYRIC_OPACITY_PAST)
+  assert.equal(result.lines[4].opacity, LYRIC_OPACITY_FUTURE)
+  assert.ok(result.lines[2].opacity > result.lines[1].opacity)
+  assert.ok(result.lines[1].opacity > result.lines[4].opacity)
 })
 
 test('line-only lyrics dim the inactive lines instead', () => {
@@ -156,7 +169,7 @@ test('hiding passed lines keeps them barely non-transparent', () => {
   const result = layout(6, 3, [3], { hidePassedLines: true })
   assert.equal(result.lines[0].opacity, LYRIC_OPACITY_HIDDEN)
   assert.notEqual(result.lines[0].opacity, 0, 'zero opacity gets optimised out and pops back')
-  assert.equal(result.lines[4].opacity, LYRIC_OPACITY_NORMAL)
+  assert.equal(result.lines[4].opacity, LYRIC_OPACITY_FUTURE)
 
   const playing = layout(6, 3, [3], { hidePassedLines: true, isPlaying: false })
   assert.notEqual(playing.lines[0].opacity, LYRIC_OPACITY_HIDDEN, 'paused keeps history visible')
@@ -273,10 +286,10 @@ test('the appearance multipliers at their defaults reproduce the built-in look e
 test('the inactive dim only touches lines that have not been presented', () => {
   const result = layout(6, 2, [0, 1, 2], { inactiveDim: 0.4, isPlaying: true })
 
-  assert.equal(result.lines[0].opacity, LYRIC_OPACITY_PRESENTED, 'presented lines keep full weight')
-  assert.equal(result.lines[2].opacity, LYRIC_OPACITY_PRESENTED)
+  assert.equal(result.lines[0].opacity, LYRIC_OPACITY_SINGING, 'hot lines keep full weight')
+  assert.equal(result.lines[2].opacity, LYRIC_OPACITY_SINGING)
   assert.ok(
-    Math.abs(result.lines[4].opacity - LYRIC_OPACITY_NORMAL * 0.4) < 1e-9,
+    Math.abs(result.lines[4].opacity - LYRIC_OPACITY_FUTURE * 0.4) < 1e-9,
     'upcoming lines carry the dim'
   )
 })
@@ -287,7 +300,7 @@ test('a zero intensity flattens scale and blur without disturbing position', () 
 
   assert.ok(
     flat.lines.every(
-      (line) => line.scale === LYRIC_SCALE_ACTIVE || line.scale === LYRIC_SCALE_BACKGROUND
+      (line) => line.scale === LYRIC_SCALE_INACTIVE || line.scale === LYRIC_SCALE_BACKGROUND
     ),
     'no line should shrink'
   )
@@ -306,7 +319,7 @@ test('the cascade factor scales the wave without reordering it', () => {
   assert.equal(fast.lines[0].delay, 0)
   assert.ok(Math.abs(fast.lines[1].delay - base.lines[1].delay / 2) < 1e-9)
   for (let index = 1; index < fast.lines.length; index += 1) {
-    assert.ok(fast.lines[index].delay > fast.lines[index - 1].delay)
+    assert.ok(fast.lines[index].delay >= fast.lines[index - 1].delay)
   }
 })
 

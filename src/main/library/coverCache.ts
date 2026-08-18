@@ -4,6 +4,7 @@ import { join, extname, dirname, resolve } from 'path'
 import { createHash } from 'crypto'
 import { parseFile } from 'music-metadata'
 import { getMusicCacheRoot } from '../cache/ncmCache'
+import { readCachedProtocolFile, type ProtocolAssetBytes } from '../cache/protocolAssetCache'
 
 export const COVER_NAMES = [
   'cover.jpg',
@@ -105,6 +106,19 @@ export function resolveCoverCacheFile(fileName: string): string | null {
   if (existsSync(currentPath)) return currentPath
   const legacyPath = join(getLegacyCoverCacheDir(), fileName)
   return existsSync(legacyPath) ? legacyPath : null
+}
+
+/**
+ * Async cover read for the cover:// protocol handler: current cache dir first,
+ * then legacy dir, served from the main-process LRU once read.
+ */
+export async function readCoverCacheFileBytes(
+  fileName: string
+): Promise<ProtocolAssetBytes | null> {
+  return readCachedProtocolFile(
+    join(getCoverCacheDir(), fileName),
+    join(getLegacyCoverCacheDir(), fileName)
+  )
 }
 
 export function isCoverCacheFileName(fileName: string): boolean {
@@ -222,11 +236,7 @@ export async function rebuildMissingTrackCover(track: Record<string, unknown>): 
 
   const filePath = typeof track.filePath === 'string' ? track.filePath : ''
   const dir =
-    typeof track.dir === 'string' && track.dir
-      ? track.dir
-      : filePath
-        ? dirname(filePath)
-        : ''
+    typeof track.dir === 'string' && track.dir ? track.dir : filePath ? dirname(filePath) : ''
   let repairedCover: string | null = null
 
   if (filePath && existsSync(filePath) && !filePath.toLowerCase().endsWith('.iso')) {

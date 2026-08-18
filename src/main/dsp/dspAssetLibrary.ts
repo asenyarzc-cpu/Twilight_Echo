@@ -4,6 +4,7 @@ import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'fs/promi
 import { basename, extname, join, resolve } from 'path'
 import type { DspAsset, DspAssetKind } from '../../shared/dspGraph.ts'
 import { tryParseJsonWithNestingLimit } from '../security/jsonSafety.ts'
+import { isCanonicalPathInside } from '../security/pathGrants.ts'
 
 const ASSET_INDEX_FILE = 'assets.json'
 const MAX_ASSET_BYTES = 512 * 1024 * 1024
@@ -155,7 +156,7 @@ export class DspAssetLibrary {
     const asset = this.assets.get(id)
     if (!asset) throw new Error('DSP 资料不存在')
     const target = resolve(this.root, asset.relativePath)
-    if (!isPathInside(target, this.root)) throw new Error('DSP 资料路径无效')
+    if (!isCanonicalPathInside(this.root, target)) throw new Error('DSP 资料路径无效')
     const info = await stat(target).catch(() => null)
     if (!info?.isFile()) throw new Error('DSP 资料文件缺失')
     return target
@@ -169,7 +170,7 @@ export class DspAssetLibrary {
     const asset = this.assets.get(id)
     if (!asset) return null
     const target = resolve(this.root, asset.relativePath)
-    return isPathInside(target, this.root) ? target : null
+    return isCanonicalPathInside(this.root, target) ? target : null
   }
 
   /**
@@ -189,7 +190,7 @@ export class DspAssetLibrary {
       }
     }
     const target = resolve(this.root, asset.relativePath)
-    if (!isPathInside(target, this.root) || !existsSync(target)) {
+    if (!isCanonicalPathInside(this.root, target) || !existsSync(target)) {
       return { path: null, kind: null, reason: 'The managed VST3 state file is missing' }
     }
     return { path: target, kind: asset.kind, reason: '' }
@@ -226,7 +227,7 @@ export class DspAssetLibrary {
         throw new Error('DSP 资料仍被场景引用，不能删除')
       }
       const target = resolve(this.root, asset.relativePath)
-      if (isPathInside(target, this.root)) await rm(target, { force: true })
+      if (isCanonicalPathInside(this.root, target)) await rm(target, { force: true })
       this.assets.delete(id)
       await this.writeIndex()
     })
@@ -392,15 +393,5 @@ function isStoredDspAsset(value: unknown): value is StoredDspAsset {
     typeof asset.createdAt === 'string' &&
     typeof asset.referenceCount === 'number' &&
     typeof asset.relativePath === 'string'
-  )
-}
-
-function isPathInside(child: string, parent: string): boolean {
-  const normalizedChild = resolve(child)
-  const normalizedParent = resolve(parent)
-  return (
-    normalizedChild === normalizedParent ||
-    normalizedChild.startsWith(`${normalizedParent}\\`) ||
-    normalizedChild.startsWith(`${normalizedParent}/`)
   )
 }

@@ -2502,43 +2502,11 @@ html[data-card-custom='on']
     .album-card,
     .playlist-card,
     .glass-card,
-    .feature-card,
-    .playlist-grid-card,
-    .playlist-tile,
-    .favorites-card,
-    .streaming-placeholder,
-    .empty-recommend,
-    .detail-playlist-header,
-    .track-table-wrapper,
-    .profile-panel,
-    .liked-panel,
-    .playlist-list-item,
+    .signal-card,
+    .chart-card,
     .profile-card,
     .recent-card,
-    .ranking-card,
-    .create-playlist-card,
-    .folder-card,
-    .empty-list-card,
-    .filter-card,
-    .sponsor-card,
-    .update-card,
-    .dsp-module-card,
-    .device-card,
-    .card,
-    .account-card,
-    .plugin-card,
-    .market-card,
-    .plugin-extension-card,
-    .bili-qr-card,
-    .chart-card,
-    .parameter-card,
-    .square-card,
-    .opra-panel,
-    .opra-result-item,
-    .device-panel,
-    .plugin-panel,
-    .output-diagnostic-panel,
-    .background-accordion-panel
+    .ranking-card
   ) {
   background: var(--te-card-bg) !important;
   border-color: var(--te-card-border) !important;
@@ -3051,7 +3019,7 @@ html[data-te-effects-mode='reduced'][data-te-background-treatment='image'] body:
    runtime) and --te-lg-angle (written by the pointer tracker).
 
    Structure: the refracting layer is the card's ::after, carrying both
-   backdrop-filter and filter: url(#te-lg-card). Putting the SVG filter on the card
+   backdrop-filter and filter: url(#te-lg-expanded-card). Putting the SVG filter on the card
    itself would displace its cover art and text too, so the warp is confined to a
    dedicated layer. At z-index -1 inside an isolated stacking context it paints
    above the card's own background but below all in-flow content, which keeps
@@ -3060,49 +3028,17 @@ html[data-te-effects-mode='reduced'][data-te-background-treatment='image'] body:
    ::before is deliberately untouched — five of these classes already use it for
    hover glows and layers. */
 
-html[data-te-surface-material='liquidGlass']
+html[data-te-liquid-glass-coverage='expanded']
   :is(
     .artist-card,
     .album-card,
     .playlist-card,
     .glass-card,
-    .feature-card,
-    .playlist-grid-card,
-    .playlist-tile,
-    .favorites-card,
-    .streaming-placeholder,
-    .empty-recommend,
-    .detail-playlist-header,
-    .track-table-wrapper,
-    .profile-panel,
-    .liked-panel,
-    .playlist-list-item,
+    .signal-card,
+    .chart-card,
     .profile-card,
     .recent-card,
-    .ranking-card,
-    .create-playlist-card,
-    .folder-card,
-    .empty-list-card,
-    .filter-card,
-    .sponsor-card,
-    .update-card,
-    .dsp-module-card,
-    .device-card,
-    .card,
-    .account-card,
-    .plugin-card,
-    .market-card,
-    .plugin-extension-card,
-    .bili-qr-card,
-    .chart-card,
-    .parameter-card,
-    .square-card,
-    .opra-panel,
-    .opra-result-item,
-    .device-panel,
-    .plugin-panel,
-    .output-diagnostic-panel,
-    .background-accordion-panel
+    .ranking-card
   ) {
   /* Shared optical palette. The playbar uses these same roles, so cards feel
      like material cut from the same sheet instead of separate opaque UI blocks. */
@@ -3125,6 +3061,12 @@ html[data-te-surface-material='liquidGlass']
   /* Contains the negative-z warp layer so it cannot slip behind an ancestor. */
   isolation: isolate;
   background: transparent !important;
+  /* Press squish: the element itself compresses toward the press point so the
+     content flexes with the material instead of sliding over it. The press
+     spring writes --te-lg-press-scale/origin every frame while a press is in
+     flight, so no transition is layered on top of it. */
+  transform-origin: var(--te-lg-press-x, 50%) var(--te-lg-press-y, 50%);
+  transform: scale(var(--te-lg-press-scale, 1));
   /* The rim is crisp and the depth is diffused, rather than one dark, hard card
      shadow. That is what keeps the surface reading as glass instead of plastic. */
   border-color: transparent !important;
@@ -3132,56 +3074,31 @@ html[data-te-surface-material='liquidGlass']
     /* Two sub-pixel inner edges give the surface its sharp glass boundary without
        becoming the thick white outline associated with frosted plastic. */
     inset 0 0 0 0.5px
-      rgba(var(--te-lg-sheen-rgb), calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 0.54)),
+      rgba(
+        var(--te-lg-sheen-rgb),
+        calc(var(--te-lg-expanded-specular, var(--te-lg-rim-strength)) * 0.54)
+      ),
     inset 0 1px 0.5px
-      rgba(var(--te-lg-sheen-rgb), calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 0.2)),
+      rgba(
+        var(--te-lg-sheen-rgb),
+        calc(var(--te-lg-expanded-specular, var(--te-lg-rim-strength)) * 0.2)
+      ),
     inset 0 -1px 1px rgba(var(--te-lg-shade-rgb), var(--te-lg-shade-alpha)),
     0 2px 7px rgba(var(--te-lg-drop-rgb), var(--te-lg-drop-near-alpha)),
     0 13px 32px rgba(var(--te-lg-drop-rgb), var(--te-lg-drop-alpha)) !important;
 }
 
-html[data-te-surface-material='liquidGlass']
+html[data-te-liquid-glass-coverage='expanded']
   :is(
     .artist-card,
     .album-card,
     .playlist-card,
     .glass-card,
-    .feature-card,
-    .playlist-grid-card,
-    .playlist-tile,
-    .favorites-card,
-    .streaming-placeholder,
-    .empty-recommend,
-    .detail-playlist-header,
-    .profile-panel,
-    .liked-panel,
-    .playlist-list-item,
+    .signal-card,
+    .chart-card,
     .profile-card,
     .recent-card,
-    .ranking-card,
-    .create-playlist-card,
-    .folder-card,
-    .empty-list-card,
-    .filter-card,
-    .sponsor-card,
-    .update-card,
-    .dsp-module-card,
-    .device-card,
-    .card,
-    .account-card,
-    .plugin-card,
-    .market-card,
-    .plugin-extension-card,
-    .bili-qr-card,
-    .chart-card,
-    .parameter-card,
-    .square-card,
-    .opra-panel,
-    .opra-result-item,
-    .device-panel,
-    .plugin-panel,
-    .output-diagnostic-panel,
-    .background-accordion-panel
+    .ranking-card
   )::after {
   content: '';
   position: absolute;
@@ -3191,24 +3108,56 @@ html[data-te-surface-material='liquidGlass']
   border-radius: inherit;
   /* Elasticity lets the glass reach toward the cursor; 0 keeps it pinned. */
   transform: translate(var(--te-lg-elastic-x, 0px), var(--te-lg-elastic-y, 0px));
-  /* A real glass surface needs more than a translucent flat colour: the pointer
-     places a soft specular bloom, the sweep gives it direction, then top/bottom
-     density layers make the light feel enclosed by material. */
+  /* A real glass surface needs more than a translucent flat colour: the rim light
+     traces the shape, the pointer places a soft specular bloom, the sweep gives it
+     direction, then top/bottom density layers make the light feel enclosed. */
   background:
+    /* Shape-aware rim light: a bright bevel along the light side, a faint
+       counter-shade opposite, and nothing through the middle so the center stays
+       clear. This is what makes the highlight read as following the surface. */
+    linear-gradient(
+      var(--te-lg-angle, 135deg),
+      rgba(
+          var(--te-lg-sheen-rgb),
+          calc(var(--te-lg-expanded-specular, var(--te-lg-rim-strength)) * 0.4)
+        )
+        0%,
+      transparent 12%,
+      transparent 88%,
+      rgba(
+          var(--te-lg-shade-rgb),
+          calc(var(--te-lg-expanded-specular, var(--te-lg-rim-strength)) * 0.16)
+        )
+        100%
+    ),
     /* A small, directional highlight is enough to communicate curvature. The old
        full-card bloom made large settings panes read as white molded plastic. */
     radial-gradient(
       112% 126% at var(--te-lg-light-x, 50%) var(--te-lg-light-y, 42%),
-      rgba(var(--te-lg-sheen-rgb), calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 0.17)) 0%,
-      rgba(var(--te-lg-sheen-rgb), calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 0.055))
+      rgba(
+          var(--te-lg-sheen-rgb),
+          calc(var(--te-lg-expanded-specular, var(--te-lg-rim-strength)) * 0.17)
+        )
+        0%,
+      rgba(
+          var(--te-lg-sheen-rgb),
+          calc(var(--te-lg-expanded-specular, var(--te-lg-rim-strength)) * 0.055)
+        )
         21%,
       transparent 55%
     ),
     linear-gradient(
       var(--te-lg-angle, 135deg),
       rgba(var(--te-lg-sheen-rgb), 0) 0%,
-      rgba(var(--te-lg-sheen-rgb), calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 0.1)) 35%,
-      rgba(var(--te-lg-sheen-rgb), calc(var(--te-lg-specular, var(--te-lg-rim-strength)) * 0.022))
+      rgba(
+          var(--te-lg-sheen-rgb),
+          calc(var(--te-lg-expanded-specular, var(--te-lg-rim-strength)) * 0.08)
+        )
+        35%,
+      rgba(
+          var(--te-lg-sheen-rgb),
+          calc(var(--te-lg-expanded-specular, var(--te-lg-rim-strength)) * 0.022)
+        )
         62%,
       transparent 100%
     ),
@@ -3220,239 +3169,142 @@ html[data-te-surface-material='liquidGlass']
       rgba(var(--te-lg-shade-rgb), var(--te-lg-bottom-density-alpha)) 100%
     ),
     rgba(var(--te-lg-surface-rgb), calc(var(--te-lg-tint, 0.12) * var(--te-lg-tint-scale, 1)));
-  /* Backdrop snapshots are as expensive as the SVG displacement. Idle cards use
-     the tint and specular layer only; full blur/refraction is promoted on hover or
-     keyboard focus, where the user can actually perceive the detail. */
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  filter: none;
+  backdrop-filter: blur(var(--te-lg-expanded-blur, 16px))
+    saturate(var(--te-lg-expanded-saturate, 150%));
+  -webkit-backdrop-filter: blur(var(--te-lg-expanded-blur, 16px))
+    saturate(var(--te-lg-expanded-saturate, 150%));
+  filter: url(#te-lg-expanded-card);
+  opacity: 1;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    filter 180ms ease,
+    backdrop-filter 180ms ease,
+    -webkit-backdrop-filter 180ms ease;
 }
 
-/* Keeping full blur and displacement to one interacted card avoids repainting a
-   full album grid whenever it scrolls, while the idle tint/rim preserve the glass
-   material at a fraction of the compositing cost. */
-html[data-te-surface-material='liquidGlass']
+/* A flat colour has no pixels for backdrop-filter to refract. Give those
+   surfaces a restrained, colour-preserving substrate so the material remains
+   visible without changing the image-backed recipe. */
+html[data-te-liquid-glass-source='solid'][data-te-liquid-glass-coverage='expanded']
   :is(
     .artist-card,
     .album-card,
     .playlist-card,
     .glass-card,
-    .feature-card,
-    .playlist-grid-card,
-    .playlist-tile,
-    .favorites-card,
-    .streaming-placeholder,
-    .empty-recommend,
-    .detail-playlist-header,
-    .profile-panel,
-    .liked-panel,
-    .playlist-list-item,
+    .signal-card,
+    .chart-card,
     .profile-card,
     .recent-card,
-    .ranking-card,
-    .create-playlist-card,
-    .folder-card,
-    .empty-list-card,
-    .filter-card,
-    .sponsor-card,
-    .update-card,
-    .dsp-module-card,
-    .device-card,
-    .card,
-    .account-card,
-    .plugin-card,
-    .market-card,
-    .plugin-extension-card,
-    .bili-qr-card,
+    .ranking-card
+  )::after {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--te-lg-context-rim) 18%, transparent),
+      transparent 48%,
+      color-mix(in srgb, var(--te-lg-context-label) 8%, transparent)
+    ),
+    var(--te-lg-context-material) !important;
+}
+
+html[data-te-liquid-glass-coverage='expanded']
+  :is(
+    .artist-card,
+    .album-card,
+    .playlist-card,
+    .glass-card,
+    .signal-card,
     .chart-card,
-    .parameter-card,
-    .square-card,
-    .opra-panel,
-    .opra-result-item,
-    .device-panel,
-    .plugin-panel,
-    .output-diagnostic-panel,
-    .background-accordion-panel
-  ):is(:hover, :focus-within)::after {
-  backdrop-filter: blur(var(--te-lg-blur, 16px)) saturate(var(--te-lg-saturate, 140%));
-  -webkit-backdrop-filter: blur(var(--te-lg-blur, 16px)) saturate(var(--te-lg-saturate, 140%));
-  filter: url(#te-lg-card);
+    .profile-card,
+    .recent-card,
+    .ranking-card
+  ) {
+  transition: transform 120ms ease-out;
+}
+
+html[data-te-liquid-glass-coverage='expanded']
+  :is(
+    .artist-card,
+    .album-card,
+    .playlist-card,
+    .glass-card,
+    .signal-card,
+    .chart-card,
+    .profile-card,
+    .recent-card,
+    .ranking-card
+  ):active {
+  transform: scale(0.985);
 }
 
 /* Dark tone: the sheen stays light (it is a specular highlight) but the tint
    darkens, otherwise a light film washes out dark surfaces. */
-html[data-te-surface-material='liquidGlass'][data-theme='dark']
+html[data-te-liquid-glass-coverage='expanded'][data-theme='dark']
   :is(
     .artist-card,
     .album-card,
     .playlist-card,
     .glass-card,
-    .feature-card,
-    .playlist-grid-card,
-    .playlist-tile,
-    .favorites-card,
-    .streaming-placeholder,
-    .empty-recommend,
-    .detail-playlist-header,
-    .track-table-wrapper,
-    .profile-panel,
-    .liked-panel,
-    .playlist-list-item,
+    .signal-card,
+    .chart-card,
     .profile-card,
     .recent-card,
-    .ranking-card,
-    .create-playlist-card,
-    .folder-card,
-    .empty-list-card,
-    .filter-card,
-    .sponsor-card,
-    .update-card,
-    .dsp-module-card,
-    .device-card,
-    .card,
-    .account-card,
-    .plugin-card,
-    .market-card,
-    .plugin-extension-card,
-    .bili-qr-card,
-    .chart-card,
-    .parameter-card,
-    .square-card,
-    .opra-panel,
-    .opra-result-item,
-    .device-panel,
-    .plugin-panel,
-    .output-diagnostic-panel,
-    .background-accordion-panel
+    .ranking-card
   ) {
   --te-lg-surface-rgb: 116, 126, 148;
   --te-lg-shade-rgb: 0, 0, 0;
   --te-lg-drop-rgb: 0, 0, 0;
   /* A broad dark pane must remain an optical layer, not become a raised
-     graphite slab. The compact playbar can carry heavier depth; large cards use
-     only a restrained lower density and a short, diffuse separation shadow. */
-  --te-lg-rim-strength: 0.38;
+     graphite slab. Dark tone leans on blur + saturation for legibility and
+     keeps the density/shade stack light so the backdrop shows through. */
+  --te-lg-rim-strength: 0.46;
   --te-lg-top-wash-alpha: 0.04;
-  --te-lg-bottom-density-alpha: 0.13;
-  --te-lg-shade-alpha: 0.15;
-  --te-lg-drop-near-alpha: 0.07;
-  --te-lg-drop-alpha: 0.18;
+  --te-lg-bottom-density-alpha: 0.09;
+  --te-lg-shade-alpha: 0.11;
+  --te-lg-drop-near-alpha: 0.06;
+  --te-lg-drop-alpha: 0.15;
   --te-lg-tint-scale: 0.76;
 }
-/* feature-card and playlist-tile have dark-tone rules that set ::after to
-   display: none; the warp layer has to opt back in. */
-html[data-te-surface-material='liquidGlass'][data-theme='dark']
-  :is(.feature-card, .playlist-tile)::after {
-  display: block !important;
-}
-
-/* The track table is the largest continuously scrolling glass surface. A backdrop
-   snapshot there must be recomputed for every row scroll, so retain the tint/rim but
-   deliberately skip blur and SVG refraction. Card and playbar interaction states
-   still provide the full liquid response where the detail is perceptible. */
-html[data-te-surface-material='liquidGlass'] .track-table-wrapper {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  background: rgba(var(--te-lg-surface-rgb), calc(var(--te-lg-tint, 0.12) * 0.7)) !important;
-}
-
-html[data-te-surface-material='liquidGlass'][data-theme='dark'] .track-table-wrapper {
-  background: rgba(var(--te-lg-surface-rgb), calc(var(--te-lg-tint, 0.16) * 0.72)) !important;
+/* The observer keeps a small warm-up margin around the viewport so this only
+   affects surfaces that cannot contribute to the current frame. */
+html[data-te-liquid-glass-coverage='expanded'] .te-liquid-glass-offscreen::after {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* ===== Liquid glass degradation =====
    Three existing contracts strip heavy effects. Each must also drop the SVG filter:
    refraction without its blurred backdrop reads as a smeared artifact, not glass. */
 
-html[data-te-surface-material='liquidGlass']
+html[data-te-liquid-glass-coverage='expanded']
   body.te-no-blur
   :is(
     .artist-card,
     .album-card,
     .playlist-card,
     .glass-card,
-    .feature-card,
-    .playlist-grid-card,
-    .playlist-tile,
-    .favorites-card,
-    .streaming-placeholder,
-    .empty-recommend,
-    .detail-playlist-header,
-    .profile-panel,
-    .liked-panel,
-    .playlist-list-item,
+    .signal-card,
+    .chart-card,
     .profile-card,
     .recent-card,
-    .ranking-card,
-    .create-playlist-card,
-    .folder-card,
-    .empty-list-card,
-    .filter-card,
-    .sponsor-card,
-    .update-card,
-    .dsp-module-card,
-    .device-card,
-    .card,
-    .account-card,
-    .plugin-card,
-    .market-card,
-    .plugin-extension-card,
-    .bili-qr-card,
-    .chart-card,
-    .parameter-card,
-    .square-card,
-    .opra-panel,
-    .opra-result-item,
-    .device-panel,
-    .plugin-panel,
-    .output-diagnostic-panel,
-    .background-accordion-panel
+    .ranking-card
   )::after {
   filter: none !important;
 }
 
-html[data-te-surface-material='liquidGlass'][data-te-effects-mode='reduced']
+html[data-te-liquid-glass-coverage='expanded'][data-te-effects-mode='reduced']
   :is(
     .artist-card,
     .album-card,
     .playlist-card,
     .glass-card,
-    .feature-card,
-    .playlist-grid-card,
-    .playlist-tile,
-    .favorites-card,
-    .streaming-placeholder,
-    .empty-recommend,
-    .detail-playlist-header,
-    .profile-panel,
-    .liked-panel,
-    .playlist-list-item,
+    .signal-card,
+    .chart-card,
     .profile-card,
     .recent-card,
-    .ranking-card,
-    .create-playlist-card,
-    .folder-card,
-    .empty-list-card,
-    .filter-card,
-    .sponsor-card,
-    .update-card,
-    .dsp-module-card,
-    .device-card,
-    .card,
-    .account-card,
-    .plugin-card,
-    .market-card,
-    .plugin-extension-card,
-    .bili-qr-card,
-    .chart-card,
-    .parameter-card,
-    .square-card,
-    .opra-panel,
-    .opra-result-item,
-    .device-panel,
-    .plugin-panel,
-    .output-diagnostic-panel,
-    .background-accordion-panel
+    .ranking-card
   )::after {
   filter: none !important;
   backdrop-filter: none !important;
@@ -3461,48 +3313,20 @@ html[data-te-surface-material='liquidGlass'][data-te-effects-mode='reduced']
 
 /* Reduced/disabled motion keeps the material but pins the light source; the pointer
    tracker also detaches its listener, so the angle variable stops changing. */
-html[data-te-surface-material='liquidGlass']:is([data-te-motion='reduced'], [data-te-motion='off'])
+html[data-te-liquid-glass-coverage='expanded']:is(
+    [data-te-motion='reduced'],
+    [data-te-motion='off']
+  )
   :is(
     .artist-card,
     .album-card,
     .playlist-card,
     .glass-card,
-    .feature-card,
-    .playlist-grid-card,
-    .playlist-tile,
-    .favorites-card,
-    .streaming-placeholder,
-    .empty-recommend,
-    .detail-playlist-header,
-    .profile-panel,
-    .liked-panel,
-    .playlist-list-item,
+    .signal-card,
+    .chart-card,
     .profile-card,
     .recent-card,
-    .ranking-card,
-    .create-playlist-card,
-    .folder-card,
-    .empty-list-card,
-    .filter-card,
-    .sponsor-card,
-    .update-card,
-    .dsp-module-card,
-    .device-card,
-    .card,
-    .account-card,
-    .plugin-card,
-    .market-card,
-    .plugin-extension-card,
-    .bili-qr-card,
-    .chart-card,
-    .parameter-card,
-    .square-card,
-    .opra-panel,
-    .opra-result-item,
-    .device-panel,
-    .plugin-panel,
-    .output-diagnostic-panel,
-    .background-accordion-panel
+    .ranking-card
   )::after {
   transition: none !important;
 }
@@ -3510,50 +3334,225 @@ html[data-te-surface-material='liquidGlass']:is([data-te-motion='reduced'], [dat
 /* Transparent Linux windows cannot sample the desktop behind the window, so in-app
    blur only re-blurs the app's own layers while forcing per-frame recomposition.
    Mirrors the existing window-transparency carve-out. */
-html[data-te-surface-material='liquidGlass'][data-window-transparent='on'][data-platform='linux']
+html[data-te-liquid-glass-coverage='expanded'][data-window-transparent='on'][data-platform='linux']
   :is(
     .artist-card,
     .album-card,
     .playlist-card,
     .glass-card,
-    .feature-card,
-    .playlist-grid-card,
-    .playlist-tile,
-    .favorites-card,
-    .streaming-placeholder,
-    .empty-recommend,
-    .detail-playlist-header,
-    .profile-panel,
-    .liked-panel,
-    .playlist-list-item,
+    .signal-card,
+    .chart-card,
     .profile-card,
     .recent-card,
-    .ranking-card,
-    .create-playlist-card,
-    .folder-card,
-    .empty-list-card,
-    .filter-card,
-    .sponsor-card,
-    .update-card,
-    .dsp-module-card,
-    .device-card,
-    .card,
-    .account-card,
-    .plugin-card,
-    .market-card,
-    .plugin-extension-card,
-    .bili-qr-card,
-    .chart-card,
-    .parameter-card,
-    .square-card,
-    .opra-panel,
-    .opra-result-item,
-    .device-panel,
-    .plugin-panel,
-    .output-diagnostic-panel,
-    .background-accordion-panel
+    .ranking-card
   )::after {
   filter: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* Windows Acrylic already supplies the compositor blur behind the web contents.
+   Do not stack a second backdrop/filter pass on top of that native material. */
+html[data-te-liquid-glass-coverage='expanded'][data-window-transparent='on'][data-platform='win32']
+  :is(
+    .artist-card,
+    .album-card,
+    .playlist-card,
+    .glass-card,
+    .signal-card,
+    .chart-card,
+    .profile-card,
+    .recent-card,
+    .ranking-card
+  )::after {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Expanded surfaces remain content-first: a registered glass card nested inside
+   another registered surface falls back to the parent's material instead of
+   stacking two blur snapshots. */
+html[data-te-liquid-glass-coverage='expanded']
+  :is(
+    .artist-card,
+    .album-card,
+    .playlist-card,
+    .glass-card,
+    .signal-card,
+    .chart-card,
+    .profile-card,
+    .recent-card,
+    .ranking-card
+  )
+  :is(
+    .artist-card,
+    .album-card,
+    .playlist-card,
+    .glass-card,
+    .signal-card,
+    .chart-card,
+    .profile-card,
+    .recent-card,
+    .ranking-card
+  )::after {
+  content: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* The observer keeps the expensive refraction budget bounded. Budgeted and
+   offscreen cards retain a translucent surface, but never create a filter pass. */
+html[data-te-liquid-glass-coverage='expanded']
+  :is(.te-liquid-glass-budget, .te-liquid-glass-offscreen)::after {
+  background: rgba(var(--te-lg-surface-rgb, 255, 255, 255), 0.16) !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-te-liquid-glass-coverage='expanded']
+  body.te-no-blur
+  :is(
+    .artist-card,
+    .album-card,
+    .playlist-card,
+    .glass-card,
+    .signal-card,
+    .chart-card,
+    .profile-card,
+    .recent-card,
+    .ranking-card
+  ) {
+  background: var(--te-card-bg, #ffffff) !important;
+  border: 1px solid var(--te-card-border, rgba(15, 23, 42, 0.16)) !important;
+  box-shadow: none !important;
+}
+
+html[data-te-liquid-glass-coverage='expanded']
+  body.te-no-blur
+  :is(
+    .artist-card,
+    .album-card,
+    .playlist-card,
+    .glass-card,
+    .signal-card,
+    .chart-card,
+    .profile-card,
+    .recent-card,
+    .ranking-card
+  )::after {
+  background: transparent !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-te-liquid-glass-coverage='expanded']
+    :is(
+      .artist-card,
+      .album-card,
+      .playlist-card,
+      .glass-card,
+      .signal-card,
+      .chart-card,
+      .profile-card,
+      .recent-card,
+      .ranking-card
+    ) {
+    background: var(--te-card-bg, #ffffff) !important;
+    border: 1px solid var(--te-card-border, rgba(15, 23, 42, 0.16)) !important;
+    box-shadow: none !important;
+  }
+
+  html[data-te-liquid-glass-coverage='expanded']
+    :is(
+      .artist-card,
+      .album-card,
+      .playlist-card,
+      .glass-card,
+      .signal-card,
+      .chart-card,
+      .profile-card,
+      .recent-card,
+      .ranking-card
+    )::after {
+    background: transparent !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-te-liquid-glass-coverage='expanded']
+    :is(
+      .artist-card,
+      .album-card,
+      .playlist-card,
+      .glass-card,
+      .signal-card,
+      .chart-card,
+      .profile-card,
+      .recent-card,
+      .ranking-card
+    )::after {
+    transition: opacity 120ms ease !important;
+    transform: none !important;
+  }
+
+  html[data-te-liquid-glass-coverage='expanded']
+    :is(
+      .artist-card,
+      .album-card,
+      .playlist-card,
+      .glass-card,
+      .signal-card,
+      .chart-card,
+      .profile-card,
+      .recent-card,
+      .ranking-card
+    ) {
+    transition: none !important;
+  }
+}
+
+@media (prefers-contrast: more), (forced-colors: active) {
+  html[data-te-liquid-glass-coverage='expanded']
+    :is(
+      .artist-card,
+      .album-card,
+      .playlist-card,
+      .glass-card,
+      .signal-card,
+      .chart-card,
+      .profile-card,
+      .recent-card,
+      .ranking-card
+    ) {
+    background: Canvas !important;
+    color: CanvasText !important;
+    border: 1px solid CanvasText !important;
+    box-shadow: none !important;
+  }
+
+  html[data-te-liquid-glass-coverage='expanded']
+    :is(
+      .artist-card,
+      .album-card,
+      .playlist-card,
+      .glass-card,
+      .signal-card,
+      .chart-card,
+      .profile-card,
+      .recent-card,
+      .ranking-card
+    )::after {
+    content: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
 }

@@ -1,13 +1,9 @@
 import { lstat, mkdir, readdir, rm } from 'fs/promises'
 import { join, resolve } from 'path'
 
-export const MANAGED_MUSIC_CACHE_DIRECTORY_NAMES = [
-  'renderer-cache',
-  'audio-engine-cache',
-  'ncm-cache',
-  'network-cache',
-  'cover-cache'
-] as const
+import { MANAGED_MUSIC_CACHE_DIRECTORY_NAMES } from '../../shared/musicCacheLayout.ts'
+
+export { MANAGED_MUSIC_CACHE_DIRECTORY_NAMES }
 
 export function getManagedMusicCacheDirectories(rootPath: string): string[] {
   const root = resolve(rootPath)

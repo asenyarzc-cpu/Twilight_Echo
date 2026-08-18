@@ -3,8 +3,31 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { normalizeCueRange } from '../shared/cue.ts'
 
+function readPreloadSources(): string {
+  const root = new URL('../preload/', import.meta.url)
+  return [
+    'index.ts',
+    'types.ts',
+    'index.d.ts',
+    'sleepTimerEvents.ts',
+    'domains/dataApi.ts',
+    'domains/audioEngineApi.ts',
+    'domains/desktopLyricsApi.ts',
+    'domains/libraryApi.ts',
+    'domains/mediaSubscriptionsApi.ts',
+    'domains/networkSourcesApi.ts',
+    'domains/settingsApi.ts',
+    'domains/themesApi.ts',
+    'domains/pluginsApi.ts',
+    'domains/systemApi.ts',
+    'domains/versionedData.ts'
+  ]
+    .map((rel) => readFileSync(new URL(rel, root), 'utf8'))
+    .join('\n')
+}
+
 const source = readFileSync(new URL('./audio/engineIpc.ts', import.meta.url), 'utf8')
-const preloadSource = readFileSync(new URL('../preload/index.ts', import.meta.url), 'utf8')
+const preloadSource = readPreloadSources()
 const preloadTypes = readFileSync(new URL('../preload/types.ts', import.meta.url), 'utf8')
 const preloadDeclaration = readFileSync(new URL('../preload/index.d.ts', import.meta.url), 'utf8')
 const deviceHotplugSource = readFileSync(
@@ -15,7 +38,7 @@ const windowSource = readFileSync(new URL('./app/window.ts', import.meta.url), '
 
 test('audioEngine loadQueue IPC accepts renderer queue items with source field', () => {
   const start = source.indexOf('function toQueueItem')
-  const end = source.indexOf("ipcMain.handle('audioEngine:loadQueue'", start)
+  const end = source.indexOf('ipcMain.handle(IPC.audioEngine.loadQueue', start)
   assert.notEqual(start, -1, 'toQueueItem should exist')
   assert.notEqual(end, -1, 'audioEngine:loadQueue handler should exist')
   const toQueueItem = source.slice(start, end)
@@ -65,8 +88,8 @@ test('audioEngine IPC normalizes untrusted renderer parameters', () => {
 
 test('config-applied crosses the manager, IPC, and preload boundary', () => {
   assert.match(source, /audioEngineManager\.on\('config-applied'/)
-  assert.match(source, /webContents\.send\('audioEngine:config-applied', event\)/)
-  assert.match(preloadSource, /ipcRenderer\.on\('audioEngine:config-applied'/)
+  assert.match(source, /webContents\.send\(IPC\.audioEngine\.configApplied, event\)/)
+  assert.match(preloadSource, /ipcRenderer\.on\(IPC\.audioEngine\.configApplied/)
   assert.match(preloadSource, /audioEngineConfigAppliedCallbacks/)
   assert.match(preloadSource, /onConfigApplied:/)
 

@@ -5,10 +5,14 @@ import {
   DEFAULT_PLAYER_BAR_SETTINGS,
   PLAYER_BAR_BOUNDS,
   PLAYER_BAR_MODES,
+  PLAYER_BAR_VISIBILITIES,
   clonePlayerBarSettings,
   normalizePlayerBarMode,
   normalizePlayerBarPageMode,
+  normalizePlayerBarPageVisibility,
   normalizePlayerBarSettings,
+  normalizePlayerBarVisibility,
+  playerBarAutoHideApplies,
   resolvePlayerBarPresentation,
   resolveSeekTargetSeconds
 } from './playerBar.ts'
@@ -17,11 +21,13 @@ test('player bar defaults keep the existing standard shape', () => {
   assert.deepEqual(DEFAULT_PLAYER_BAR_SETTINGS, {
     mode: 'standard',
     playingPageMode: 'inherit',
-    autoHideOnPlayingPage: false,
+    visibility: 'visible',
+    playingPageVisibility: 'inherit',
     revealThresholdPx: 120,
     hideDelayMs: 900
   })
   assert.deepEqual([...PLAYER_BAR_MODES], ['standard', 'mini'])
+  assert.deepEqual([...PLAYER_BAR_VISIBILITIES], ['visible', 'autoHide', 'hidden'])
 })
 
 test('mode normalization falls back to standard for anything unrecognized', () => {
@@ -39,6 +45,25 @@ test('page mode normalization falls back to inherit', () => {
   assert.equal(normalizePlayerBarPageMode('inherit'), 'inherit')
   assert.equal(normalizePlayerBarPageMode('nonsense'), 'inherit')
   assert.equal(normalizePlayerBarPageMode(undefined), 'inherit')
+})
+
+test('visibility normalization falls back to visible', () => {
+  assert.equal(normalizePlayerBarVisibility('visible'), 'visible')
+  assert.equal(normalizePlayerBarVisibility('autoHide'), 'autoHide')
+  assert.equal(normalizePlayerBarVisibility('hidden'), 'hidden')
+  assert.equal(normalizePlayerBarVisibility('inherit'), 'visible')
+  assert.equal(normalizePlayerBarVisibility('gone'), 'visible')
+  assert.equal(normalizePlayerBarVisibility(true), 'visible')
+  assert.equal(normalizePlayerBarVisibility(undefined), 'visible')
+})
+
+test('page visibility normalization falls back to inherit', () => {
+  assert.equal(normalizePlayerBarPageVisibility('visible'), 'visible')
+  assert.equal(normalizePlayerBarPageVisibility('autoHide'), 'autoHide')
+  assert.equal(normalizePlayerBarPageVisibility('hidden'), 'hidden')
+  assert.equal(normalizePlayerBarPageVisibility('inherit'), 'inherit')
+  assert.equal(normalizePlayerBarPageVisibility('nonsense'), 'inherit')
+  assert.equal(normalizePlayerBarPageVisibility(undefined), 'inherit')
 })
 
 test('settings normalization clamps and rounds numeric fields', () => {
@@ -64,14 +89,43 @@ test('settings normalization survives garbage input', () => {
     normalizePlayerBarSettings({ hideDelayMs: Number.POSITIVE_INFINITY }).hideDelayMs,
     900
   )
-  // Only a literal true enables auto-hide, so a truthy string cannot flip it.
+})
+
+test('the legacy auto-hide boolean migrates onto the playing-page visibility', () => {
+  // Settings written before the three-step visibility carried only this flag.
   assert.equal(
-    normalizePlayerBarSettings({ autoHideOnPlayingPage: 'yes' }).autoHideOnPlayingPage,
-    false
+    normalizePlayerBarSettings({ mode: 'mini', autoHideOnPlayingPage: true }).playingPageVisibility,
+    'autoHide'
+  )
+  // The global step is untouched, so the bar keeps hiding only where it did.
+  assert.equal(
+    normalizePlayerBarSettings({ mode: 'mini', autoHideOnPlayingPage: true }).visibility,
+    'visible'
   )
   assert.equal(
-    normalizePlayerBarSettings({ autoHideOnPlayingPage: true }).autoHideOnPlayingPage,
-    true
+    normalizePlayerBarSettings({ autoHideOnPlayingPage: false }).playingPageVisibility,
+    'inherit'
+  )
+  // Only a literal true migrated, so a truthy string cannot flip it.
+  assert.equal(
+    normalizePlayerBarSettings({ autoHideOnPlayingPage: 'yes' }).playingPageVisibility,
+    'inherit'
+  )
+  // Once the new field exists it wins, even against a stale legacy flag.
+  assert.equal(
+    normalizePlayerBarSettings({ autoHideOnPlayingPage: true, playingPageVisibility: 'hidden' })
+      .playingPageVisibility,
+    'hidden'
+  )
+  assert.equal(
+    normalizePlayerBarSettings({ autoHideOnPlayingPage: true, playingPageVisibility: 'visible' })
+      .playingPageVisibility,
+    'visible'
+  )
+  // The legacy key never survives into the normalized shape.
+  assert.equal(
+    'autoHideOnPlayingPage' in normalizePlayerBarSettings({ autoHideOnPlayingPage: true }),
+    false
   )
 })
 
@@ -100,14 +154,14 @@ test('playing page mode overrides the global shape only on the playing page', ()
   assert.equal(resolvePlayerBarPresentation(inverse, { onPlayingPage: false }).mode, 'mini')
 })
 
-test('auto-hide requires the playing page, the mini shape, and the setting', () => {
+test('the migrated auto-hide still needs the playing page and the mini shape', () => {
   const enabled = normalizePlayerBarSettings({
     mode: 'mini',
     playingPageMode: 'inherit',
     autoHideOnPlayingPage: true
   })
   assert.equal(resolvePlayerBarPresentation(enabled, { onPlayingPage: true }).autoHide, true)
-  // Off the playing page the bar is always present, even with the setting on.
+  // The global step stayed `visible`, so elsewhere the bar is still present.
   assert.equal(resolvePlayerBarPresentation(enabled, { onPlayingPage: false }).autoHide, false)
 
   const standardOnPlayingPage = normalizePlayerBarSettings({
@@ -122,6 +176,98 @@ test('auto-hide requires the playing page, the mini shape, and the setting', () 
 
   const settingOff = normalizePlayerBarSettings({ mode: 'mini', autoHideOnPlayingPage: false })
   assert.equal(resolvePlayerBarPresentation(settingOff, { onPlayingPage: true }).autoHide, false)
+})
+
+test('auto-hide can now apply globally, and degrades to visible on a standard bar', () => {
+  const everywhere = normalizePlayerBarSettings({ mode: 'mini', visibility: 'autoHide' })
+  for (const onPlayingPage of [true, false]) {
+    const resolved = resolvePlayerBarPresentation(everywhere, { onPlayingPage })
+    assert.equal(resolved.autoHide, true)
+    assert.equal(resolved.hidden, false)
+  }
+
+  // A standard bar keeps its inline progress row instead of tucking away.
+  const standard = normalizePlayerBarSettings({ mode: 'standard', visibility: 'autoHide' })
+  const resolvedStandard = resolvePlayerBarPresentation(standard, { onPlayingPage: false })
+  assert.equal(resolvedStandard.autoHide, false)
+  assert.equal(resolvedStandard.hidden, false)
+})
+
+test('fully hidden applies to both shapes and never reports auto-hide', () => {
+  for (const mode of PLAYER_BAR_MODES) {
+    const settings = normalizePlayerBarSettings({ mode, visibility: 'hidden' })
+    for (const onPlayingPage of [true, false]) {
+      const resolved = resolvePlayerBarPresentation(settings, { onPlayingPage })
+      assert.equal(resolved.hidden, true)
+      // Mutually exclusive: a hidden bar has no reveal gesture to arm.
+      assert.equal(resolved.autoHide, false)
+      // Shape resolution is unaffected by visibility.
+      assert.equal(resolved.mode, mode)
+    }
+  }
+})
+
+test('visibility and shape are independent, each with its own playing-page override', () => {
+  // Mini + auto-hide on the playing page, standard + always visible elsewhere:
+  // the pairing the mini bar shipped with, expressed in the new contract.
+  const coexist = normalizePlayerBarSettings({
+    mode: 'standard',
+    playingPageMode: 'mini',
+    visibility: 'visible',
+    playingPageVisibility: 'autoHide'
+  })
+  assert.deepEqual(resolvePlayerBarPresentation(coexist, { onPlayingPage: true }), {
+    mode: 'mini',
+    autoHide: true,
+    hidden: false
+  })
+  assert.deepEqual(resolvePlayerBarPresentation(coexist, { onPlayingPage: false }), {
+    mode: 'standard',
+    autoHide: false,
+    hidden: false
+  })
+
+  // Hidden everywhere except the playing page, where the mini bar auto-hides.
+  const hiddenOutside = normalizePlayerBarSettings({
+    mode: 'mini',
+    visibility: 'hidden',
+    playingPageVisibility: 'autoHide'
+  })
+  assert.deepEqual(resolvePlayerBarPresentation(hiddenOutside, { onPlayingPage: false }), {
+    mode: 'mini',
+    autoHide: false,
+    hidden: true
+  })
+  assert.deepEqual(resolvePlayerBarPresentation(hiddenOutside, { onPlayingPage: true }), {
+    mode: 'mini',
+    autoHide: true,
+    hidden: false
+  })
+
+  // And the inverse: visible while browsing, gone on the playing page.
+  const hiddenOnPage = normalizePlayerBarSettings({
+    mode: 'mini',
+    visibility: 'visible',
+    playingPageVisibility: 'hidden'
+  })
+  assert.equal(resolvePlayerBarPresentation(hiddenOnPage, { onPlayingPage: true }).hidden, true)
+  assert.equal(resolvePlayerBarPresentation(hiddenOnPage, { onPlayingPage: false }).hidden, false)
+})
+
+test('the auto-hide applicability helper matches the resolved presentation', () => {
+  const cases: { visibility: string; mode: string; onPlayingPage: boolean }[] = [
+    { visibility: 'autoHide', mode: 'mini', onPlayingPage: true },
+    { visibility: 'autoHide', mode: 'standard', onPlayingPage: true },
+    { visibility: 'hidden', mode: 'mini', onPlayingPage: false },
+    { visibility: 'visible', mode: 'mini', onPlayingPage: false }
+  ]
+  for (const { visibility, mode, onPlayingPage } of cases) {
+    const settings = normalizePlayerBarSettings({ mode, visibility })
+    assert.equal(
+      playerBarAutoHideApplies(settings, { onPlayingPage }),
+      resolvePlayerBarPresentation(settings, { onPlayingPage }).autoHide
+    )
+  }
 })
 
 test('seek mapping converts a 0..1 ratio into seconds', () => {

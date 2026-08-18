@@ -22,26 +22,32 @@ import type { LyricTimelineEntry } from './lyricTimeline.ts'
  * at 0.01, so a 100 -> 97 range resolves cleanly while a 1.0 -> 0.97 range would
  * fall inside the settle threshold and never animate.
  */
-export const LYRIC_SCALE_ACTIVE = 100
-export const LYRIC_SCALE_INACTIVE = 97
+export const LYRIC_SCALE_ACTIVE = 104
+export const LYRIC_SCALE_PRESENTED = 102
+export const LYRIC_SCALE_INACTIVE = 100
 export const LYRIC_SCALE_BACKGROUND = 75
 
-export const LYRIC_OPACITY_PRESENTED = 0.85
-export const LYRIC_OPACITY_NORMAL = 1
-export const LYRIC_OPACITY_NON_DYNAMIC = 0.2
+export const LYRIC_OPACITY_SINGING = 1
+export const LYRIC_OPACITY_PRESENTED = 0.86
+export const LYRIC_OPACITY_PAST = 0.68
+export const LYRIC_OPACITY_FUTURE = 0.46
+export const LYRIC_OPACITY_NORMAL = LYRIC_OPACITY_FUTURE
+export const LYRIC_OPACITY_NON_DYNAMIC = LYRIC_OPACITY_FUTURE
 /** Not zero: a fully transparent line gets optimised out and pops on return. */
 export const LYRIC_OPACITY_HIDDEN = 0.00001
 
-export const LYRIC_BLUR_PER_INDEX = 1
-export const LYRIC_BLUR_MAX = 32
+export const LYRIC_BLUR_PER_INDEX = 0.35
+export const LYRIC_BLUR_MAX = 4
 export const LYRIC_NARROW_VIEWPORT_PX = 1024
 export const LYRIC_NARROW_BLUR_SCALE = 0.8
 
-export const LYRIC_CASCADE_BASE_DELAY = 0.05
+export const LYRIC_CASCADE_BASE_DELAY = 0.032
 export const LYRIC_CASCADE_DECAY = 1.05
+export const LYRIC_CASCADE_MAX_DELAY = 0.096
 
-/** Range the built-in scale amount spans: 100 (active) down to 97 (inactive). */
+/** Range the built-in scale amount spans: 100 (idle) up to 104 (singing). */
 export const LYRIC_SCALE_RANGE = LYRIC_SCALE_ACTIVE - LYRIC_SCALE_INACTIVE
+export const LYRIC_PRESENTED_SCALE_RANGE = LYRIC_SCALE_PRESENTED - LYRIC_SCALE_INACTIVE
 
 export const LYRIC_ALIGN_POSITION = 0.35
 export const LYRIC_INTERLUDE_DOTS_GAP_PX = 40
@@ -61,6 +67,8 @@ export interface LyricLayoutOptions {
   timeline?: readonly LyricTimelineEntry[]
   /** Index the view is anchored to. */
   scrollToIndex: number
+  /** Lines whose concrete vocal span contains the playhead. */
+  hot?: ReadonlySet<number>
   buffered: ReadonlySet<number>
   viewportHeight: number
   viewportWidth?: number
@@ -132,6 +140,7 @@ export function computeLyricLayout(options: LyricLayoutOptions): LyricLayoutResu
   const {
     lines,
     scrollToIndex: requestedScrollIndex,
+    hot: providedHot,
     buffered,
     viewportHeight,
     viewportWidth = Number.POSITIVE_INFINITY,
@@ -155,6 +164,7 @@ export function computeLyricLayout(options: LyricLayoutOptions): LyricLayoutResu
   } = options
 
   const visibleHeight = Math.max(0, viewportHeight - Math.max(0, bottomReservedPx))
+  const hot = providedHot ?? buffered
   const dim = clamp(inactiveDim, 0, 1)
   const scaleAmount = clamp(scaleIntensity, 0, 1)
   const blurAmount = clamp(blurIntensity, 0, 1)
@@ -203,9 +213,12 @@ export function computeLyricLayout(options: LyricLayoutOptions): LyricLayoutResu
   const scrollBoundaryMin = -stackedAbove
   const latestPresented = buffered.size > 0 ? Math.max(...buffered) : -1
   const blurScale = viewportWidth <= LYRIC_NARROW_VIEWPORT_PX ? LYRIC_NARROW_BLUR_SCALE : 1
-  const inactiveScale = enableScale
-    ? LYRIC_SCALE_ACTIVE - LYRIC_SCALE_RANGE * scaleAmount
-    : LYRIC_SCALE_ACTIVE
+  const singingScale = enableScale
+    ? LYRIC_SCALE_INACTIVE + LYRIC_SCALE_RANGE * scaleAmount
+    : LYRIC_SCALE_INACTIVE
+  const presentedScale = enableScale
+    ? LYRIC_SCALE_INACTIVE + LYRIC_PRESENTED_SCALE_RANGE * scaleAmount
+    : LYRIC_SCALE_INACTIVE
 
   const results: LyricLineTarget[] = []
   let interludeDotsTop: number | null = null
@@ -216,8 +229,9 @@ export function computeLyricLayout(options: LyricLayoutOptions): LyricLayoutResu
   for (let position = 0; position < lines.length; position += 1) {
     const line = lines[position]
     const lineIndex = line.index
+    const singing = hot.has(lineIndex)
     const presented = buffered.has(lineIndex)
-    const active = presented || (lineIndex >= scrollToIndex && lineIndex < latestPresented)
+    const focused = singing || presented
     const focusHidden = isFocusHidden(lineIndex)
 
     if (
@@ -235,14 +249,18 @@ export function computeLyricLayout(options: LyricLayoutOptions): LyricLayoutResu
       opacity = LYRIC_OPACITY_HIDDEN
     } else if (hidePassedLines && isPlaying && lineIndex < scrollToIndex) {
       opacity = LYRIC_OPACITY_HIDDEN
+    } else if (singing) {
+      opacity = LYRIC_OPACITY_SINGING
     } else if (presented) {
       opacity = LYRIC_OPACITY_PRESENTED
+    } else if (lineIndex < scrollToIndex) {
+      opacity = LYRIC_OPACITY_PAST * dim
     } else {
-      opacity = (isNonDynamic ? LYRIC_OPACITY_NON_DYNAMIC : LYRIC_OPACITY_NORMAL) * dim
+      opacity = (isNonDynamic ? LYRIC_OPACITY_NON_DYNAMIC : LYRIC_OPACITY_FUTURE) * dim
     }
 
     let blur = 0
-    if (enableBlur && !active) {
+    if (enableBlur && !focused) {
       const distance =
         lineIndex < scrollToIndex
           ? Math.abs(scrollToIndex - lineIndex) + 1
@@ -251,19 +269,23 @@ export function computeLyricLayout(options: LyricLayoutOptions): LyricLayoutResu
         clamp((1 + distance) * LYRIC_BLUR_PER_INDEX * blurScale, 0, LYRIC_BLUR_MAX) * blurAmount
     }
 
-    let scale = LYRIC_SCALE_ACTIVE
-    if (!active && isPlaying) {
-      scale = line.isBackground ? LYRIC_SCALE_BACKGROUND : inactiveScale
+    let scale = LYRIC_SCALE_INACTIVE
+    if (isPlaying) {
+      if (singing) scale = singingScale
+      else if (presented) scale = presentedScale
+      else if (line.isBackground) scale = LYRIC_SCALE_BACKGROUND
     }
 
     results.push({ index: lineIndex, top: curPos, scale, opacity, blur, delay, presented })
 
-    if ((!line.isBackground || active || !isPlaying) && !focusHidden) curPos += line.height
+    if ((!line.isBackground || focused || !isPlaying) && !focusHidden) curPos += line.height
 
     // Only lines that have reached the visible area consume delay, and the step
     // tightens below the anchor.
     if (curPos >= 0 && !isSeeking) {
-      if (!line.isBackground && !focusHidden) delay += baseDelay
+      if (!line.isBackground && !focusHidden) {
+        delay = Math.min(LYRIC_CASCADE_MAX_DELAY, delay + baseDelay)
+      }
       if (lineIndex >= scrollToIndex) baseDelay /= LYRIC_CASCADE_DECAY
     }
   }

@@ -145,7 +145,7 @@ async function scanPluginTree(
   await Promise.all(entries.map((entry) => scanPluginTree(join(current, entry), root, totals)))
 }
 
-function isInsidePath(child: string, parent: string): boolean {
+export function isInsidePath(child: string, parent: string): boolean {
   const resolvedChild = resolve(child)
   const resolvedParent = resolve(parent)
   const pathBetween = relative(resolvedParent, resolvedChild)
@@ -153,4 +153,15 @@ function isInsidePath(child: string, parent: string): boolean {
     pathBetween === '' ||
     (pathBetween !== '..' && !pathBetween.startsWith(`..${sep}`) && !isAbsolute(pathBetween))
   )
+}
+
+export function resolvePluginFile(filePath: string, root: string): string | null {
+  if (!isInsidePath(filePath, root) || !existsSync(filePath)) return null
+  try {
+    const realRoot = realpathSync(root)
+    const realFile = realpathSync(filePath)
+    return isInsidePath(realFile, realRoot) ? realFile : null
+  } catch {
+    return null
+  }
 }

@@ -15,6 +15,11 @@ const settingsPage = readFileSync(
   new URL('../components/SettingsPage.vue', import.meta.url),
   'utf8'
 )
+const settingsAppearance = readFileSync(
+  new URL('../components/settings-page/AppearanceSettingsSection.vue', import.meta.url),
+  'utf8'
+)
+const settingsSurfaces = [settingsPage, settingsAppearance].join('\n')
 const settingsStore = readFileSync(
   new URL('../stores/useSettingsStore.ts', import.meta.url),
   'utf8'
@@ -81,7 +86,7 @@ test('main settings reuses the controlled mini player customizer', () => {
   assert.match(settingsSection, /MiniPlayerCustomizer/)
   assert.match(settingsSection, /useMiniPlayerCustomizationDraft/)
   assert.match(settingsSection, /chooseBackgroundImage/)
-  assert.match(settingsPage, /MiniPlayerSettingsSection/)
+  assert.match(settingsSurfaces, /MiniPlayerSettingsSection/)
   assert.match(
     settingsStore,
     /hasOwnProperty\.call\(patch, 'miniPlayer'\)[\s\S]*cloneMiniPlayerSettings\(patch\.miniPlayer\)/

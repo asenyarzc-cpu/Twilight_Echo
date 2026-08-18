@@ -7,9 +7,6 @@
     "src/preload/types.ts",
     "src/shared/**/*"
   ],
-  "exclude": [
-    "src/renderer/src/**/*.test.ts"
-  ],
   "compilerOptions": {
     "composite": true,
     "allowImportingTsExtensions": true,

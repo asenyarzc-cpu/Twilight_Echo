@@ -600,9 +600,12 @@ std::string QueueManager::itemToJson(const std::optional<QueueItem>& item) {
 }
 
 void QueueManager::rebuildPlayOrder() {
+  // Snapshot the current item BEFORE iota resets the order map — after the
+  // reset playOrder_[orderPosition_] no longer names the playing track, so
+  // reading currentIndex() later would stabilize the wrong item.
+  const int current = currentIndex();
   playOrder_.resize(items_.size());
   std::iota(playOrder_.begin(), playOrder_.end(), 0);
-  const int current = currentIndex();
 
   if (playMode_ == PlayMode::Shuffle && playOrder_.size() > 1) {
     std::shuffle(playOrder_.begin(), playOrder_.end(), rng_);
@@ -614,8 +617,11 @@ void QueueManager::rebuildPlayOrder() {
 
   if (items_.empty()) {
     orderPosition_ = -1;
-  } else if (orderPosition_ < 0 || orderPosition_ >= static_cast<int>(playOrder_.size())) {
-    orderPosition_ = 0;
+  } else {
+    // Keep pointing at the same item after the reshuffle. Without this, a
+    // shuffle-mode rebuild (e.g. addToQueue) left orderPosition_ naming a
+    // random other track while nothing was playing.
+    setCurrentIndex(current >= 0 ? current : 0);
   }
 }
 

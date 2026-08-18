@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { StreamingArtistCandidate } from './streamingArtistResolution.ts'
 
 const {
   findBestStreamingArtistMatch,
@@ -42,11 +43,11 @@ test('linked musician users resolve to matched artist ids before content fetches
   const resolved = await resolveLinkedStreamingArtist(
     initialArtist,
     { name: '沙包--' },
-    async () => ({
+    (async (): Promise<StreamingArtistCandidate | null> => ({
       id: 987,
       name: '沙包--',
       picUrl: null
-    })
+    }))
   )
 
   assert.deepEqual(resolved, { id: 987, name: '沙包--', picUrl: 'user.png' })

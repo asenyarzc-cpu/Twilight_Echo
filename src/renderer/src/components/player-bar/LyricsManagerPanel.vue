@@ -14,9 +14,22 @@ import {
   type LyricsAppearanceSettings
 } from '../../../../shared/lyricsAppearance.ts'
 import { useLyricsAppearanceEditor } from '../../composables/useLyricsAppearanceEditor.ts'
+import {
+  parseLyricVoiceDraftRows,
+  rewriteLyricVoiceDraftRows,
+  type LyricVoiceDraftRow,
+  type LyricVoiceLane,
+  type LyricVoiceRole
+} from '../../utils/lyrics.ts'
 
 type LayerKey = 'original' | 'translation' | 'romanization'
 type LayerSelectionKey = 'originalSelection' | 'translationSelection' | 'romanizationSelection'
+
+type VoiceArrangementUndo = {
+  original: string
+  source: LyricSourcePreference
+  originalSelection: LyricLayerSourceSelection
+}
 
 type OnlineLyricsCandidateUi = {
   id: number | string
@@ -74,6 +87,11 @@ const seededTrackId = ref('')
 const seededTrackTitle = ref('')
 const onlineLyricCandidates = ref<OnlineLyricsCandidateUi[]>([])
 const onlineCandidateTrackId = ref('')
+const voiceLane = ref<LyricVoiceLane>('center')
+const voiceRole = ref<LyricVoiceRole>('lead')
+const voiceSpeaker = ref('')
+const selectedVoiceRowIndexes = ref<number[]>([])
+const voiceArrangementUndo = ref<VoiceArrangementUndo | null>(null)
 
 const lyricVisibility = computed(() => lyricsManagement.document.value)
 const activeTrackId = computed(() => currentTrack.value?.id ?? '')
@@ -118,6 +136,125 @@ const translationAutomaticSource = computed(() =>
 const romanizationAutomaticSource = computed(() =>
   lyricSourceLabel(currentTrack.value?.romanizedLyricsSource)
 )
+const voiceDraftRows = computed(() => parseLyricVoiceDraftRows(draftOriginal.value))
+const selectedVoiceRows = computed(() => {
+  const selected = new Set(selectedVoiceRowIndexes.value)
+  return voiceDraftRows.value.filter((row) => row.text && selected.has(row.sourceIndex))
+})
+const voiceSpeakerOptions = computed(() => {
+  const speakers = new Set<string>()
+  for (const row of voiceDraftRows.value) {
+    if (row.metadata?.speaker) speakers.add(row.metadata.speaker)
+  }
+  return [...speakers].sort((left, right) => left.localeCompare(right))
+})
+const hasSelectedVoiceGroup = computed(() =>
+  selectedVoiceRows.value.some((row) => row.metadata?.group)
+)
+
+function voiceRowTime(row: LyricVoiceDraftRow): string {
+  return row.raw.match(/\[\d{1,3}:\d{2}(?:[.:]\d{2,3})?\]|^\[\d+,\d+\]/)?.[0] ?? '--:--'
+}
+
+function stableVoiceGroupId(rows: readonly LyricVoiceDraftRow[]): string {
+  const sharedGroup = rows[0]?.metadata?.group
+  if (sharedGroup && rows.every((row) => row.metadata?.group === sharedGroup)) return sharedGroup
+  const identity = rows.map((row) => `${row.sourceIndex}:${row.text}`).join('\n')
+  let hash = 0x811c9dc5
+  for (let index = 0; index < identity.length; index++) {
+    hash ^= identity.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return `verse-${(hash >>> 0).toString(16).padStart(8, '0')}`
+}
+
+function commitVoiceArrangement(nextOriginal: string, notice: string): void {
+  if (nextOriginal === draftOriginal.value) {
+    lyricManagerNotice.value = '所选行无需更改'
+    return
+  }
+  voiceArrangementUndo.value = {
+    original: draftOriginal.value,
+    source: draftSource.value,
+    originalSelection: draftOriginalSelection.value
+  }
+  draftOriginal.value = nextOriginal
+  draftOriginalSelection.value = 'manual'
+  draftSource.value = 'manual'
+  lyricManagerError.value = ''
+  lyricManagerNotice.value = notice
+}
+
+function applyVoiceArrangement(): void {
+  const speaker = voiceSpeaker.value.trim()
+  const updates = selectedVoiceRows.value.map((row) => ({
+    sourceIndex: row.sourceIndex,
+    metadata: {
+      role: voiceRole.value,
+      lane: voiceLane.value,
+      ...(speaker ? { speaker } : {}),
+      ...(row.metadata?.group ? { group: row.metadata.group } : {})
+    }
+  }))
+  commitVoiceArrangement(
+    rewriteLyricVoiceDraftRows(draftOriginal.value, updates),
+    `已编排 ${updates.length} 行歌词`
+  )
+}
+
+function groupSelectedVoiceRows(): void {
+  const group = stableVoiceGroupId(selectedVoiceRows.value)
+  const speaker = voiceSpeaker.value.trim()
+  const updates = selectedVoiceRows.value.map((row) => ({
+    sourceIndex: row.sourceIndex,
+    metadata: row.metadata
+      ? { ...row.metadata, group }
+      : {
+          role: voiceRole.value,
+          lane: voiceLane.value,
+          ...(speaker ? { speaker } : {}),
+          group
+        }
+  }))
+  commitVoiceArrangement(
+    rewriteLyricVoiceDraftRows(draftOriginal.value, updates),
+    `已编为同一唱段 · ${group}`
+  )
+}
+
+function ungroupSelectedVoiceRows(): void {
+  const updates = selectedVoiceRows.value.flatMap((row) => {
+    if (!row.metadata?.group) return []
+    const { group: _group, ...metadata } = row.metadata
+    return [{ sourceIndex: row.sourceIndex, metadata }]
+  })
+  commitVoiceArrangement(
+    rewriteLyricVoiceDraftRows(draftOriginal.value, updates),
+    `已解除 ${updates.length} 行的唱段关联`
+  )
+}
+
+function undoVoiceArrangement(): void {
+  const previous = voiceArrangementUndo.value
+  if (!previous) return
+  draftOriginal.value = previous.original
+  draftSource.value = previous.source
+  draftOriginalSelection.value = previous.originalSelection
+  voiceArrangementUndo.value = null
+  lyricManagerError.value = ''
+  lyricManagerNotice.value = '已撤销上一次编排'
+}
+
+watch(
+  voiceDraftRows,
+  (rows) => {
+    const selectable = new Set(rows.filter((row) => row.text).map((row) => row.sourceIndex))
+    selectedVoiceRowIndexes.value = selectedVoiceRowIndexes.value.filter((sourceIndex) =>
+      selectable.has(sourceIndex)
+    )
+  },
+  { immediate: true }
+)
 
 function lyricSourceLabel(source: LyricSource | null | undefined): string {
   if (source === 'embedded') return '内嵌'
@@ -154,6 +291,8 @@ function currentDraft(): LyricDraft {
 
 function seedDraftFromTrack(): void {
   const track = currentTrack.value
+  selectedVoiceRowIndexes.value = []
+  voiceArrangementUndo.value = null
   if (!track) {
     draftTrackOffsetMs.value = 0
     draftSource.value = 'auto'
@@ -198,7 +337,10 @@ watch(
 )
 
 function useManualLayer(layer: LayerKey): void {
-  if (layer === 'original') draftOriginalSelection.value = 'manual'
+  if (layer === 'original') {
+    draftOriginalSelection.value = 'manual'
+    voiceArrangementUndo.value = null
+  }
   if (layer === 'translation') draftTranslationSelection.value = 'manual'
   if (layer === 'romanization') draftRomanizationSelection.value = 'manual'
   lyricManagerNotice.value = ''
@@ -300,6 +442,7 @@ async function importLyricsIntoDraft(): Promise<void> {
     const contents = await window.api.data.importLyrics()
     if (currentTrack.value?.id !== trackId || contents == null) return
     draftOriginal.value = contents
+    voiceArrangementUndo.value = null
     draftOriginalSelection.value = 'manual'
     draftSource.value = 'manual'
     lyricManagerNotice.value = '已导入到原文草稿'
@@ -347,6 +490,7 @@ function applyOnlineCandidate(candidate: OnlineLyricsCandidateUi): void {
     return
   }
   draftOriginal.value = text
+  voiceArrangementUndo.value = null
   draftOriginalSelection.value = 'manual'
   draftSource.value = 'manual'
   lyricManagerNotice.value = `已填入：${candidate.title} - ${candidate.artist}`
@@ -730,6 +874,132 @@ function updateLyricsAppearance<K extends keyof LyricsAppearanceSettings>(
             @input="useManualLayer('original')"
           ></textarea>
         </label>
+
+        <section class="lyric-voice-arranger" aria-labelledby="lyric-voice-arranger-title">
+          <header class="lyric-voice-heading">
+            <div>
+              <strong id="lyric-voice-arranger-title">声部编排</strong>
+              <span>{{ selectedVoiceRows.length }} / {{ voiceDraftRows.length }} 行已选</span>
+            </div>
+            <button
+              type="button"
+              title="撤销上一次编排"
+              :disabled="!currentTrack || !voiceArrangementUndo"
+              @click="undoVoiceArrangement"
+            >
+              <i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i>
+              撤销编排
+            </button>
+          </header>
+
+          <div class="lyric-voice-tools">
+            <div class="lyric-voice-field lyric-voice-lane-field">
+              <span>位置</span>
+              <div class="lyric-segment-control" role="group" aria-label="声部位置">
+                <button
+                  type="button"
+                  :aria-pressed="voiceLane === 'center'"
+                  @click="voiceLane = 'center'"
+                >
+                  居中
+                </button>
+                <button
+                  type="button"
+                  :aria-pressed="voiceLane === 'start'"
+                  @click="voiceLane = 'start'"
+                >
+                  起始侧
+                </button>
+                <button
+                  type="button"
+                  :aria-pressed="voiceLane === 'end'"
+                  @click="voiceLane = 'end'"
+                >
+                  末尾侧
+                </button>
+              </div>
+            </div>
+            <label class="lyric-voice-field">
+              <span>声部角色</span>
+              <select v-model="voiceRole" aria-label="声部角色" :disabled="!currentTrack">
+                <option value="lead">主唱</option>
+                <option value="background">背景声</option>
+                <option value="harmony">和声</option>
+              </select>
+            </label>
+            <label class="lyric-voice-field">
+              <span>演唱者（可选）</span>
+              <input
+                v-model="voiceSpeaker"
+                type="text"
+                maxlength="64"
+                list="lyric-voice-speakers"
+                autocomplete="off"
+                aria-label="演唱者"
+                :disabled="!currentTrack"
+              />
+              <datalist id="lyric-voice-speakers">
+                <option v-for="speaker in voiceSpeakerOptions" :key="speaker" :value="speaker" />
+              </datalist>
+            </label>
+          </div>
+
+          <div class="lyric-voice-list" aria-label="原文歌词行">
+            <label
+              v-for="row in voiceDraftRows"
+              :key="row.sourceIndex"
+              class="lyric-voice-row"
+              :class="{
+                selected: selectedVoiceRowIndexes.includes(row.sourceIndex),
+                unavailable: !row.text
+              }"
+            >
+              <input
+                v-model="selectedVoiceRowIndexes"
+                type="checkbox"
+                :value="row.sourceIndex"
+                :disabled="!currentTrack || !row.text"
+                :aria-label="`选择第 ${row.sourceIndex + 1} 行歌词`"
+              />
+              <span class="lyric-voice-line-number">{{ row.sourceIndex + 1 }}</span>
+              <time>{{ voiceRowTime(row) }}</time>
+              <span class="lyric-voice-text">{{ row.text || '无歌词正文' }}</span>
+              <span v-if="row.metadata" class="lyric-voice-metadata">
+                {{ row.metadata.lane }} · {{ row.metadata.role }}
+                <template v-if="row.metadata.speaker"> · {{ row.metadata.speaker }}</template>
+                <template v-if="row.metadata.group"> · {{ row.metadata.group }}</template>
+              </span>
+            </label>
+          </div>
+
+          <div class="lyric-voice-actions">
+            <button
+              type="button"
+              :disabled="!currentTrack || selectedVoiceRows.length === 0"
+              @click="applyVoiceArrangement"
+            >
+              <i class="ph ph-check" aria-hidden="true"></i>
+              应用到所选行
+            </button>
+            <button
+              type="button"
+              :disabled="!currentTrack || selectedVoiceRows.length === 0"
+              @click="groupSelectedVoiceRows"
+            >
+              <i class="ph ph-link" aria-hidden="true"></i>
+              编为同一唱段
+            </button>
+            <button
+              type="button"
+              :disabled="!currentTrack || selectedVoiceRows.length === 0 || !hasSelectedVoiceGroup"
+              @click="ungroupSelectedVoiceRows"
+            >
+              <i class="ph ph-link-break" aria-hidden="true"></i>
+              解除唱段
+            </button>
+          </div>
+        </section>
+
         <label class="lyric-editor-label">
           <span>翻译手写内容</span>
           <textarea
@@ -1124,6 +1394,135 @@ function updateLyricsAppearance<K extends keyof LyricsAppearanceSettings>(
   padding: 12px;
 }
 
+.lyric-voice-arranger {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-block: 10px;
+  border-block: 1px solid var(--d-line);
+}
+
+.lyric-voice-heading,
+.lyric-voice-heading > div,
+.lyric-voice-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lyric-voice-heading {
+  justify-content: space-between;
+}
+
+.lyric-voice-heading > div {
+  align-items: baseline;
+}
+
+.lyric-voice-heading strong {
+  color: var(--d-ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.lyric-voice-heading span {
+  color: var(--d-muted);
+  font-size: 10px;
+}
+
+.lyric-voice-heading button,
+.lyric-voice-actions button {
+  padding: 5px 8px;
+}
+
+.lyric-voice-tools {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.35fr) minmax(110px, 0.7fr) minmax(130px, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.lyric-voice-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--d-muted);
+  font-size: 11px;
+}
+
+.lyric-voice-lane-field .lyric-segment-control button {
+  padding-inline: 6px;
+}
+
+.lyric-voice-list {
+  display: grid;
+  max-height: 260px;
+  overflow: auto;
+  border-block: 1px solid var(--d-line);
+}
+
+.lyric-voice-row {
+  display: grid;
+  grid-template-columns: 18px 3ch 52px minmax(100px, 1fr) minmax(0, 0.75fr);
+  gap: 7px;
+  align-items: center;
+  min-height: 31px;
+  padding: 3px 7px;
+  border-bottom: 1px solid var(--d-line);
+  color: var(--d-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.lyric-voice-row:last-child {
+  border-bottom: 0;
+}
+
+.lyric-voice-row:hover:not(.unavailable),
+.lyric-voice-row.selected {
+  background: var(--d-accent-soft);
+}
+
+.lyric-voice-row.selected {
+  color: var(--d-ink);
+}
+
+.lyric-voice-row.unavailable {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.lyric-voice-row input {
+  width: 14px !important;
+  height: 14px !important;
+  margin: 0;
+  accent-color: var(--d-accent);
+}
+
+.lyric-voice-line-number,
+.lyric-voice-row time {
+  color: var(--d-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lyric-voice-text,
+.lyric-voice-metadata {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyric-voice-metadata {
+  color: var(--d-accent);
+  text-align: right;
+}
+
+.lyric-voice-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .lyric-manager-error {
   color: #ef8f86;
   font-size: 11px;
@@ -1147,8 +1546,18 @@ function updateLyricsAppearance<K extends keyof LyricsAppearanceSettings>(
 
 @media (max-width: 520px) {
   .lyric-source-grid,
-  .lyric-layer-grid {
+  .lyric-layer-grid,
+  .lyric-voice-tools {
     grid-template-columns: 1fr;
+  }
+
+  .lyric-voice-row {
+    grid-template-columns: 18px 3ch 48px minmax(0, 1fr);
+  }
+
+  .lyric-voice-metadata {
+    grid-column: 4;
+    text-align: left;
   }
 
   .lyric-style-heading {

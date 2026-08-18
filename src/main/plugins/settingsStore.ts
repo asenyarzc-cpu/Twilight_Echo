@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from 'fs/promises'
-import { dirname, join } from 'path'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
 import {
   isSecureValueEnvelope,
   isSensitiveStorageKey,
@@ -7,10 +7,19 @@ import {
   unprotectJsonValue
 } from '../security/secureStorage.ts'
 import { tryParseJsonWithNestingLimit } from '../security/jsonSafety.ts'
+import { writeJsonFileAtomic } from '../persistence/jsonFile.ts'
+import type { JsonFileOptions } from '../persistence/jsonFile.ts'
 
 const MAX_PLUGIN_SETTINGS_FILE_BYTES = 1024 * 1024
 const MAX_PLUGIN_SETTING_VALUE_BYTES = 512 * 1024
 const MAX_PLUGIN_SETTING_KEY_LENGTH = 128
+
+const PLUGIN_SETTINGS_FILE_OPTIONS: JsonFileOptions<Record<string, unknown>> = {
+  label: 'plugin settings',
+  maxBytes: MAX_PLUGIN_SETTINGS_FILE_BYTES,
+  validate: (value): value is Record<string, unknown> =>
+    !!value && typeof value === 'object' && !Array.isArray(value)
+}
 
 export async function getPluginSetting(storagePath: string, key?: string): Promise<unknown> {
   const settings = await readPluginSettings(storagePath)
@@ -42,7 +51,12 @@ async function readPluginSettings(storagePath: string): Promise<Record<string, u
     const raw = await readFile(pluginSettingsPath(storagePath), 'utf-8')
     if (Buffer.byteLength(raw, 'utf-8') > MAX_PLUGIN_SETTINGS_FILE_BYTES) return {}
     const parsed = tryParseJsonWithNestingLimit(raw)
-    if (!parsed.ok || !parsed.value || typeof parsed.value !== 'object' || Array.isArray(parsed.value)) {
+    if (
+      !parsed.ok ||
+      !parsed.value ||
+      typeof parsed.value !== 'object' ||
+      Array.isArray(parsed.value)
+    ) {
       return {}
     }
     const settings = parsed.value as Record<string, unknown>
@@ -73,8 +87,7 @@ async function writePluginSettings(
   if (Buffer.byteLength(json, 'utf-8') > MAX_PLUGIN_SETTINGS_FILE_BYTES) {
     throw new Error('plugin settings file is too large')
   }
-  await mkdir(dirname(filePath), { recursive: true })
-  await writeFile(filePath, json, 'utf-8')
+  writeJsonFileAtomic(filePath, json, PLUGIN_SETTINGS_FILE_OPTIONS, serialized)
 }
 
 function normalizeSettingsKey(key: string): string {

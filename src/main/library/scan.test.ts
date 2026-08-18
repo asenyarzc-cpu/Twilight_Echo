@@ -105,7 +105,7 @@ test('local library scan decodes sibling lyrics with the shared multi-encoding d
   const source = readFileSync(new URL('./scan.ts', import.meta.url), 'utf8')
 
   assert.match(source, /decodeLyrics\(readFileSync\(lrcPath\)\)\.text/)
-  assert.doesNotMatch(source, /readFileSync\(lrcPath,\s*['\"]utf-?8['\"]\)/)
+  assert.doesNotMatch(source, /readFileSync\(lrcPath,\s*['"]utf-?8['"]\)/)
 })
 
 test('music library legacy data migrates to schema v2 and survives a restart', () => {

@@ -5,6 +5,7 @@ import {
 } from '../../../shared/miniPlayer.ts'
 import { createLegacyDspGraph } from '../../../shared/dspGraph.ts'
 import { DEFAULT_SLEEP_TIMER_SETTINGS } from '../../../shared/sleepTimer.ts'
+import { DESKTOP_LYRICS_FOLLOW_FONT } from '../../../shared/desktopLyricsFont.ts'
 import {
   DEFAULT_LYRICS_APPEARANCE,
   cloneLyricsAppearance,
@@ -22,6 +23,7 @@ import {
   clonePlayerBarSettings,
   normalizePlayerBarSettings
 } from '../../../shared/playerBar.ts'
+import type { AppStartupSnapshot } from '../../../shared/appStartup.ts'
 import type {
   AppSettings,
   AudioOutputId,
@@ -228,7 +230,7 @@ const fallbackSettings: AppSettings = {
   desktopLyrics: {
     enabled: false,
     fontSize: 32,
-    fontFamily: 'system',
+    fontFamily: DESKTOP_LYRICS_FOLLOW_FONT,
     fontWeight: 700,
     color: '#ffffff',
     highlightColor: '#3b82f6',
@@ -486,6 +488,7 @@ export function useSettingsStore(): {
   restartRequired: ComputedRef<boolean>
   restartReasons: Ref<string[]>
   loadSettings: () => Promise<AppSettings>
+  hydrateStartupSnapshot: (snapshot: AppStartupSnapshot) => AppSettings
   updateSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>
   chooseCacheFolder: () => Promise<void>
   chooseBackgroundImage: () => Promise<string | null>
@@ -512,6 +515,12 @@ export function useSettingsStore(): {
     formatBytes(loudnessAnalysisCacheSize.value)
   )
   const restartRequired = computed(() => restartReasons.value.length > 0)
+
+  function hydrateStartupSnapshot(startup: AppStartupSnapshot): AppSettings {
+    setupListener()
+    applySnapshot(startup.settings)
+    return settings.value
+  }
 
   async function loadSettings(): Promise<AppSettings> {
     setupListener()
@@ -749,6 +758,7 @@ export function useSettingsStore(): {
     restartRequired,
     restartReasons,
     loadSettings,
+    hydrateStartupSnapshot,
     updateSettings,
     chooseCacheFolder,
     chooseBackgroundImage,

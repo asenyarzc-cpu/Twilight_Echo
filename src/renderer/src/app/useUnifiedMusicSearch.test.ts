@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Track } from '../types/music'
+import type { UnifiedSearchResult } from '../utils/unifiedMusicSearch.ts'
 
 const { createUnifiedMusicSearch } = (await import(
   new URL('./useUnifiedMusicSearch.ts', import.meta.url).href
-)) as typeof import('./useUnifiedMusicSearch')
+)) as typeof import('./useUnifiedMusicSearch.ts')
 
 const localTrack: Track = {
   id: 'local:1',
@@ -21,7 +22,7 @@ const localTrack: Track = {
   format: 'flac'
 }
 
-function unifiedResult(track: Track) {
+function unifiedResult(track: Track): UnifiedSearchResult {
   return {
     items: [
       {
@@ -31,7 +32,8 @@ function unifiedResult(track: Track) {
         sourceName: 'local',
         local: true,
         lossless: true,
-        providerAvailable: true
+        providerAvailable: true,
+        providerReliability: 1
       }
     ],
     logicalItems: [
@@ -41,17 +43,28 @@ function unifiedResult(track: Track) {
         artist: track.artist,
         album: track.album,
         preferredTrack: track,
-        variants: [{ track, source: 'local', local: true, lossless: true }]
+        variants: [
+          {
+            track,
+            source: 'local',
+            sourceName: 'local',
+            local: true,
+            lossless: true,
+            providerAvailable: true,
+            providerReliability: 1
+          }
+        ]
       }
     ],
-    health: {}
+    health: {},
+    total: 1
   }
 }
 
 test('unified music search composable exposes unified items and provider health', async () => {
   const search = createUnifiedMusicSearch({
     getLocalTracks: () => [localTrack],
-    searchAllSongs: async ({ localTracks }) => ({
+    searchAllSongs: async ({ localTracks }): Promise<UnifiedSearchResult> => ({
       items: localTracks.map((track) => ({
         kind: 'track' as const,
         track,
@@ -59,7 +72,8 @@ test('unified music search composable exposes unified items and provider health'
         sourceName: '本地音乐',
         local: true,
         lossless: true,
-        providerAvailable: true
+        providerAvailable: true,
+        providerReliability: 1
       })),
       logicalItems: [
         {
@@ -68,7 +82,17 @@ test('unified music search composable exposes unified items and provider health'
           artist: 'Audrey',
           album: 'Album',
           preferredTrack: localTrack,
-          variants: [{ track: localTrack, source: 'local', local: true, lossless: true }]
+          variants: [
+            {
+              track: localTrack,
+              source: 'local',
+              sourceName: '本地音乐',
+              local: true,
+              lossless: true,
+              providerAvailable: true,
+              providerReliability: 1
+            }
+          ]
         }
       ],
       health: {
@@ -78,9 +102,15 @@ test('unified music search composable exposes unified items and provider health'
           available: false,
           searchable: true,
           resultCount: 0,
-          lastError: 'login expired'
+          lastError: 'login expired',
+          pluginStatus: null,
+          successRate: null,
+          playbackUrlSuccessRate: null,
+          playbackUrlLastError: null,
+          lastCheckedAt: null
         }
-      }
+      },
+      total: 1
     })
   })
 
@@ -103,7 +133,7 @@ test('unified music search clears state for blank queries', async () => {
     getLocalTracks: () => [localTrack],
     searchAllSongs: async () => {
       called = true
-      return { items: [], logicalItems: [], health: {} }
+      return { items: [], logicalItems: [], health: {}, total: 0 }
     }
   })
 

@@ -7,13 +7,39 @@ import test from 'node:test'
 import {
   assertPluginTreeSafe,
   extractPluginPackage,
-  MAX_PLUGIN_ENTRY_BYTES
+  isInsidePath,
+  MAX_PLUGIN_ENTRY_BYTES,
+  resolvePluginFile
 } from './packageSecurity.ts'
 
 const require = createRequire(import.meta.url)
 const { createZip } = require('../../../packages/create-twilight-plugin/lib/zip.cjs') as {
-  createZip: (root: string, outputFile: string) => Promise<{ fileCount: number; outputFile: string }>
+  createZip: (
+    root: string,
+    outputFile: string
+  ) => Promise<{ fileCount: number; outputFile: string }>
 }
+
+test('isInsidePath rejects sibling and absolute relative escapes', () => {
+  assert.equal(isInsidePath(join('C:', 'plugin', 'index.mjs'), join('C:', 'plugin')), true)
+  assert.equal(isInsidePath(join('C:', 'plugin', '..', 'escape.mjs'), join('C:', 'plugin')), false)
+  assert.equal(isInsidePath(join('C:', 'outside.mjs'), join('C:', 'plugin')), false)
+})
+
+test('resolvePluginFile only accepts existing files below the plugin root', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'twilight-plugin-resolve-'))
+  t.after(async () => {
+    await import('node:fs/promises').then(({ rm }) => rm(root, { recursive: true, force: true }))
+  })
+  const nested = join(root, 'nested')
+  await mkdir(nested, { recursive: true })
+  const filePath = join(nested, 'file.txt')
+  await writeFile(filePath, 'content', 'utf-8')
+
+  assert.equal(resolvePluginFile(filePath, root), filePath)
+  assert.equal(resolvePluginFile(join(root, 'missing.txt'), root), null)
+  assert.equal(resolvePluginFile(join(root, '..', 'outside.txt'), root), null)
+})
 
 test('extractPluginPackage accepts bounded plugin packages', async () => {
   const root = await mkdtemp(join(tmpdir(), 'twilight-plugin-safe-'))
@@ -74,9 +100,7 @@ test('assertPluginTreeSafe rejects symlinks in directory installs', async (t) =>
   }
   const root = await mkdtemp(join(tmpdir(), 'twilight-plugin-symlink-'))
   await writeFile(join(root, 'plugin.json'), '{}', 'utf-8')
-  await import('node:fs/promises').then(({ symlink }) =>
-    symlink('/tmp', join(root, 'escape-link'))
-  )
+  await import('node:fs/promises').then(({ symlink }) => symlink('/tmp', join(root, 'escape-link')))
 
   await assert.rejects(() => assertPluginTreeSafe(root), /符号链接/)
 })

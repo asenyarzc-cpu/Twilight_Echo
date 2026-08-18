@@ -5,9 +5,19 @@ const { clearDominantColorCache, extractDominantColor } = (await import(
   new URL('./colorExtractor.ts', import.meta.url).href
 )) as typeof import('./colorExtractor')
 
-const globalRecord = globalThis as typeof globalThis & {
-  Image?: unknown
-  document?: unknown
+const globalRecord = {
+  get Image(): unknown {
+    return (globalThis as { Image?: unknown }).Image
+  },
+  set Image(value: unknown) {
+    ;(globalThis as { Image?: unknown }).Image = value
+  },
+  get document(): unknown {
+    return (globalThis as { document?: unknown }).document
+  },
+  set document(value: unknown) {
+    ;(globalThis as { document?: unknown }).document = value
+  }
 }
 
 const originalImage = globalRecord.Image
@@ -42,7 +52,7 @@ function installImageDom(data: Uint8ClampedArray): {
   }
 
   globalRecord.Image = FakeImage
-  globalRecord.document = {
+  ;(globalRecord.document as { createElement: unknown } | null) = {
     createElement(tagName: string) {
       assert.equal(tagName, 'canvas')
       return {
@@ -114,7 +124,7 @@ test('extractDominantColor uses anonymous CORS only for remote-ish cover schemes
   const previousImage = globalRecord.Image
   const previousDocument = globalRecord.document
   globalRecord.Image = TrackingImage
-  globalRecord.document = {
+  ;(globalRecord.document as { createElement: unknown } | null) = {
     createElement() {
       return {
         width: 0,

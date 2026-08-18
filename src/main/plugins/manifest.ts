@@ -1,6 +1,7 @@
 import { posix, win32 } from 'path'
 import {
   TWILIGHT_PLUGIN_API_VERSION,
+  type TwilightPluginDescriptor,
   type TwilightPluginManifest,
   type TwilightPluginPermission,
   type TwilightPluginType
@@ -247,6 +248,29 @@ export function validatePluginManifest(raw: unknown): TwilightPluginManifest {
   }
 }
 
+export function toManifest(descriptor: TwilightPluginDescriptor): TwilightPluginManifest {
+  return {
+    id: descriptor.id,
+    name: descriptor.name,
+    version: descriptor.version,
+    description: descriptor.description,
+    author: descriptor.author,
+    license: descriptor.license,
+    type: descriptor.type,
+    main: descriptor.main,
+    binary: descriptor.binary,
+    dependencies: descriptor.dependencies,
+    engines: descriptor.engines,
+    apiVersion: descriptor.apiVersion,
+    permissions: descriptor.permissions,
+    contributes: descriptor.contributes,
+    homepage: descriptor.homepage,
+    repository: descriptor.repository,
+    icon: descriptor.icon,
+    signature: descriptor.signature
+  }
+}
+
 export function isCompatibleTwilightRange(range: string, appVersion: string): boolean {
   const trimmed = range.trim()
   if (trimmed === '*' || trimmed === '') return true
@@ -274,7 +298,7 @@ export function isSupportedSemverRange(range: string): boolean {
   return false
 }
 
-function compareSemver(left: string, right: string): number {
+export function compareSemver(left: string, right: string): number {
   const leftParts = left.split('.').map((part) => Number.parseInt(part, 10) || 0)
   const rightParts = right.split('.').map((part) => Number.parseInt(part, 10) || 0)
   for (let index = 0; index < 3; index += 1) {

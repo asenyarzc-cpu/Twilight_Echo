@@ -8,11 +8,15 @@ import {
   getDisplacementMapUrl,
   NEUTRAL_BYTE,
   PLAYBAR_DISPLACEMENT_BUCKET,
-  rimDisplacement,
   rimMagnitude,
   roundedRectSDF,
-  smoothStep
+  sdfNormal,
+  sdfRimDisplacement,
+  smoothStep,
+  type RoundedRectShape
 } from './liquidGlassDisplacement.ts'
+
+const SQUARE_SHAPE: RoundedRectShape = { halfWidth: 32, halfHeight: 32, radius: 7.04 }
 
 test('smoothStep clamps to its edges and eases between them', () => {
   assert.equal(smoothStep(0, 1, -5), 0)
@@ -78,35 +82,78 @@ test('a wider rim fraction refracts further inward', () => {
   )
 })
 
-test('rim displacement points inward on every side', () => {
-  assert.ok(rimDisplacement(0.02, 0.5).x > 0, 'left edge pushes right')
-  assert.ok(rimDisplacement(0.98, 0.5).x < 0, 'right edge pushes left')
-  assert.ok(rimDisplacement(0.5, 0.02).y > 0, 'top edge pushes down')
-  assert.ok(rimDisplacement(0.5, 0.98).y < 0, 'bottom edge pushes up')
+test('sdfNormal is a unit vector pointing outward', () => {
+  const straightEdge = sdfNormal(-31.5, 0.5, SQUARE_SHAPE)
+  assert.equal(straightEdge.x, -1, 'left edge normal points left')
+  assert.equal(straightEdge.y, 0, 'left edge normal has no Y component')
+  assert.ok(Math.hypot(straightEdge.x, straightEdge.y) - 1 < 1e-12, 'unit length')
+
+  const corner = sdfNormal(28.5, -28.5, SQUARE_SHAPE)
+  const length = Math.hypot(corner.x, corner.y)
+  assert.ok(Math.abs(length - 1) < 1e-12, `corner normal is unit length, got ${length}`)
+  assert.ok(corner.x > 0 && corner.y < 0, 'top-right corner normal points up-right')
+  assert.ok(Math.abs(Math.abs(corner.x) - Math.abs(corner.y)) < 1e-12, '45° on the diagonal')
 })
 
-test('rim displacement is zero at the exact center', () => {
-  const center = rimDisplacement(0.5, 0.5)
+test('sdfRimDisplacement points inward on every side', () => {
+  const rimWidth = DEFAULT_RIM_FRACTION * 64
+  assert.ok(sdfRimDisplacement(-31.5, 0, SQUARE_SHAPE, rimWidth).x > 0, 'left pushes right')
+  assert.ok(sdfRimDisplacement(31.5, 0, SQUARE_SHAPE, rimWidth).x < 0, 'right pushes left')
+  assert.ok(sdfRimDisplacement(0, -31.5, SQUARE_SHAPE, rimWidth).y > 0, 'top pushes down')
+  assert.ok(sdfRimDisplacement(0, 31.5, SQUARE_SHAPE, rimWidth).y < 0, 'bottom pushes up')
+})
+
+test('sdfRimDisplacement is zero at the exact center', () => {
+  const center = sdfRimDisplacement(0, 0, SQUARE_SHAPE, DEFAULT_RIM_FRACTION * 64)
   assert.equal(center.x, 0)
   assert.equal(center.y, 0)
+  assert.equal(center.magnitude, 0)
 })
 
-test('rim displacement is antisymmetric about the center', () => {
-  const a = rimDisplacement(0.2, 0.3)
-  const b = rimDisplacement(0.8, 0.7)
+test('sdfRimDisplacement is antisymmetric about the center', () => {
+  const rimWidth = DEFAULT_RIM_FRACTION * 64
+  const a = sdfRimDisplacement(-24, -20, SQUARE_SHAPE, rimWidth)
+  const b = sdfRimDisplacement(24, 20, SQUARE_SHAPE, rimWidth)
   assert.ok(Math.abs(a.x + b.x) < 1e-12, 'x mirrors')
   assert.ok(Math.abs(a.y + b.y) < 1e-12, 'y mirrors')
+  assert.equal(a.magnitude, b.magnitude, 'magnitude mirrors')
 })
 
-test('pixel buffer has RGBA length and is fully opaque', () => {
+test('corner regions refract diagonally, straight edges stay single-axis', () => {
+  const rimWidth = DEFAULT_RIM_FRACTION * 64
+  // Top-right corner area: both channels deviate, pointing diagonally inward.
+  const corner = sdfRimDisplacement(28.5, -28.5, SQUARE_SHAPE, rimWidth)
+  assert.ok(corner.x < 0, 'corner pulls left (inward)')
+  assert.ok(corner.y > 0, 'corner pulls down (inward)')
+  assert.ok(Math.abs(corner.x) > 0.1 && Math.abs(corner.y) > 0.1, 'both axes are engaged')
+
+  // Straight left edge midpoint: purely horizontal.
+  const edge = sdfRimDisplacement(-31.5, 0.5, SQUARE_SHAPE, rimWidth)
+  assert.ok(edge.x > 0.1, 'edge pulls inward on X')
+  assert.equal(edge.y, 0, 'edge has no Y component')
+})
+
+test('pixel buffer has RGBA length and encodes rim magnitude in alpha', () => {
   const w = 24
   const h = 16
   const pixels = buildDisplacementPixels(w, h)
 
   assert.equal(pixels.length, w * h * 4)
   assert.ok(pixels instanceof Uint8ClampedArray)
-  for (let p = 3; p < pixels.length; p += 4) {
-    assert.equal(pixels[p], 255, `alpha at byte ${p}`)
+  const alpha = (x: number, y: number): number => pixels[(y * w + x) * 4 + 3]
+  assert.ok(alpha(Math.trunc(w / 2), Math.trunc(h / 2)) <= 2, 'center magnitude is zero')
+  assert.ok(alpha(0, Math.trunc(h / 2)) > 200, 'border magnitude is near full')
+})
+
+test('alpha magnitude decreases monotonically from border to center', () => {
+  const size = 64
+  const pixels = buildDisplacementPixels(size, size)
+  const y = size / 2
+  let previous = Infinity
+  for (let x = 0; x <= size / 2; x++) {
+    const value = pixels[(y * size + x) * 4 + 3]
+    assert.ok(value <= previous + 1, `not monotonic at x=${x}: ${value} > ${previous}`)
+    previous = value
   }
 })
 
@@ -149,8 +196,10 @@ test('displacement is strongest at the border and weakest at the center', () => 
     return Math.abs(value - NEUTRAL_BYTE)
   }
 
-  assert.ok(deviation(0) > deviation(size / 6), 'border beats inner rim')
-  assert.ok(deviation(size / 6) > deviation(size / 2), 'inner rim beats center')
+  // Probes stay inside the rim (0.16 of the short axis ≈ 10px) so the falloff
+  // is visible before the field reaches its clean center.
+  assert.ok(deviation(0) > deviation(2), 'border beats near-rim')
+  assert.ok(deviation(2) > deviation(size / 2), 'near-rim beats center')
 })
 
 test('map is symmetric left-to-right and top-to-bottom', () => {
@@ -177,6 +226,23 @@ test('map is symmetric left-to-right and top-to-bottom', () => {
   }
 })
 
+test('corner pixels deviate on both channels while edge midpoints stay single-axis', () => {
+  const size = 64
+  const pixels = buildDisplacementPixels(size, size)
+  const at = (x: number, y: number, channel: number): number =>
+    pixels[(y * size + x) * 4 + channel]
+
+  // Top-right corner region: diagonal inward pull engages R and G together.
+  const cornerR = at(size - 4, 3, 0) - NEUTRAL_BYTE
+  const cornerG = at(size - 4, 3, 1) - NEUTRAL_BYTE
+  assert.ok(cornerR < -20, `corner R deviates inward, was ${cornerR}`)
+  assert.ok(cornerG > 20, `corner G deviates inward, was ${cornerG}`)
+
+  // Left edge midpoint: R only.
+  assert.ok(at(0, size / 2, 0) - NEUTRAL_BYTE > 100, 'edge R deviates')
+  assert.ok(Math.abs(at(0, size / 2, 1) - NEUTRAL_BYTE) <= 2, 'edge G stays neutral')
+})
+
 test('non-square buckets are supported for the wide playbar strip', () => {
   const pixels = buildDisplacementPixels(64, 8)
   assert.equal(pixels.length, 64 * 8 * 4)
@@ -186,13 +252,28 @@ test('non-square buckets are supported for the wide playbar strip', () => {
   const midX = 32
   const topG = pixels[(0 * 64 + midX) * 4 + 1]
   const bottomG = pixels[(7 * 64 + midX) * 4 + 1]
-  assert.ok(topG - NEUTRAL_BYTE > 80, `top edge G was ${topG}`)
-  assert.ok(NEUTRAL_BYTE - bottomG > 80, `bottom edge G was ${bottomG}`)
+  assert.ok(topG - NEUTRAL_BYTE > 60, `top edge G was ${topG}`)
+  assert.ok(NEUTRAL_BYTE - bottomG > 60, `bottom edge G was ${bottomG}`)
 
   // and the long axis refracts independently of the short one
   const midY = 4
   const leftR = pixels[(midY * 64 + 0) * 4]
-  assert.ok(leftR - NEUTRAL_BYTE > 80, `left edge R was ${leftR}`)
+  assert.ok(leftR - NEUTRAL_BYTE > 60, `left edge R was ${leftR}`)
+})
+
+test('a wider corner fraction rounds more of the map', () => {
+  const size = 64
+  const y = 3
+  const sharp = buildDisplacementPixels(size, size, DEFAULT_RIM_FRACTION, 0.05)
+  const round = buildDisplacementPixels(size, size, DEFAULT_RIM_FRACTION, 0.45)
+
+  // Near the top edge but off to the side, the sharper map still sits on a
+  // straight edge (Y-only displacement) while the rounder map is past its corner
+  // start and gains an X component.
+  const sharpX = sharp[(y * size + 58) * 4] - NEUTRAL_BYTE
+  const roundX = round[(y * size + 58) * 4] - NEUTRAL_BYTE
+  assert.ok(Math.abs(sharpX) <= 2, `sharp map corner should not pull on X, was ${sharpX}`)
+  assert.ok(roundX < -5, `round map corner should pull inward on X, was ${roundX}`)
 })
 
 test('invalid sizes are rejected rather than producing a broken map', () => {

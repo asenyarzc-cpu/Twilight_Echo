@@ -92,6 +92,7 @@ let document = {
   tracks: {}
 }
 let revision = 1
+let latestDesktopLyricsTrack = null
 let deferProvider = false
 let providerFailuresRemaining = 0
 const deferredProviderResolvers = []
@@ -109,6 +110,15 @@ const resolveDeferredProviders = () => {
 
 window.api = {
   ...window.api,
+  desktopLyrics: {
+    ...window.api.desktopLyrics,
+    updateTrack: (snapshot) => {
+      latestDesktopLyricsTrack = clone(snapshot)
+    },
+    updateTime: () => {},
+    updateSettings: () => {},
+    onToggle: () => () => {}
+  },
   data: {
     getLyrics: async () => null,
     loadLyricsManagement: async () => ({ version: 2, revision, savedAt: '2026-07-18T00:00:00.000Z', data: clone(document) }),
@@ -281,11 +291,28 @@ window.runLyricsPlayerRuntime = async () => {
 
   const beforeCurrent = clone(player.currentTrack.value)
   const beforeQueue = clone(player.queue.value)
-  await management.updateTrack(track.id, { source: 'manual', original: '[00:03.00]Manual original', romanization: '[00:03.00]Manual romanization' })
+  await management.updateTrack(failedLyricsTrack.id, {
+    source: 'manual',
+    originalSelection: 'manual',
+    translationSelection: 'manual',
+    romanizationSelection: 'manual',
+    original:
+      '[00:03.00][te:voice role=lead lane=start speaker=Alice group=manual-duet]Manual original',
+    translation: '[00:03.00]Manual translation',
+    romanization: '[00:03.00]Manual romanization'
+  })
   await player.refreshCurrentLyrics()
+  await waitFor(
+    () => latestDesktopLyricsTrack?.lyrics === '[00:03.00]Manual original',
+    'managed manual lyrics did not refresh the desktop snapshot'
+  )
   expect(JSON.stringify(player.currentTrack.value) === JSON.stringify(beforeCurrent), 'manual original mutated current track')
   expect(JSON.stringify(player.queue.value) === JSON.stringify(beforeQueue), 'manual romanization mutated queue')
-  expect(management.entryFor(track.id).romanization === '[00:03.00]Manual romanization', 'manual romanization was not persisted')
+  expect(management.entryFor(failedLyricsTrack.id).romanization === '[00:03.00]Manual romanization', 'manual romanization was not persisted')
+  expect(latestDesktopLyricsTrack.translatedLyrics === '[00:03.00]Manual translation', 'desktop lyrics kept the stale automatic translation')
+  expect(latestDesktopLyricsTrack.lyricsSource === 'manual', 'desktop lyrics did not expose the manual source')
+  expect(latestDesktopLyricsTrack.translatedLyricsSource === 'manual', 'desktop translation did not expose the manual source')
+  expect(!latestDesktopLyricsTrack.lyrics.includes('[te:voice'), 'desktop lyrics leaked an internal voice tag')
 
   player.currentTrack.value = clone(track)
   player.queue.value = [clone(track), clone(nextTrack)]

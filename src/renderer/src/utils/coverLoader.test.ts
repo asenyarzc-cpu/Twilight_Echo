@@ -11,16 +11,7 @@ const {
 
 test('resolveCover materializes cover:// handles via getCover IPC', async () => {
   clearCoverCache()
-  const globalRecord = globalThis as typeof globalThis & {
-    window?: {
-      api?: {
-        data?: {
-          getCover?: (handle: string) => Promise<string | null>
-          grantRemoteCover?: (source: string) => Promise<string>
-        }
-      }
-    }
-  }
+  const globalRecord = globalThis as Record<string, unknown>
   const previous = globalRecord.window
   globalRecord.window = {
     api: {
@@ -46,16 +37,7 @@ test('resolveCover materializes cover:// handles via getCover IPC', async () => 
 test('resolveCover prefers local cover:// over durable coverSource', async () => {
   clearCoverCache()
   const grants: string[] = []
-  const globalRecord = globalThis as typeof globalThis & {
-    window?: {
-      api?: {
-        data?: {
-          getCover?: (handle: string) => Promise<string | null>
-          grantRemoteCover?: (source: string) => Promise<string>
-        }
-      }
-    }
-  }
+  const globalRecord = globalThis as Record<string, unknown>
   const previous = globalRecord.window
   globalRecord.window = {
     api: {
@@ -84,15 +66,7 @@ test('resolveCover prefers local cover:// over durable coverSource', async () =>
 test('resolveCover prefers durable coverSource and re-grants remote origins', async () => {
   clearRemoteCoverGrantCache()
   const grants: string[] = []
-  const globalRecord = globalThis as typeof globalThis & {
-    window?: {
-      api?: {
-        data?: {
-          grantRemoteCover?: (source: string) => Promise<string>
-        }
-      }
-    }
-  }
+  const globalRecord = globalThis as Record<string, unknown>
   const previous = globalRecord.window
   globalRecord.window = {
     api: {
@@ -142,15 +116,7 @@ test('resolveCover prefers durable coverSource and re-grants remote origins', as
 
 test('resolveCover falls back to a live handle when re-grant fails', async () => {
   clearRemoteCoverGrantCache()
-  const globalRecord = globalThis as typeof globalThis & {
-    window?: {
-      api?: {
-        data?: {
-          grantRemoteCover?: (source: string) => Promise<string>
-        }
-      }
-    }
-  }
+  const globalRecord = globalThis as Record<string, unknown>
   const previous = globalRecord.window
   globalRecord.window = {
     api: {
@@ -184,16 +150,7 @@ test('useCover clears previous art when handle is not immediately displayable', 
   const { ref, nextTick } = await import('vue')
 
   const grants: string[] = []
-  const globalRecord = globalThis as typeof globalThis & {
-    window?: {
-      api?: {
-        data?: {
-          getCover?: (handle: string) => Promise<string | null>
-          grantRemoteCover?: (source: string) => Promise<string>
-        }
-      }
-    }
-  }
+  const globalRecord = globalThis as Record<string, unknown>
   const previous = globalRecord.window
   globalRecord.window = {
     api: {

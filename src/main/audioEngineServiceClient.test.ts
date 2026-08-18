@@ -38,6 +38,80 @@ class ThrowingUtilityProcess extends ManualUtilityProcess {
   }
 }
 
+function markAnalysisWorkerReady(child: ManualUtilityProcess): void {
+  child.emit('message', {
+    kind: 'ready',
+    protocolVersion: 1,
+    analyses: ['bpm', 'loudness']
+  })
+}
+
+function startAudioServiceForTest(binding: AudioEngineServiceBinding): void {
+  ;(binding as unknown as { start: () => void }).start()
+}
+
+test('audio services fork only on their first operation', async () => {
+  const audioChildren: ManualUtilityProcess[] = []
+  const analysisChildren: ManualUtilityProcess[] = []
+  const playback = new AudioEngineServiceBinding({
+    serviceEntry: 'audioEngineService.js',
+    electron: {
+      utilityProcess: {
+        fork: () => {
+          const child = new ManualUtilityProcess()
+          audioChildren.push(child)
+          return child
+        }
+      }
+    }
+  })
+  const analysis = new AudioAnalysisServiceClient({
+    serviceEntry: 'audioAnalysisService.js',
+    electron: {
+      utilityProcess: {
+        fork: () => {
+          const child = new ManualUtilityProcess()
+          analysisChildren.push(child)
+          return child
+        }
+      }
+    }
+  })
+
+  assert.equal(audioChildren.length, 0)
+  assert.equal(analysisChildren.length, 0)
+
+  const pendingPlayback = playback.callAsync('GetPlaybackInfo', [])
+  assert.equal(audioChildren.length, 1)
+  audioChildren[0].emit('message', {
+    kind: 'response',
+    requestId: (audioChildren[0].messages[0] as { requestId: string }).requestId,
+    ok: true,
+    value: '{"state":"stopped"}'
+  })
+  await pendingPlayback
+
+  const pendingAnalysis = analysis.analyzeBpm('first-request.flac', '{}')
+  assert.equal(analysisChildren.length, 1)
+  markAnalysisWorkerReady(analysisChildren[0])
+  respondWithBpm(analysisChildren[0], 0, 120)
+  assert.equal((await pendingAnalysis).bpm, 120)
+
+  playback.destroy()
+  analysis.destroy()
+})
+
+test('audio analysis rejects its first request when utilityProcess is unavailable', async () => {
+  const analysis = new AudioAnalysisServiceClient({
+    serviceEntry: 'audioAnalysisService.js',
+    electron: {}
+  })
+  await assert.rejects(
+    analysis.analyzeBpm('unavailable.flac', '{}'),
+    /current runtime does not support Electron utilityProcess/
+  )
+  analysis.destroy()
+})
 test('real AudioEngineServiceBinding applies one DSP state transaction and confirms the native revision ACK', async () => {
   const child = new ManualUtilityProcess()
   const binding = new AudioEngineServiceBinding({
@@ -46,6 +120,7 @@ test('real AudioEngineServiceBinding applies one DSP state transaction and confi
     restartDelayMs: 1000,
     electron: { utilityProcess: { fork: () => child } }
   })
+  startAudioServiceForTest(binding)
   child.emit('message', {
     kind: 'ready',
     capabilities: createAudioServiceCapabilities(['ApplyDspState', 'GetDspGraphStatus'])
@@ -148,6 +223,7 @@ test('1000 DSP slider updates merge by field into one latest-revision transactio
     restartDelayMs: 1000,
     electron: { utilityProcess: { fork: () => child } }
   })
+  startAudioServiceForTest(binding)
   child.emit('message', {
     kind: 'ready',
     capabilities: createAudioServiceCapabilities(['ApplyDspState', 'GetDspGraphStatus'])
@@ -238,6 +314,7 @@ test('queued DSP graph patches retain other nodes and merge each node params by 
     restartDelayMs: 1000,
     electron: { utilityProcess: { fork: () => child } }
   })
+  startAudioServiceForTest(binding)
   child.emit('message', {
     kind: 'ready',
     capabilities: createAudioServiceCapabilities(['ApplyDspState', 'GetDspGraphStatus'])
@@ -419,6 +496,7 @@ test('audio service capability negotiation fails closed when revision ACK is una
     reason = value
   })
 
+  binding.GetPlaybackInfo()
   child.emit('message', {
     kind: 'ready',
     capabilities: {
@@ -458,7 +536,10 @@ test('cached audio service calls swallow timeout rejections', async () => {
     await new Promise((resolve) => setTimeout(resolve, 30))
     assert.equal(unhandled.length, 0)
     assert.match(binding.GetLastError(), /音频服务调用超时/)
-    assert.equal(child.killCount, 1)
+    // Device enumeration is slow-tier: while it is legitimately in flight, the
+    // fast-tier playback-info timeout must be treated as collateral blocking,
+    // not as a wedged child. No kill.
+    assert.equal(child.killCount, 0)
     binding.destroy()
   } finally {
     process.off('unhandledRejection', onUnhandled)
@@ -486,13 +567,95 @@ test('timed out audio service RPC terminates and restarts the unresponsive gener
   binding.on('crash', (reason: string) => crashes.push(reason))
 
   try {
-    await assert.rejects(() => binding.getMetadataAsync('hung-track.flac'), /音频服务调用超时/)
+    // A fast-tier status RPC: with no slow-tier request in flight, a timeout
+    // here is genuine evidence of a wedged child and must recover the service.
+    await assert.rejects(() => binding.callAsync('GetPlaybackInfo', []), /音频服务调用超时/)
     await new Promise((resolve) => setTimeout(resolve, 30))
 
     assert.equal(children[0].killCount, 1)
     assert.equal(children.length, 2)
     assert.equal(crashes.length, 1)
-    assert.match(crashes[0], /GetMetadata/)
+    assert.match(crashes[0], /GetPlaybackInfo/)
+  } finally {
+    binding.destroy()
+  }
+})
+
+test('slow-tier native RPCs time out without killing the audio service', async () => {
+  const children: ManualUtilityProcess[] = []
+  const electron = {
+    utilityProcess: {
+      fork: () => {
+        const child = new ManualUtilityProcess()
+        children.push(child)
+        return child
+      }
+    }
+  }
+  const binding = new AudioEngineServiceBinding({
+    serviceEntry: 'audioEngineService.js',
+    requestTimeoutMs: 5,
+    topologyRequestTimeoutMs: 20,
+    restartDelayMs: 5,
+    electron
+  })
+
+  try {
+    // GetMetadata runs a synchronous FFmpeg probe on the service's JS thread;
+    // it may legally outlive the control deadline and must not trigger the
+    // unresponsive-service kill.
+    await assert.rejects(() => binding.getMetadataAsync('slow-probe.flac'), /音频服务调用超时/)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    assert.equal(children[0].killCount, 0)
+    assert.equal(children.length, 1)
+  } finally {
+    binding.destroy()
+  }
+})
+
+test('playback polling never kills the service while a slow native operation is in flight', async () => {
+  const children: ManualUtilityProcess[] = []
+  const electron = {
+    utilityProcess: {
+      fork: () => {
+        const child = new ManualUtilityProcess()
+        children.push(child)
+        return child
+      }
+    }
+  }
+  const binding = new AudioEngineServiceBinding({
+    serviceEntry: 'audioEngineService.js',
+    requestTimeoutMs: 5,
+    topologyRequestTimeoutMs: 200,
+    restartDelayMs: 5,
+    electron
+  })
+
+  try {
+    // A Play on a slow source blocks the service's single JS thread; the
+    // 250ms playback-info poller then times out as collateral. This exact
+    // interleaving used to kill the service mid-open and loop the restart.
+    binding.Play('network-source.flac', 0)
+    for (let poll = 0; poll < 3; poll += 1) {
+      await assert.rejects(() => binding.callAsync('GetPlaybackInfo', []), /音频服务调用超时/)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.equal(children[0].killCount, 0)
+    assert.equal(children.length, 1)
+    // Once the slow operation resolves, the wedged-child watchdog works again.
+    const playRequest = children[0].messages.find(
+      (message) => (message as { method?: string }).method === 'Play'
+    ) as { requestId: string }
+    children[0].emit('message', {
+      kind: 'response',
+      requestId: playRequest.requestId,
+      ok: true,
+      value: undefined
+    })
+    await assert.rejects(() => binding.callAsync('GetPlaybackInfo', []), /音频服务调用超时/)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.equal(children[0].killCount, 1)
   } finally {
     binding.destroy()
   }
@@ -514,7 +677,12 @@ test('topology RPC outlives the normal control deadline and resolves in the same
     assert.equal(child.killCount, 0)
     const request = child.messages[0] as { requestId: string; method: string }
     assert.equal(request.method, 'SetOutputConfig')
-    child.emit('message', { kind: 'response', requestId: request.requestId, ok: true, value: undefined })
+    child.emit('message', {
+      kind: 'response',
+      requestId: request.requestId,
+      ok: true,
+      value: undefined
+    })
     await pending
     assert.equal(child.killCount, 0)
   } finally {
@@ -537,17 +705,8 @@ test('playback controls remain responsive while isolated full-file analysis is h
     restartDelayMs: 1000,
     electron: { utilityProcess: { fork: () => playbackChild } }
   })
-  analysisChild.emit('message', {
-    kind: 'ready',
-    protocolVersion: 1,
-    analyses: ['bpm', 'loudness']
-  })
-  playbackChild.emit('message', {
-    kind: 'ready',
-    capabilities: createAudioServiceCapabilities(['ApplyDspState', 'GetDspGraphStatus'])
-  })
-
   const hungAnalysis = analysis.analyzeBpm('long-album.flac', '{}')
+  markAnalysisWorkerReady(analysisChild)
   assert.equal(analysisChild.messages.length, 1)
 
   const controls = [
@@ -556,6 +715,10 @@ test('playback controls remain responsive while isolated full-file analysis is h
     playback.callAsync('GetPlaybackInfo', []),
     playback.callAsync('GetVisualizationData', ['{}'])
   ]
+  playbackChild.emit('message', {
+    kind: 'ready',
+    capabilities: createAudioServiceCapabilities(['ApplyDspState', 'GetDspGraphStatus'])
+  })
   for (const message of playbackChild.messages as Array<{
     requestId: string
     method: string
@@ -612,12 +775,8 @@ test('audio analysis waiting queue honors priority and caps queued tasks', async
     taskTimeoutMs: 1000,
     electron: { utilityProcess: { fork: () => child } }
   })
-  child.emit('message', {
-    kind: 'ready',
-    protocolVersion: 1,
-    analyses: ['bpm', 'loudness']
-  })
   const first = analysis.analyzeBpm('first.flac', '{}', { priority: 0 })
+  markAnalysisWorkerReady(child)
   const last = analysis.analyzeBpm('last.flac', '{}', { priority: -10 })
   const urgent = analysis.analyzeBpm('urgent.flac', '{}', { priority: 100 })
   assert.equal(analysis.getStatus().active, 1)
@@ -633,7 +792,10 @@ test('audio analysis waiting queue honors priority and caps queued tasks', async
   assert.equal((child.messages[2] as { source: string }).source, 'last.flac')
   respondWithBpm(child, 2, 122)
   const results = await Promise.all([first, urgent, last])
-  assert.deepEqual(results.map((result) => result.bpm), [120, 121, 122])
+  assert.deepEqual(
+    results.map((result) => result.bpm),
+    [120, 121, 122]
+  )
   analysis.destroy()
 })
 
@@ -646,13 +808,8 @@ test('urgent loudness analysis evicts the worst waiting task from a full queue',
     taskTimeoutMs: 1000,
     electron: { utilityProcess: { fork: () => child } }
   })
-  child.emit('message', {
-    kind: 'ready',
-    protocolVersion: 1,
-    analyses: ['bpm', 'loudness']
-  })
-
   const active = analysis.analyzeBpm('active.flac', '{}', { priority: 0 })
+  markAnalysisWorkerReady(child)
   const retained = analysis.analyzeBpm('retained.flac', '{}', { priority: -10 })
   const victim = analysis.analyzeBpm('victim.flac', '{}', { priority: -20 })
   const victimOutcome = victim.then(
@@ -691,13 +848,8 @@ test('audio analysis aging lets an old low-priority task outrank fresh work', as
     now: () => now,
     electron: { utilityProcess: { fork: () => child } }
   })
-  child.emit('message', {
-    kind: 'ready',
-    protocolVersion: 1,
-    analyses: ['bpm', 'loudness']
-  })
-
   const active = analysis.analyzeBpm('active.flac', '{}')
+  markAnalysisWorkerReady(child)
   const aged = analysis.analyzeBpm('aged-low.flac', '{}', { priority: -50 })
   now = 60_000
   const fresh = analysis.analyzeBpm('fresh.flac', '{}', { priority: 0 })
@@ -731,13 +883,8 @@ test('queued analysis deadline rejects waiting work and clears maintenance timer
   const internals = analysis as unknown as {
     queueMaintenanceTimer: NodeJS.Timeout | null
   }
-  child.emit('message', {
-    kind: 'ready',
-    protocolVersion: 1,
-    analyses: ['bpm', 'loudness']
-  })
-
   const active = analysis.analyzeBpm('active.flac', '{}')
+  markAnalysisWorkerReady(child)
   const expired = analysis.analyzeBpm('expired.flac', '{}')
   const expiredOutcome = expired.then(
     () => null,
@@ -780,13 +927,8 @@ test('queued analysis deadline fires without status polling', async (context) =>
     now: () => now,
     electron: { utilityProcess: { fork: () => child } }
   })
-  child.emit('message', {
-    kind: 'ready',
-    protocolVersion: 1,
-    analyses: ['bpm', 'loudness']
-  })
-
   const active = analysis.analyzeBpm('active.flac', '{}')
+  markAnalysisWorkerReady(child)
   const expired = analysis.analyzeLoudness('deadline.flac', '{}')
   const expiredOutcome = expired.then(
     () => null,
@@ -812,12 +954,8 @@ test('audio analysis worker exit rejects its pending request and ignores late re
     restartDelayMs: 1000,
     electron: { utilityProcess: { fork: () => child } }
   })
-  child.emit('message', {
-    kind: 'ready',
-    protocolVersion: 1,
-    analyses: ['bpm', 'loudness']
-  })
   const pending = analysis.analyzeBpm('exit.flac', '{}')
+  markAnalysisWorkerReady(child)
   const request = child.messages[0] as { requestId: string }
   const rejected = assert.rejects(pending, /worker 1 exited/)
   child.emit('exit', 23)
@@ -848,13 +986,9 @@ test('audio analysis watchdog replaces only the timed-out analysis worker', asyn
       }
     }
   })
-  children[0].emit('message', {
-    kind: 'ready',
-    protocolVersion: 1,
-    analyses: ['bpm', 'loudness']
-  })
-
-  await assert.rejects(() => analysis.analyzeBpm('timeout.flac', '{}'), /analysis timed out/)
+  const pending = analysis.analyzeBpm('timeout.flac', '{}')
+  markAnalysisWorkerReady(children[0])
+  await assert.rejects(pending, /analysis timed out/)
   assert.equal(children[0].killCount, 1)
   await new Promise((resolve) => setTimeout(resolve, 10))
   assert.equal(children.length, 2)
@@ -950,6 +1084,7 @@ test('audio service utility-process logs are bounded by chunk and process lifeti
   binding.on('log', (value: string) => logs.push(value))
 
   try {
+    binding.GetPlaybackInfo()
     child.stdout.emit('data', Buffer.alloc(32 * 1024, 0x61))
     for (let index = 0; index < 15; index += 1) {
       child.stdout.emit('data', Buffer.alloc(16 * 1024, 0x61))
@@ -982,12 +1117,8 @@ test('oversized audio analysis responses terminate only the affected worker and 
   })
 
   try {
-    children[0].emit('message', {
-      kind: 'ready',
-      protocolVersion: 1,
-      analyses: ['bpm', 'loudness']
-    })
     const poisoned = analysis.analyzeBpm('poisoned.flac', '{}')
+    markAnalysisWorkerReady(children[0])
     const poisonedRequest = children[0].messages[0] as { requestId: string }
     children[0].emit('message', {
       kind: 'response',
@@ -1005,11 +1136,7 @@ test('oversized audio analysis responses terminate only the affected worker and 
 
     await new Promise((resolve) => setTimeout(resolve, 20))
     assert.equal(children.length, 2)
-    children[1].emit('message', {
-      kind: 'ready',
-      protocolVersion: 1,
-      analyses: ['bpm', 'loudness']
-    })
+    markAnalysisWorkerReady(children[1])
     const recovered = analysis.analyzeBpm('recovered.flac', '{}')
     respondWithBpm(children[1], 0, 128)
     assert.equal((await recovered).bpm, 128)
@@ -1236,7 +1363,6 @@ test('audio service crash clears service-derived caches', async () => {
     electron
   })
 
-  const child = children[0]
   const inactive =
     '{"spectrum":[],"waveform":[],"peakDb":-120,"rmsDb":-120,"lufsMomentary":null,"spectrogram":[],"sampleRate":0,"active":false}'
   const visualization =
@@ -1249,6 +1375,7 @@ test('audio service crash clears service-derived caches', async () => {
   assert.equal(binding.EnumerateDevices(), '[]')
   assert.equal(binding.GetUpcomingTrack(), null)
   assert.equal(binding.GetConvolverInfo(), '{"loaded":false,"active":false}')
+  const child = children[0]
 
   const [visualizationRequest, devicesRequest, upcomingRequest, convolverRequest] =
     child.messages as Array<{
@@ -1314,7 +1441,10 @@ test('fatal audio service startup errors terminate the failed utility process wi
     restartDelayMs: 5,
     electron
   })
-  const child = children[0]
+  const child = (() => {
+    binding.GetPlaybackInfo()
+    return children[0]
+  })()
 
   let crashReason = ''
   binding.on('crash', (reason) => {
@@ -1563,4 +1693,48 @@ test('high-frequency seek and volume service controls coalesce to the latest val
   })
 
   binding.destroy()
+})
+
+test('analysis pool keeps a conservative default concurrency and honors explicit overrides', () => {
+  const child = new ManualUtilityProcess()
+  const derived = new AudioAnalysisServiceClient({
+    serviceEntry: 'audioAnalysisService.js',
+    electron: { utilityProcess: { fork: () => child } }
+  })
+  try {
+    assert.equal(derived.getStatus().maxConcurrency, 1)
+  } finally {
+    derived.destroy()
+  }
+
+  const pinned = new AudioAnalysisServiceClient({
+    serviceEntry: 'audioAnalysisService.js',
+    maxConcurrency: 2,
+    electron: { utilityProcess: { fork: () => child } }
+  })
+  try {
+    assert.equal(pinned.getStatus().maxConcurrency, 2)
+  } finally {
+    pinned.destroy()
+  }
+})
+
+test('whole-file analysis tasks can override the pool default deadline', async () => {
+  const child = new ManualUtilityProcess()
+  const analysis = new AudioAnalysisServiceClient({
+    serviceEntry: 'audioAnalysisService.js',
+    taskTimeoutMs: 60_000,
+    restartDelayMs: 1000,
+    electron: { utilityProcess: { fork: () => child } }
+  })
+  try {
+    const pending = analysis.analyzeLoudness('long-mix.dsf', '{"maxAnalysisSeconds":0}', {
+      timeoutMs: 1000
+    })
+    markAnalysisWorkerReady(child)
+    await assert.rejects(pending, /analysis timed out after 1000 ms/)
+    assert.equal(child.killCount, 1)
+  } finally {
+    analysis.destroy()
+  }
 })

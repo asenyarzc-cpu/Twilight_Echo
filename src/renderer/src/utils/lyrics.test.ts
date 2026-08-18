@@ -5,8 +5,14 @@ const {
   buildLyricLines,
   findActiveLyricIndex,
   getLyricWordProgress,
+  hasLyricContent,
+  parseLyricVoiceDraftRows,
+  parseLyricVoiceTag,
   parsePlainLyrics,
-  parseTimedLrc
+  parseTimedLrc,
+  rewriteLyricVoiceDraftRows,
+  serializeLyricVoiceTag,
+  stripValidLyricVoiceTags
 } = (await import(new URL('./lyrics.ts', import.meta.url).href)) as typeof import('./lyrics')
 
 test('parseTimedLrc parses timestamped LRC lines', () => {
@@ -178,4 +184,155 @@ test('buildLyricLines keeps exact matches and only uses each layer line once', (
   assert.equal(lines[0]?.translation, '你好')
   // Second line is exact and must not steal/be stolen by the tolerant pass.
   assert.equal(lines[1]?.translation, '第二句')
+})
+
+test('explicit voice tags group only named groups and preserve compatibility text', () => {
+  const lyrics = [
+    '[00:10.00][te:voice role=lead lane=start speaker=Alice group=duet-1]First',
+    '[00:10.00][te:voice lane=end role=lead speaker=Bob group=duet-1]Second',
+    '[00:10.40][te:voice role=harmony lane=end speaker=Bob group=duet-1]Harmony',
+    '[00:12.00][te:voice role=lead lane=start]Not grouped',
+    '[00:12.00][te:voice role=lead lane=end]Still separate'
+  ].join('\n')
+  const lines = buildLyricLines(lyrics, '[00:10.00]组合翻译')
+
+  assert.equal(lines.length, 3, 'only the explicit group is merged')
+  assert.equal(lines[0].rowKey, 'group:duet-1')
+  assert.equal(lines[0].text, 'First · Second')
+  assert.equal(lines[0].translation, '组合翻译')
+  assert.equal(lines[0].voices?.length, 3)
+  assert.deepEqual(
+    lines[0].voices?.map((voice) => [voice.role, voice.lane, voice.speaker, voice.time]),
+    [
+      ['lead', 'start', 'Alice', 10],
+      ['lead', 'end', 'Bob', 10],
+      ['harmony', 'end', 'Bob', 10.4]
+    ]
+  )
+  assert.notEqual(lines[1].rowKey, lines[2].rowKey)
+})
+
+test('voice tags work with Enhanced LRC and YRC word timing', () => {
+  const enhanced = buildLyricLines(
+    '[00:10.00][te:voice role=lead lane=start group=words]<00:10.00>Hel<00:10.40>lo',
+    null
+  )
+  assert.equal(enhanced[0].voices?.[0].words?.length, 2)
+
+  const yrc = buildLyricLines(
+    '[10000,1200][te:voice role=background lane=end group=words](10000,600,0)Back(10600,600,0)ground',
+    null
+  )
+  assert.equal(yrc[0].voices?.[0].role, 'background')
+  assert.equal(yrc[0].voices?.[0].text, 'Background')
+})
+
+test('voice tags are strict and malformed or unknown tags stay visible', () => {
+  assert.deepEqual(parseLyricVoiceTag('[te:voice role=lead lane=start]'), {
+    role: 'lead',
+    lane: 'start'
+  })
+  assert.equal(parseLyricVoiceTag('[te:voice lane=start]'), null)
+  assert.equal(parseLyricVoiceTag('[te:voice role=lead lane=left]'), null)
+  assert.equal(parseLyricVoiceTag('[te:voice role=lead role=harmony lane=end]'), null)
+  assert.equal(parseLyricVoiceTag('[te:voice role=lead lane=end extra=x]'), null)
+
+  const duplicate = buildLyricLines(
+    '[00:01.00][te:voice role=lead lane=start][te:voice role=lead lane=end]Keep both markers',
+    null
+  )
+  assert.equal(duplicate[0].voices, undefined)
+  assert.match(duplicate[0].text, /\[te:voice role=lead lane=start\]/)
+
+  const lines = buildLyricLines('[00:01.00][te:voice role=lead lane=left]Keep marker', null)
+  assert.equal(lines[0].text, '[te:voice role=lead lane=left]Keep marker')
+  assert.equal(lines[0].voices, undefined)
+})
+
+test('voice tag serialization percent-encodes speaker identity and draft rewrites round trip', () => {
+  const tag = serializeLyricVoiceTag({
+    role: 'harmony',
+    lane: 'end',
+    speaker: '歌手 A',
+    group: '副歌 1'
+  })
+  assert.equal(
+    tag,
+    '[te:voice role=harmony lane=end speaker=%E6%AD%8C%E6%89%8B%20A group=%E5%89%AF%E6%AD%8C%201]'
+  )
+  assert.deepEqual(parseLyricVoiceTag(tag), {
+    role: 'harmony',
+    lane: 'end',
+    speaker: '歌手 A',
+    group: '副歌 1'
+  })
+
+  const punctuationTag = serializeLyricVoiceTag({
+    role: 'lead',
+    lane: 'start',
+    speaker: "O'Connor (live)!*",
+    group: 'chorus (2)!'
+  })
+  assert.match(punctuationTag, /speaker=O%27Connor%20%28live%29%21%2A/)
+  assert.deepEqual(parseLyricVoiceTag(punctuationTag), {
+    role: 'lead',
+    lane: 'start',
+    speaker: "O'Connor (live)!*",
+    group: 'chorus (2)!'
+  })
+
+  const source = '[00:01.00]<00:01.00>Hello [te:unknown value=x]\nplain'
+  const rewritten = rewriteLyricVoiceDraftRows(source, [
+    { sourceIndex: 0, metadata: { role: 'lead', lane: 'start', speaker: 'Alice' } }
+  ])
+  assert.equal(
+    rewritten,
+    '[00:01.00][te:voice role=lead lane=start speaker=Alice]<00:01.00>Hello [te:unknown value=x]\nplain'
+  )
+  assert.equal(parseLyricVoiceDraftRows(rewritten)[0].metadata?.speaker, 'Alice')
+  assert.equal(
+    rewriteLyricVoiceDraftRows(rewritten, [{ sourceIndex: 0, metadata: null }]),
+    source
+  )
+})
+
+test('desktop compatibility projection strips valid tags and preserves malformed tags', () => {
+  const source = [
+    '[00:01.00][te:voice role=lead lane=start]Lead',
+    '[00:02.00][te:voice role=lead lane=left]Malformed'
+  ].join('\n')
+  assert.equal(
+    stripValidLyricVoiceTags(source),
+    '[00:01.00]Lead\n[00:02.00][te:voice role=lead lane=left]Malformed'
+  )
+  assert.equal(stripValidLyricVoiceTags(null), null)
+})
+
+test('unmarked lyrics never infer speakers from colons, parentheses or matching timestamps', () => {
+  const lines = buildLyricLines(
+    '[00:01.00]Alice: First\n[00:01.00](Bob) Second\n[00:02.00]Together',
+    null
+  )
+  assert.equal(lines.length, 3)
+  assert.ok(lines.every((line) => line.voices === undefined))
+})
+
+test('plain lyrics retain explicit voice metadata without making them timed', () => {
+  const lines = buildLyricLines(
+    '[te:voice role=lead lane=start speaker=Alice]Untimed duet line\nOrdinary line',
+    null
+  )
+  assert.equal(lines[0].timed, false)
+  assert.equal(lines[0].voices?.[0].speaker, 'Alice')
+  assert.equal(lines[0].voices?.[0].lane, 'start')
+  assert.equal(lines[1].voices, undefined)
+})
+
+test('hasLyricContent accepts only non-empty trimmed strings', () => {
+  assert.equal(hasLyricContent('lyrics'), true)
+  assert.equal(hasLyricContent('  lyrics  '), true)
+  assert.equal(hasLyricContent(''), false)
+  assert.equal(hasLyricContent('   '), false)
+  assert.equal(hasLyricContent(null), false)
+  assert.equal(hasLyricContent(undefined), false)
 })

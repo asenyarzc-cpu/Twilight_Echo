@@ -1,17 +1,18 @@
 import { app, BrowserWindow, dialog, protocol, net } from 'electron'
 import { join, extname } from 'path'
-import { readFileSync } from 'fs'
+import { cpus } from 'os'
 import { pathToFileURL } from 'url'
 import { fetch as undiciFetch } from 'undici'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { runtime } from '../core/runtime'
 import { ensureMusicCacheDirectories } from '../cache/ncmCache'
+import { readCachedProtocolFile } from '../cache/protocolAssetCache'
 import { kwinHasInputMethodConfigured } from '../imeBackend'
 import {
   getCoverCacheContentType,
   isCoverCacheFileName,
-  resolveBackgroundImageFile,
-  resolveCoverCacheFile
+  readCoverCacheFileBytes,
+  resolveBackgroundImageFile
 } from '../library/coverCache'
 import { decodeAudioFileUrlPath } from '../library/scan'
 import { initializeLocalPathGrants, resolveAuthorizedAudioFile } from '../security/localPaths'
@@ -27,8 +28,8 @@ import {
 } from '../integrations/desktopLyrics'
 import { restoreMainWindowFromMiniPlayer, setupMiniPlayerIpc } from '../integrations/miniPlayer'
 import { setupTrayPlayerIpc } from '../integrations/trayPlayer'
-import { setupNcmIpc, setupNcmApi } from '../ncm/api'
-import { setupAudioEngineIpc } from '../audio/engineIpc'
+import { setupNcmIpc } from '../ncm/api'
+import { ensureAudioEngineRuntime, setupAudioEngineIpc } from '../audio/engineIpc'
 import { AudioAnalysisServiceClient } from '../audioAnalysisServiceClient.ts'
 import { LocalLibraryScanServiceClient } from '../library/libraryScanServiceClient.ts'
 import { setupBpmAnalysisIpc } from '../bpm/bpmIpc'
@@ -36,6 +37,7 @@ import { setupLoudnessAnalysisIpc } from '../audio/loudnessIpc'
 import { setupOpraIpc } from '../ipc/opra'
 import { setupPluginIpc } from '../ipc/plugins'
 import { setupDataIpc } from '../ipc/data'
+import { ensureActiveLibraryExclusionsLoaded } from '../ipc/libraryIpc.ts'
 import { setupThemeIpc } from '../ipc/themes'
 import { resolveThemeAssetFile } from '../themes/themeArchive.ts'
 import { setupRadioMediaIpc, destroyRadioMediaIpc } from '../radio/radioMediaIpc.ts'
@@ -186,7 +188,7 @@ export function startApp(): void {
 
       // Register cover:// protocol — Chromium reads cached image assets directly from disk,
       // no IPC, no base64, browser manages decode cache natively.
-      protocol.handle('cover', (request) => {
+      protocol.handle('cover', async (request) => {
         const url = new URL(request.url)
         const fileName = url.hostname + url.pathname
         // Sanitize: only allow alphanumeric/hash filenames
@@ -194,17 +196,18 @@ export function startApp(): void {
         if (!isCoverCacheFileName(safeName)) {
           return new Response('Forbidden', { status: 403 })
         }
-        const filePath = resolveCoverCacheFile(safeName)
-        if (!filePath) {
+        const data = await readCoverCacheFileBytes(safeName)
+        if (!data) {
           return new Response('Not Found', { status: 404 })
         }
-        const data = readFileSync(filePath)
         return new Response(data, {
           headers: {
             'Content-Type': getCoverCacheContentType(safeName),
-            // no-store: Chromium can otherwise keep painting the first cover://
-            // decode across track switches after cold start (sticky playbar art).
-            'Cache-Control': 'no-store',
+            // Cover filenames are content hashes, so each distinct art has a
+            // distinct immutable URL. CoverImg remounts per track identity, which
+            // is the real guard against the cold-start sticky-decode issue that
+            // once required no-store here.
+            'Cache-Control': 'public, max-age=31536000, immutable',
             // Permit crossOrigin=anonymous canvas sampling without tainting
             // concurrent plain <img> loads of the same cover:// URL.
             'Access-Control-Allow-Origin': '*',
@@ -213,7 +216,7 @@ export function startApp(): void {
         })
       })
 
-      protocol.handle('background', (request) => {
+      protocol.handle('background', async (request) => {
         const url = new URL(request.url)
         const fileName = (url.hostname + url.pathname).replace(/^\/+/, '')
         const filePath = resolveBackgroundImageFile(fileName)
@@ -223,18 +226,22 @@ export function startApp(): void {
         const ext = extname(filePath).toLowerCase()
         const contentType =
           ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
-        const data = readFileSync(filePath)
+        const data = await readCachedProtocolFile(filePath)
+        if (!data) {
+          return new Response('Not Found', { status: 404 })
+        }
         return new Response(data, {
           headers: {
             'Content-Type': contentType,
-            'Cache-Control': 'no-store',
+            // Background filenames are sha256 slices of the stored bytes.
+            'Cache-Control': 'public, max-age=31536000, immutable',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, HEAD'
           }
         })
       })
 
-      protocol.handle('theme-asset', (request) => {
+      protocol.handle('theme-asset', async (request) => {
         try {
           const url = new URL(request.url)
           if (url.hostname !== 'asset') return new Response('Forbidden', { status: 403 })
@@ -251,9 +258,12 @@ export function startApp(): void {
                 : extension === '.woff2'
                   ? 'font/woff2'
                   : 'image/jpeg'
-          return new Response(readFileSync(filePath), {
+          const data = await readCachedProtocolFile(filePath)
+          if (!data) return new Response('Not Found', { status: 404 })
+          return new Response(data, {
             headers: {
               'Content-Type': contentType,
+              // Theme archive assets can change under a stable profile path.
               'Cache-Control': 'no-store',
               'Access-Control-Allow-Origin': '*',
               'Access-Control-Allow-Methods': 'GET, HEAD'
@@ -321,13 +331,10 @@ export function startApp(): void {
       setupMiniPlayerIpc()
       setupTrayPlayerIpc()
 
-      if (runtime.appSettings.desktopLyrics.enabled) {
-        showDesktopLyrics()
-      }
-
-      await setupAudioEngineIpc()
+      setupAudioEngineIpc()
       runtime.audioAnalysisService = new AudioAnalysisServiceClient({
-        serviceEntry: join(__dirname, 'audioAnalysisService.js')
+        serviceEntry: join(__dirname, 'audioAnalysisService.js'),
+        maxConcurrency: Math.max(1, Math.min(4, Math.floor(cpus().length / 2)))
       })
       setupBpmAnalysisIpc()
       setupLoudnessAnalysisIpc()
@@ -337,7 +344,6 @@ export function startApp(): void {
       setupNetworkSourceIpc()
       setupOpraIpc()
       setupPluginIpc()
-      setupNcmApi()
 
       // Linux 上透明窗口必须等合成器视觉就绪后再建窗，否则内容不渲染
       if (
@@ -346,14 +352,10 @@ export function startApp(): void {
         supportsNativeWindowTransparency()
       ) {
         setTimeout(() => {
-          createWindow()
-          applyRuntimeSettings()
-          showAppSettingsLoadIssue(consumeAppSettingsLoadIssue())
+          createMainWindowAndScheduleDeferredStartup()
         }, 360)
       } else {
-        createWindow()
-        applyRuntimeSettings()
-        showAppSettingsLoadIssue(consumeAppSettingsLoadIssue())
+        createMainWindowAndScheduleDeferredStartup()
       }
 
       app.on('activate', function () {
@@ -401,8 +403,37 @@ export function startApp(): void {
         runtime.ncmServer.close()
         runtime.ncmServer = null
       }
+      runtime.ncmServerPromise = null
     })
   }
+}
+
+function createMainWindowAndScheduleDeferredStartup(): void {
+  createWindow()
+  showAppSettingsLoadIssue(consumeAppSettingsLoadIssue())
+  const mainWindow = runtime.mainWindow
+  if (!mainWindow) return
+  mainWindow.once('ready-to-show', () => {
+    if (runtime.mainWindow !== mainWindow || mainWindow.isDestroyed() || runtime.forceQuit) return
+    if (runtime.appSettings.desktopLyrics.enabled) showDesktopLyrics()
+    void ensureAudioEngineRuntime().catch((error) => {
+      console.error('[音频引擎] 初始化失败：', error instanceof Error ? error.message : error)
+    })
+    setTimeout(() => {
+      void ensureActiveLibraryExclusionsLoaded()
+        .catch((error) => {
+          console.error(
+            '[library] failed to initialize exclusions before starting watchers:',
+            error instanceof Error ? error.message : error
+          )
+        })
+        .then(() => {
+          if (runtime.mainWindow !== mainWindow || mainWindow.isDestroyed() || runtime.forceQuit)
+            return
+          applyRuntimeSettings()
+        })
+    }, 0)
+  })
 }
 
 function showAppSettingsLoadIssue(issue: SettingsFileLoadIssue | null): void {

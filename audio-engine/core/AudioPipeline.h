@@ -121,6 +121,8 @@ class AudioPipeline {
       std::string* error);
   TAE_Result togglePause();
   TAE_Result stop();
+  /** stop() body without the transport lock; callers must hold transportMutex_. */
+  TAE_Result stopUnlocked();
   TAE_Result seek(double seconds, std::string* error);
   void setVolume(double volume);
   void setPlaybackRate(double rate);
@@ -331,6 +333,15 @@ class AudioPipeline {
   void publishRenderDspPointerTransitionLocked(DspChain* active, DspChain* preload);
 
   mutable std::mutex mutex_;
+  // Serializes the long transport sequences (playInternal's device open and
+  // post-commit start, stop's close, skipToPreloaded's promotion, the WASAPI
+  // Exclusive topology reopen) that run without mutex_ held. The engine's
+  // clock thread (device recovery, EOF auto-next) and the NAPI thread call
+  // these concurrently; without this lock their unlocked sections interleave
+  // (use-after-free on output_, half-open devices). Recursive because
+  // playInternal calls stop() internally and retries itself on DSD fallback.
+  // Lock order: transportMutex_ before mutex_, never the reverse.
+  std::recursive_mutex transportMutex_;
   std::unique_ptr<IOutputBackend> output_;
   std::shared_ptr<DecodeStream> activeStream_;
   std::shared_ptr<DecodeStream> preloadStream_;
@@ -388,6 +399,11 @@ class AudioPipeline {
   // thread mutates the phase itself.
   uint64_t renderDopMarkerIndex_ = 0;
   std::atomic<bool> renderDopMarkerResetRequested_{false};
+  // Render-thread volume-ramp state: last gain applied to the output.
+  // Negative means "snap to the next applied volume" (fresh stream /
+  // promotion). Reset on the control path at transport transitions. Stored as
+  // bits per the project's portable-atomics convention (no atomic<double>).
+  std::atomic<uint64_t> renderVolumeCurrentBits_{std::bit_cast<uint64_t>(-1.0)};
   // A-B loop (seconds). Enabled only when end > start and both finite/non-negative.
   std::atomic<bool> loopEnabled_{false};
   std::atomic<uint64_t> loopStartBits_{std::bit_cast<uint64_t>(0.0)};
@@ -420,7 +436,9 @@ class AudioPipeline {
   std::atomic<uint64_t> renderCrossfadeSecondsBits_{std::bit_cast<uint64_t>(0.0)};
   AudioFormat renderOutputFormat_;
   AudioFormat renderDecodeFormat_;
-  bool renderCrossfadeMixActive_ = false;
+  // Written only by the render callback, but read on the control path by
+  // skipToPreloaded's overlap guard — atomic so that read is defined.
+  std::atomic<bool> renderCrossfadeMixActive_{false};
   uint64_t renderCrossfadeFramesProcessed_ = 0;
   uint64_t renderCrossfadeTotalFrames_ = 0;
   std::array<uint32_t, 8> renderDitherRandom_{{0x12345678U, 0x23456789U, 0x3456789aU, 0x456789abU,

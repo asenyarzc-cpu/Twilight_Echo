@@ -4,6 +4,10 @@ import { storeToRefs } from 'pinia'
 import { useAudioOutputDspStore } from '../stores/useAudioOutputDspStore'
 import { usePlayerStore } from '../stores/usePlayerStore'
 import ParametricEqWorkspace from './equalizer/ParametricEqWorkspace.vue'
+import OpraEqPanel from './equalizer/OpraEqPanel.vue'
+import FrequencyResponseChart from './equalizer/FrequencyResponseChart.vue'
+import FrequencyResponseToolbar from './equalizer/FrequencyResponseToolbar.vue'
+import GraphicEqPanel from './equalizer/GraphicEqPanel.vue'
 import {
   EQ_RESPONSE_DEFAULT_SAMPLE_RATE,
   computeAutoPreampDb,
@@ -12,6 +16,20 @@ import {
   computeEstimatedSourceDeviation,
   isBandActive
 } from '@renderer/utils/eqResponse'
+import {
+  GRAPH_MAX_FREQUENCY,
+  GRAPH_MIN_FREQUENCY,
+  builtInEqPresets,
+  clampNumber,
+  cloneBands,
+  defaultEqBands,
+  filterTypes,
+  gainToY,
+  normalizeAudioProcessing,
+  patchBand,
+  responseToPath,
+  tabs
+} from '../utils/equalizerPageLogic'
 import { computeFrequencyResponseComparison } from '../../../shared/frequencyResponse.ts'
 import type { ImportedFrequencyResponse } from '../../../shared/frequencyResponse.ts'
 import { createParametricBand, spectrumToPath } from '@renderer/utils/parametricEqInteraction'
@@ -36,124 +54,6 @@ type HeadphoneCurveKey = 'source' | 'target' | 'individual' | 'combined' | 'corr
 type EqApplyFeedback = 'idle' | 'editing' | 'applying' | 'applied' | 'failed'
 type OpraProfile = Awaited<ReturnType<typeof window.api.opra.search>>[number]
 type OpraCatalogStatus = Awaited<ReturnType<typeof window.api.opra.getStatus>>
-
-const opraDrawerOpen = ref(true)
-const graphMinFrequency = 20
-const graphMaxFrequency = 20000
-const graphMinGain = -18
-const graphMaxGain = 18
-const frequencyTicks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 16000, 20000]
-const gainTicks = [-18, -12, -6, 0, 6, 12, 18]
-const defaultBandFrequencies = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
-
-const filterTypes: { value: EqualizerFilterType; label: string; usesGain: boolean }[] = [
-  { value: 'peak', label: '峰值', usesGain: true },
-  { value: 'lowShelf', label: '低频搁架', usesGain: true },
-  { value: 'highShelf', label: '高频搁架', usesGain: true },
-  { value: 'bandPass', label: '带通', usesGain: false },
-  { value: 'lowPass', label: '低通', usesGain: false },
-  { value: 'highPass', label: '高通', usesGain: false },
-  { value: 'allPass', label: '全通', usesGain: false },
-  { value: 'notch', label: '陷波', usesGain: false }
-]
-
-const defaultEqBands: EqualizerBand[] = defaultBandFrequencies.map((frequency) => ({
-  frequency,
-  gain: 0,
-  q: 1,
-  filterType: 'peak'
-}))
-
-const defaultAudioProcessing: AudioProcessingSettings = {
-  dspEnabled: false,
-  directMode: false,
-  clipGuard: true,
-  fftEnabled: true,
-  fftResolution: 8192,
-  highResolution: true,
-  dsdToPcm: false,
-  dsdOutputMode: 'auto',
-  dsdRoute: {
-    enabled: false,
-    backend: '',
-    device: '',
-    applyToPcmToDsd: true,
-    strictPassthrough: false
-  },
-  sacdProgramMode: 'auto',
-  eqEnabled: false,
-  eqMode: 'graphic',
-  eqPreamp: 0,
-  eqBands: defaultEqBands,
-  volumeNormalization: 'off',
-  replayGainPreamp: 0,
-  replayGainFallback: 0,
-  replayGainClip: true,
-  convolverEnabled: false,
-  convolverIrPath: '',
-  crossfeedEnabled: false,
-  crossfeedStrength: 0,
-  crossfeedDelayMs: 0.35,
-  crossfeedCutoffHz: 700,
-  gapless: true,
-  crossfadeSeconds: 0
-}
-
-const builtInEqPresets: AudioEqPreset[] = [
-  {
-    id: 'flat',
-    name: 'Flat',
-    eqMode: 'graphic',
-    eqPreamp: 0,
-    eqBands: defaultEqBands
-  },
-  {
-    id: 'warm',
-    name: 'Warm',
-    eqMode: 'graphic',
-    eqPreamp: -1,
-    eqBands: [2.4, 1.8, 1.1, 0.4, 0, -0.4, -0.5, 0.2, 0.8, 1].map((gain, index) => ({
-      ...defaultEqBands[index],
-      gain
-    }))
-  },
-  {
-    id: 'vocal',
-    name: 'Vocal',
-    eqMode: 'parametric',
-    eqPreamp: -1.5,
-    eqBands: [-1, -0.8, -0.2, 0.7, 1.6, 2.4, 2, 1.1, 0.2, -0.6].map((gain, index) => ({
-      ...defaultEqBands[index],
-      gain,
-      q: index >= 4 && index <= 6 ? 1.3 : 1
-    }))
-  },
-  {
-    id: 'night',
-    name: 'Night',
-    eqMode: 'graphic',
-    eqPreamp: -2,
-    eqBands: [-2.5, -2, -1.1, -0.4, 0, 0.3, 0.2, -0.2, -0.8, -1.4].map((gain, index) => ({
-      ...defaultEqBands[index],
-      gain
-    }))
-  }
-]
-
-const tabs: { key: EqualizerTab; label: string; icon: string; desc: string }[] = [
-  {
-    key: 'graphic',
-    label: '图形均衡器',
-    icon: 'pi pi-chart-bar',
-    desc: '曲线、Master 与 10 波段塑形'
-  },
-  {
-    key: 'parametric',
-    label: '参数均衡器',
-    icon: 'pi pi-sliders-h',
-    desc: '频率、滤波器、增益与 Q 值'
-  }
-]
 
 const audioOutputDspStore = useAudioOutputDspStore()
 const playerStore = usePlayerStore()
@@ -182,10 +82,11 @@ const opraSearching = ref(false)
 const opraRefreshing = ref(false)
 const opraApplyingEqId = ref('')
 const opraError = ref('')
-let opraSearchTimer: number | null = null
 let pendingBandFrame = 0
 let pendingBandIndex = -1
 let pendingBandPatch: Partial<EqualizerBand> | null = null
+let pendingPreamp: number | null = null
+let commitChain: Promise<void> = Promise.resolve()
 let applyFeedbackTimer: number | null = null
 let spectrumAnimationFrame = 0
 const SPECTRUM_ATTACK = 0.42
@@ -267,19 +168,9 @@ const responseSampleRate = computed(() => {
 const responseOptions = computed(() => ({
   sampleRate: responseSampleRate.value,
   pointCount: 257,
-  minFrequency: graphMinFrequency,
-  maxFrequency: graphMaxFrequency
+  minFrequency: GRAPH_MIN_FREQUENCY,
+  maxFrequency: GRAPH_MAX_FREQUENCY
 }))
-
-function responseToPath(response: { frequency: number; db: number }[]): string {
-  return response
-    .map((point, index) => {
-      const x = frequencyToX(point.frequency)
-      const y = gainToY(clampNumber(point.db, graphMinGain, graphMaxGain, 0))
-      return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`
-    })
-    .join(' ')
-}
 
 // Exact RBJ biquad responses (same math as ParametricEqProcessor.cpp). Keep
 // each processing contribution separate while retaining the effective total.
@@ -376,8 +267,8 @@ function computeBandResponsePaths(
           sampleRate,
           mode,
           pointCount: 97,
-          minFrequency: graphMinFrequency,
-          maxFrequency: graphMaxFrequency
+          minFrequency: GRAPH_MIN_FREQUENCY,
+          maxFrequency: GRAPH_MAX_FREQUENCY
         })
       )
     })
@@ -398,8 +289,8 @@ const autoPreampTargetDb = computed(() =>
   computeAutoPreampDb(audioProcessing.value.eqBands, {
     sampleRate: responseSampleRate.value,
     mode: audioProcessing.value.eqMode,
-    minFrequency: graphMinFrequency,
-    maxFrequency: graphMaxFrequency,
+    minFrequency: GRAPH_MIN_FREQUENCY,
+    maxFrequency: GRAPH_MAX_FREQUENCY,
     marginDb: 0.5,
     minPreampDb: -24,
     maxPreampDb: 24
@@ -432,101 +323,6 @@ async function applyAutoPreamp(): Promise<void> {
   const target = autoPreampTargetDb.value
   if (Math.abs(audioProcessing.value.eqPreamp - target) < 0.05) return
   await updateAudioProcessing({ eqPreamp: target })
-}
-
-const opraStatusText = computed(() => {
-  const status = opraStatus.value
-  if (!status) return 'OPRA 未加载'
-  if (status.loading) return 'OPRA 正在加载'
-  if (status.loaded) {
-    const source = status.source === 'network' ? '已刷新' : '本地缓存'
-    return `${source} · ${status.profileCount.toLocaleString()} profiles`
-  }
-  return status.lastError ? `离线：${status.lastError}` : '离线，暂无缓存'
-})
-
-const activeCompensationTitle = computed(() => {
-  const hp = headphoneCompensation.value
-  if (!hp.enabled || !hp.eqId) return '未启用耳机补偿'
-  return `${hp.vendorName} ${hp.productName}`.trim()
-})
-
-function cloneBands(bands: EqualizerBand[]): EqualizerBand[] {
-  return bands.map((band) => ({ ...band }))
-}
-
-function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
-  const next = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(next)) return fallback
-  return Math.min(max, Math.max(min, next))
-}
-
-function normalizeFilterType(value: unknown): EqualizerFilterType {
-  if (
-    value === 'lowShelf' ||
-    value === 'highShelf' ||
-    value === 'bandPass' ||
-    value === 'lowPass' ||
-    value === 'highPass' ||
-    value === 'allPass' ||
-    value === 'notch'
-  ) {
-    return value
-  }
-  return 'peak'
-}
-
-function normalizeAudioProcessing(
-  settings?: Partial<AudioProcessingSettings>
-): AudioProcessingSettings {
-  const eqMode: EqMode = settings?.eqMode === 'parametric' ? 'parametric' : 'graphic'
-  const rawBands = Array.isArray(settings?.eqBands) ? settings.eqBands : defaultEqBands
-  const eqBands =
-    eqMode === 'parametric'
-      ? rawBands.slice(0, 32).map((band, index) => {
-          const defaultBand = defaultEqBands[index % defaultEqBands.length]
-          return {
-            frequency: clampNumber(band.frequency, 20, 24000, defaultBand.frequency),
-            gain: clampNumber(band.gain, -24, 24, 0),
-            q: clampNumber(band.q, 0.1, 20, 1),
-            filterType: normalizeFilterType(band.filterType)
-          }
-        })
-      : defaultEqBands.map((defaultBand, index) => {
-          const band = rawBands[index] ?? defaultBand
-          return {
-            frequency: clampNumber(band.frequency, 20, 24000, defaultBand.frequency),
-            gain: clampNumber(band.gain, -12, 12, 0),
-            q: clampNumber(band.q, 0.25, 8, 1),
-            filterType: normalizeFilterType(band.filterType)
-          }
-        })
-  return {
-    ...defaultAudioProcessing,
-    ...settings,
-    eqMode,
-    dsdOutputMode:
-      settings?.dsdOutputMode === 'pcm' ||
-      settings?.dsdOutputMode === 'dop' ||
-      settings?.dsdOutputMode === 'native'
-        ? settings.dsdOutputMode
-        : settings?.dsdToPcm === true
-          ? 'pcm'
-          : 'auto',
-    sacdProgramMode:
-      settings?.sacdProgramMode === 'stereo' || settings?.sacdProgramMode === 'multichannel'
-        ? settings.sacdProgramMode
-        : 'auto',
-    fftResolution: clampNumber(settings?.fftResolution, 64, 8192, 8192),
-    eqPreamp: clampNumber(settings?.eqPreamp, -24, 24, 0),
-    replayGainPreamp: clampNumber(settings?.replayGainPreamp, -12, 12, 0),
-    replayGainFallback: clampNumber(settings?.replayGainFallback, -12, 12, 0),
-    crossfeedStrength: clampNumber(settings?.crossfeedStrength, 0, 1, 0),
-    crossfeedDelayMs: clampNumber(settings?.crossfeedDelayMs, 0.05, 2, 0.35),
-    crossfeedCutoffHz: clampNumber(settings?.crossfeedCutoffHz, 80, 4000, 700),
-    crossfadeSeconds: clampNumber(settings?.crossfadeSeconds, 0, 12, 0),
-    eqBands: eqBands.length > 0 ? eqBands : cloneBands(defaultEqBands)
-  }
 }
 
 async function loadAppSettings(): Promise<void> {
@@ -616,8 +412,8 @@ async function updateAudioProcessing(patch: Partial<AudioProcessingSettings>): P
     nextSettings.eqPreamp = computeAutoPreampDb(nextSettings.eqBands, {
       sampleRate: responseSampleRate.value,
       mode: nextSettings.eqMode,
-      minFrequency: graphMinFrequency,
-      maxFrequency: graphMaxFrequency,
+      minFrequency: GRAPH_MIN_FREQUENCY,
+      maxFrequency: GRAPH_MAX_FREQUENCY,
       marginDb: 0.5,
       minPreampDb: -24,
       maxPreampDb: 24
@@ -633,48 +429,8 @@ async function updateAudioProcessing(patch: Partial<AudioProcessingSettings>): P
   }
 }
 
-function patchBand(
-  bands: EqualizerBand[],
-  index: number,
-  patch: Partial<EqualizerBand>
-): EqualizerBand[] {
-  const next = cloneBands(bands)
-  if (!next[index]) return next
-  next[index] = {
-    ...next[index],
-    ...patch,
-    frequency:
-      patch.frequency !== undefined
-        ? clampNumber(patch.frequency, 20, 24000, next[index].frequency)
-        : next[index].frequency,
-    gain:
-      patch.gain !== undefined
-        ? clampNumber(
-            patch.gain,
-            audioProcessing.value.eqMode === 'parametric' ? -24 : -12,
-            audioProcessing.value.eqMode === 'parametric' ? 24 : 12,
-            next[index].gain
-          )
-        : next[index].gain,
-    q:
-      patch.q !== undefined
-        ? clampNumber(
-            patch.q,
-            audioProcessing.value.eqMode === 'parametric' ? 0.1 : 0.25,
-            audioProcessing.value.eqMode === 'parametric' ? 20 : 8,
-            next[index].q
-          )
-        : next[index].q,
-    filterType:
-      patch.filterType !== undefined
-        ? normalizeFilterType(patch.filterType)
-        : next[index].filterType
-  }
-  return next
-}
-
 async function updateEqBand(index: number, patch: Partial<EqualizerBand>): Promise<void> {
-  const bands = patchBand(audioProcessing.value.eqBands, index, patch)
+  const bands = patchBand(audioProcessing.value.eqBands, index, patch, audioProcessing.value.eqMode)
   if (!bands[index]) return
   await runEqApply(() => updateAudioProcessing({ eqBands: bands }))
 }
@@ -702,48 +458,94 @@ async function runEqApply(action: () => Promise<void>): Promise<void> {
   }
 }
 
-function stageBandPatch(index: number, patch: Partial<EqualizerBand>): void {
-  if (!audioProcessing.value.eqBands[index]) return
-  pendingBandIndex = index
-  pendingBandPatch = { ...(pendingBandPatch ?? {}), ...patch }
+// Apply the staged edit to renderer state only. The engine apply is deferred to
+// commit so a gesture issues one round trip instead of one per input event;
+// concurrent applies resolve out of order and can strand the UI (and the DSP
+// scene) on an earlier value than the one the user dragged to.
+function flushStagedEdit(): void {
+  if (pendingBandIndex < 0 && pendingPreamp === null) return
+  const bands =
+    pendingBandIndex >= 0 && pendingBandPatch
+      ? patchBand(
+          audioProcessing.value.eqBands,
+          pendingBandIndex,
+          pendingBandPatch,
+          audioProcessing.value.eqMode
+        )
+      : audioProcessing.value.eqBands
+  const preamp = pendingPreamp ?? audioProcessing.value.eqPreamp
+  pendingBandIndex = -1
+  pendingBandPatch = null
+  pendingPreamp = null
+  audioOutputDspStore.applyAudioProcessingState({
+    ...audioProcessing.value,
+    eqPreamp: preamp,
+    eqBands: bands,
+    eqEnabled: true,
+    dspEnabled: true
+  })
+  if (appSettings.value) {
+    appSettings.value = { ...appSettings.value, audioProcessing: audioProcessing.value }
+  }
+}
+
+function scheduleStagedFlush(): void {
   eqApplyFeedback.value = 'editing'
   if (pendingBandFrame !== 0) return
   pendingBandFrame = window.requestAnimationFrame(() => {
     pendingBandFrame = 0
-    if (pendingBandIndex < 0 || !pendingBandPatch) return
-    const bands = patchBand(audioProcessing.value.eqBands, pendingBandIndex, pendingBandPatch)
-    pendingBandIndex = -1
-    pendingBandPatch = null
-    audioOutputDspStore.applyAudioProcessingState({
-      ...audioProcessing.value,
-      eqBands: bands,
-      eqEnabled: true,
-      dspEnabled: true
-    })
-    if (appSettings.value) {
-      appSettings.value = { ...appSettings.value, audioProcessing: audioProcessing.value }
-    }
+    flushStagedEdit()
   })
+}
+
+function stageBandPatch(index: number, patch: Partial<EqualizerBand>): void {
+  if (!audioProcessing.value.eqBands[index]) return
+  // Staging a different band must not retarget the patch already queued for the
+  // previous one; land it first, then start the new one.
+  if (pendingBandIndex >= 0 && pendingBandIndex !== index) {
+    if (pendingBandFrame !== 0) {
+      window.cancelAnimationFrame(pendingBandFrame)
+      pendingBandFrame = 0
+    }
+    flushStagedEdit()
+  }
+  pendingBandIndex = index
+  pendingBandPatch = { ...(pendingBandPatch ?? {}), ...patch }
+  scheduleStagedFlush()
+}
+
+function stagePreamp(value: number): void {
+  pendingPreamp = clampNumber(value, -24, 24, audioProcessing.value.eqPreamp)
+  scheduleStagedFlush()
 }
 
 async function commitStagedBands(): Promise<void> {
   if (pendingBandFrame !== 0) {
     window.cancelAnimationFrame(pendingBandFrame)
     pendingBandFrame = 0
-    if (pendingBandIndex >= 0 && pendingBandPatch) {
-      const bands = patchBand(audioProcessing.value.eqBands, pendingBandIndex, pendingBandPatch)
-      audioOutputDspStore.applyAudioProcessingState({
-        ...audioProcessing.value,
-        eqBands: bands,
-        eqEnabled: true,
-        dspEnabled: true
-      })
-    }
-    pendingBandIndex = -1
-    pendingBandPatch = null
   }
+  flushStagedEdit()
+  // Snapshot the staged bands now, before any in-flight commit's response can
+  // overwrite the shared state. Reading them inside the chained thunk would pick
+  // up the earlier engine response and silently drop this gesture's edit.
+  // Do not pass eqPreamp: updateAudioProcessing recomputes it for auto gain
+  // compensation only when the patch omits it, and the staged value is already
+  // spread in from audioProcessing.value.
   const bands = cloneBands(audioProcessing.value.eqBands)
-  await runEqApply(() => updateAudioProcessing({ eqBands: bands }))
+  // Serialize commits. setAudioProcessing assigns the engine response straight
+  // onto the shared state, so a slow earlier response landing after a faster
+  // later one would overwrite the newer edit in both the UI and the DSP scene.
+  commitChain = commitChain
+    .then(async () => {
+      await runEqApply(() => updateAudioProcessing({ eqBands: bands }))
+    })
+    // Never leave the chain rejected: a settled failure would make every later
+    // slider release reject without ever reaching the engine.
+    .catch((error) => {
+      eqApplyFeedback.value = 'failed'
+      eqApplyError.value = error instanceof Error ? error.message : String(error)
+    })
+  await commitChain
 }
 
 async function addBand(frequency: number, gain: number): Promise<void> {
@@ -849,16 +651,16 @@ async function loadOpraStatus(): Promise<void> {
   }
 }
 
-async function searchOpraProfiles(): Promise<void> {
-  const query = opraQuery.value.trim()
-  if (!query) {
+async function searchOpraProfiles(query: string): Promise<void> {
+  const trimmed = query.trim()
+  if (!trimmed) {
     opraResults.value = []
     return
   }
   opraSearching.value = true
   opraError.value = ''
   try {
-    opraResults.value = await window.api.opra.search(query)
+    opraResults.value = await window.api.opra.search(trimmed)
     opraStatus.value = await window.api.opra.getStatus()
   } catch (err) {
     opraError.value = err instanceof Error ? err.message : String(err)
@@ -872,7 +674,7 @@ async function refreshOpraCatalog(): Promise<void> {
   opraError.value = ''
   try {
     opraStatus.value = await window.api.opra.refresh()
-    await searchOpraProfiles()
+    await searchOpraProfiles(opraQuery.value)
   } catch (err) {
     opraError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -1034,50 +836,6 @@ function selectBand(index: number): void {
   filterMenuOpen.value = false
 }
 
-function formatFrequency(frequency: number): string {
-  if (frequency >= 1000) {
-    return (frequency / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
-  }
-  return Math.round(frequency).toString()
-}
-
-function frequencyToX(frequency: number): number {
-  const min = Math.log10(graphMinFrequency)
-  const max = Math.log10(graphMaxFrequency)
-  const ratio =
-    (Math.log10(clampNumber(frequency, graphMinFrequency, graphMaxFrequency, graphMinFrequency)) -
-      min) /
-    (max - min)
-  return ratio * 100
-}
-
-function gainToY(gain: number): number {
-  const ratio =
-    (clampNumber(gain, graphMinGain, graphMaxGain, 0) - graphMinGain) /
-    (graphMaxGain - graphMinGain)
-  return 100 - ratio * 100
-}
-
-function getThumbTop(val: number, max: number) {
-  const ratio = (max - val) / (2 * max)
-  return ratio * 100 + '%'
-}
-
-function getFillStyle(val: number, max: number) {
-  if (val >= 0) {
-    const heightRatio = (val / max) * 50
-    return { bottom: '50%', height: heightRatio + '%' }
-  } else {
-    const heightRatio = (-val / max) * 50
-    return { top: '50%', height: heightRatio + '%' }
-  }
-}
-
-function isGainDisabled(band: EqualizerBand | undefined): boolean {
-  if (!band) return true
-  return !filterTypes.find((filter) => filter.value === band.filterType)?.usesGain
-}
-
 onMounted(() => {
   loadAutoPreampPreference()
   void loadAppSettings()
@@ -1085,7 +843,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if (opraSearchTimer !== null) window.clearTimeout(opraSearchTimer)
   clearApplyFeedbackTimer()
   if (pendingBandFrame !== 0) window.cancelAnimationFrame(pendingBandFrame)
   if (spectrumAnimationFrame !== 0) window.cancelAnimationFrame(spectrumAnimationFrame)
@@ -1096,13 +853,6 @@ onBeforeUnmount(() => {
 watch(autoPreampTargetDb, () => {
   if (!autoPreampEnabled.value) return
   void applyAutoPreamp()
-})
-
-watch(opraQuery, () => {
-  if (opraSearchTimer !== null) window.clearTimeout(opraSearchTimer)
-  opraSearchTimer = window.setTimeout(() => {
-    void searchOpraProfiles()
-  }, 250)
 })
 
 watch(
@@ -1249,480 +999,67 @@ watch([spectrumVisible, responseView, isPlaying], () => scheduleSpectrumPathUpda
             </div>
           </header>
 
-          <section class="opra-panel">
-            <div class="opra-header">
-              <div class="opra-info">
-                <h3>
-                  {{ activeCompensationTitle }}
-                  <span v-if="headphoneCompensation.enabled" class="badge">已启用补偿</span>
-                </h3>
-                <p>OPRA (AutoEQ) 自动耳机频响校正曲线。独立处理，不干扰您的手动 EQ 设置。</p>
-              </div>
-              <button
-                class="opra-action-btn"
-                :class="{ active: opraDrawerOpen }"
-                @click="opraDrawerOpen = !opraDrawerOpen"
-              >
-                <span>{{ opraDrawerOpen ? '收起设备搜索' : '展开设备搜索' }}</span>
-                <i class="pi pi-chevron-down"></i>
-              </button>
-            </div>
+          <OpraEqPanel
+            :compensation="headphoneCompensation"
+            :status="opraStatus"
+            :searching="opraSearching"
+            :refreshing="opraRefreshing"
+            :applying-eq-id="opraApplyingEqId"
+            :results="opraResults"
+            :error="opraError"
+            :query="opraQuery"
+            @update:query="opraQuery = $event"
+            @search="searchOpraProfiles"
+            @select="applyOpraProfile"
+            @clear="disableOpraCompensation"
+            @refresh="refreshOpraCatalog"
+          />
 
-            <div class="opra-drawer-wrapper" :class="{ collapsed: !opraDrawerOpen }">
-              <div class="opra-drawer">
-                <div class="opra-drawer-inner">
-                  <div class="opra-search">
-                    <div class="opra-search-input-wrap">
-                      <i class="pi pi-search search-icon"></i>
-                      <input
-                        type="text"
-                        v-model="opraQuery"
-                        placeholder="搜索耳机型号或厂商，例如 HD 600、Sony、Moondrop"
-                      />
-                    </div>
-                    <button
-                      class="opra-refresh"
-                      :disabled="opraRefreshing"
-                      @click="refreshOpraCatalog"
-                    >
-                      {{ opraRefreshing ? '刷新中' : '刷新缓存' }}
-                    </button>
-                  </div>
+          <FrequencyResponseChart
+            :bands="audioProcessing.eqBands"
+            :response-view="responseView"
+            :imported-frequency-response="importedFrequencyResponse"
+            :importing="frequencyResponseImporting"
+            :error="frequencyResponseError"
+            :opra-compensation-enabled="opraCompensationEnabled"
+            :manual-response-path="manualResponsePath"
+            :opra-response-path="opraResponsePath"
+            :opra-estimated-deviation-path="opraEstimatedDeviationPath"
+            :response-path="responsePath"
+            :response-fill-path="responseFillPath"
+            :measured-source-path="measuredSourcePath"
+            :target-response-path="targetResponsePath"
+            :combined-filter-path="combinedFilterPath"
+            :corrected-acoustic-path="correctedAcousticPath"
+            :band-response-paths="
+              responseView === 'headphone' ? headphoneBandResponsePaths : bandResponsePaths
+            "
+            :show-manual-response="showManualResponse"
+            :show-opra-response="showOpraResponse"
+            :show-opra-estimated-deviation="showOpraEstimatedDeviation"
+            :show-measured-source="showMeasuredSource"
+            :show-target-response="showTargetResponse"
+            :show-individual-filters="showIndividualFilters"
+            :show-combined-filter="showCombinedFilter"
+            :show-corrected-response="showCorrectedResponse"
+            @update:response-view="responseView = $event"
+            @toggle-manual="showManualResponse = !showManualResponse"
+            @toggle-opra="showOpraResponse = !showOpraResponse"
+            @toggle-estimated-deviation="showOpraEstimatedDeviation = !showOpraEstimatedDeviation"
+            @toggle-headphone-curve="toggleHeadphoneCurve"
+            @import="importFrequencyResponse"
+            @clear="clearFrequencyResponse"
+          />
 
-                  <div
-                    style="
-                      font-size: 12px;
-                      font-weight: 700;
-                      color: var(--te-neutral-500);
-                      display: flex;
-                      justify-content: space-between;
-                    "
-                  >
-                    <span>{{ opraStatusText }} <span v-if="opraSearching">搜索中...</span></span>
-                    <span v-if="opraError" style="color: #ec4899">{{ opraError }}</span>
-                    <button
-                      v-if="headphoneCompensation.enabled"
-                      @click="disableOpraCompensation"
-                      style="
-                        background: none;
-                        border: none;
-                        color: #ec4899;
-                        cursor: pointer;
-                        font-weight: 700;
-                      "
-                    >
-                      停用补偿
-                    </button>
-                  </div>
-
-                  <div class="opra-results" v-if="opraResults.length > 0">
-                    <div
-                      v-for="profile in opraResults"
-                      :key="profile.eqId"
-                      class="opra-result-item"
-                    >
-                      <div class="result-info">
-                        <span class="result-brand">{{ profile.vendorName }}</span>
-                        <span class="result-model">{{ profile.productName }}</span>
-                        <span class="result-author">Profile by {{ profile.author }}</span>
-                        <span
-                          class="result-author"
-                          v-if="!profile.applicable"
-                          style="color: #ec4899"
-                          >不支持: {{ profile.unsupportedBandTypes.join(', ') }}</span
-                        >
-                      </div>
-                      <button
-                        class="result-apply"
-                        :style="
-                          headphoneCompensation.eqId === profile.eqId
-                            ? 'background: var(--te-primary-500); color: #fff;'
-                            : ''
-                        "
-                        :disabled="!profile.applicable || opraApplyingEqId === profile.eqId"
-                        @click="applyOpraProfile(profile)"
-                      >
-                        <template v-if="headphoneCompensation.eqId === profile.eqId"
-                          >In Use</template
-                        >
-                        <template v-else-if="opraApplyingEqId === profile.eqId">Applying</template>
-                        <template v-else>Apply</template>
-                      </button>
-                    </div>
-                  </div>
-
-                  <p class="opra-attribution">
-                    Data sourced from
-                    <a href="https://github.com/opra-project/OPRA" target="_blank">OPRA</a>. Profile
-                    authors are credited in each result.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="chart-card">
-            <div class="response-view-toolbar">
-              <div class="response-view-switch" aria-label="响应视图">
-                <button
-                  type="button"
-                  :class="{ active: responseView === 'dsp' }"
-                  :aria-pressed="responseView === 'dsp'"
-                  @click="responseView = 'dsp'"
-                >
-                  DSP 响应
-                </button>
-                <button
-                  type="button"
-                  :disabled="!importedFrequencyResponse"
-                  :class="{ active: responseView === 'headphone' }"
-                  :aria-pressed="responseView === 'headphone'"
-                  @click="responseView = 'headphone'"
-                >
-                  耳机频响
-                </button>
-              </div>
-              <div class="frequency-response-actions">
-                <span v-if="importedFrequencyResponse" class="frequency-response-source">
-                  {{ importedFrequencyResponse.sourceName }} ·
-                  {{
-                    importedFrequencyResponse.sourceColumn === 'smoothed'
-                      ? 'AutoEq smoothed 列'
-                      : 'AutoEq raw 列'
-                  }}
-                </span>
-                <span v-if="frequencyResponseError" class="frequency-response-error">
-                  {{ frequencyResponseError }}
-                </span>
-                <button
-                  type="button"
-                  class="frequency-response-import"
-                  :disabled="frequencyResponseImporting"
-                  @click="importFrequencyResponse"
-                >
-                  {{ frequencyResponseImporting ? '导入中' : '导入 AutoEq CSV' }}
-                </button>
-                <button
-                  v-if="importedFrequencyResponse"
-                  type="button"
-                  class="frequency-response-clear"
-                  @click="clearFrequencyResponse"
-                >
-                  清除
-                </button>
-              </div>
-            </div>
-            <div
-              v-if="responseView === 'headphone'"
-              class="response-legend acoustic"
-              aria-label="耳机频响曲线显示控制"
-            >
-              <button
-                type="button"
-                class="response-legend-item measured"
-                :class="{ muted: !showMeasuredSource }"
-                :aria-pressed="showMeasuredSource"
-                @click="showMeasuredSource = !showMeasuredSource"
-              >
-                <i></i>源频响 M(f)
-              </button>
-              <button
-                type="button"
-                class="response-legend-item target"
-                :class="{ muted: !showTargetResponse }"
-                :aria-pressed="showTargetResponse"
-                @click="showTargetResponse = !showTargetResponse"
-              >
-                <i></i>目标曲线 T(f)
-              </button>
-              <button
-                type="button"
-                class="response-legend-item individual"
-                :class="{ muted: !showIndividualFilters }"
-                :aria-pressed="showIndividualFilters"
-                @click="showIndividualFilters = !showIndividualFilters"
-              >
-                <i></i>单个滤波 Hn(f)
-              </button>
-              <button
-                type="button"
-                class="response-legend-item combined"
-                :class="{ muted: !showCombinedFilter }"
-                :aria-pressed="showCombinedFilter"
-                @click="showCombinedFilter = !showCombinedFilter"
-              >
-                <i></i>合并滤波 H(f)
-              </button>
-              <button
-                type="button"
-                class="response-legend-item corrected"
-                :class="{ muted: !showCorrectedResponse }"
-                :aria-pressed="showCorrectedResponse"
-                @click="showCorrectedResponse = !showCorrectedResponse"
-              >
-                <i></i>滤波结果 R(f)
-              </button>
-              <span class="response-estimate-note"
-                >R(f) = M(f) + H(f) · 排除数字前级 · 预计值，非校正后实测</span
-              >
-            </div>
-            <div v-if="responseView === 'dsp'" class="response-legend" aria-label="频响曲线图例">
-              <span class="response-legend-item total"><i></i>总 DSP 合成</span>
-              <button
-                type="button"
-                class="response-legend-item manual"
-                :class="{ muted: !showManualResponse }"
-                :aria-pressed="showManualResponse"
-                @click="showManualResponse = !showManualResponse"
-              >
-                <i></i>手动 EQ（含前级）
-              </button>
-              <button
-                v-if="opraCompensationEnabled"
-                type="button"
-                class="response-legend-item opra"
-                :class="{ muted: !showOpraResponse }"
-                :aria-pressed="showOpraResponse"
-                @click="showOpraResponse = !showOpraResponse"
-              >
-                <i></i>OPRA 校正（含前级）
-              </button>
-              <button
-                v-if="opraCompensationEnabled"
-                type="button"
-                class="response-legend-item estimated"
-                :class="{ muted: !showOpraEstimatedDeviation }"
-                :aria-pressed="showOpraEstimatedDeviation"
-                title="OPRA 滤波器响应的反向估算；排除前级增益，不代表实测频响"
-                @click="showOpraEstimatedDeviation = !showOpraEstimatedDeviation"
-              >
-                <i></i>估算源偏差
-              </button>
-              <span v-if="opraCompensationEnabled" class="response-estimate-note"
-                >相对隐含目标 0 dB · 非实测</span
-              >
-            </div>
-            <div class="svg-container">
-              <div class="chart-labels-y">
-                <span
-                  v-for="gain in [...gainTicks].reverse()"
-                  :key="'g-' + gain"
-                  :class="{ zero: gain === 0 }"
-                  >{{ gain > 0 ? '+' + gain : gain }}</span
-                >
-              </div>
-              <div class="chart-labels-x">
-                <span
-                  v-for="freq in frequencyTicks"
-                  :key="'f-' + freq"
-                  :style="{ left: frequencyToX(freq) + '%' }"
-                  >{{ formatFrequency(freq) }}</span
-                >
-              </div>
-
-              <div
-                v-for="(band, idx) in audioProcessing.eqBands"
-                :key="'point-' + idx"
-                v-show="responseView === 'dsp' && !isGainDisabled(band)"
-                class="chart-point"
-                :style="{
-                  left: frequencyToX(band.frequency) + '%',
-                  top: gainToY(band.gain) + '%',
-                  borderColor: 'var(--te-primary-500)'
-                }"
-              ></div>
-
-              <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="curveGradient" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stop-color="#6366f1" />
-                    <stop offset="50%" stop-color="#22d3ee" />
-                    <stop offset="100%" stop-color="#ec4899" />
-                  </linearGradient>
-                  <linearGradient id="fillGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#6366f1" stop-opacity="0.25" />
-                    <stop offset="100%" stop-color="#22d3ee" stop-opacity="0.0" />
-                  </linearGradient>
-                </defs>
-                <line
-                  v-for="gain in gainTicks"
-                  :key="'gl-' + gain"
-                  x1="0"
-                  x2="100"
-                  :y1="gainToY(gain)"
-                  :y2="gainToY(gain)"
-                  class="grid-line"
-                  :class="{ zero: gain === 0 }"
-                />
-                <line
-                  v-for="freq in frequencyTicks"
-                  :key="'fl-' + freq"
-                  :x1="frequencyToX(freq)"
-                  :x2="frequencyToX(freq)"
-                  y1="0"
-                  y2="100"
-                  class="grid-line"
-                />
-                <path
-                  v-if="responseView === 'headphone' && showMeasuredSource && measuredSourcePath"
-                  class="equalizer-measured-source-line"
-                  :d="measuredSourcePath"
-                  fill="none"
-                  vector-effect="non-scaling-stroke"
-                />
-                <path
-                  v-if="responseView === 'headphone' && showTargetResponse && targetResponsePath"
-                  class="equalizer-target-response-line"
-                  :d="targetResponsePath"
-                  fill="none"
-                  vector-effect="non-scaling-stroke"
-                />
-                <path
-                  v-for="bandPath in responseView === 'dsp'
-                    ? bandResponsePaths
-                    : showIndividualFilters
-                      ? headphoneBandResponsePaths
-                      : []"
-                  :key="`${responseView}-band-curve-${bandPath.index}`"
-                  class="equalizer-band-line"
-                  :d="bandPath.path"
-                  fill="none"
-                  vector-effect="non-scaling-stroke"
-                />
-                <path
-                  v-if="responseView === 'headphone' && showCombinedFilter && combinedFilterPath"
-                  class="equalizer-combined-filter-line"
-                  :d="combinedFilterPath"
-                  fill="none"
-                  vector-effect="non-scaling-stroke"
-                />
-                <path
-                  v-if="
-                    responseView === 'headphone' && showCorrectedResponse && correctedAcousticPath
-                  "
-                  class="equalizer-corrected-acoustic-line"
-                  :d="correctedAcousticPath"
-                  fill="none"
-                  vector-effect="non-scaling-stroke"
-                />
-                <path
-                  v-if="
-                    responseView === 'dsp' &&
-                    showOpraEstimatedDeviation &&
-                    opraEstimatedDeviationPath
-                  "
-                  class="equalizer-estimated-deviation-line"
-                  :d="opraEstimatedDeviationPath"
-                  fill="none"
-                  vector-effect="non-scaling-stroke"
-                />
-                <path
-                  v-if="responseView === 'dsp' && showManualResponse"
-                  class="equalizer-manual-response-line"
-                  :d="manualResponsePath"
-                  fill="none"
-                  vector-effect="non-scaling-stroke"
-                />
-                <path
-                  v-if="responseView === 'dsp' && showOpraResponse && opraResponsePath"
-                  class="equalizer-opra-response-line"
-                  :d="opraResponsePath"
-                  fill="none"
-                  vector-effect="non-scaling-stroke"
-                />
-                <path
-                  v-if="responseView === 'dsp'"
-                  class="equalizer-spectrum-area"
-                  :d="responseFillPath"
-                  fill="url(#fillGradient)"
-                />
-                <path
-                  v-if="responseView === 'dsp'"
-                  class="equalizer-spectrum-line"
-                  :d="responsePath"
-                  fill="none"
-                  stroke="url(#curveGradient)"
-                  stroke-width="3px"
-                  vector-effect="non-scaling-stroke"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-          </section>
-
-          <section class="sliders-board">
-            <div class="slider-column master-column">
-              <div class="slider-gain">
-                {{
-                  audioProcessing.eqPreamp > 0
-                    ? '+' + audioProcessing.eqPreamp.toFixed(1)
-                    : audioProcessing.eqPreamp.toFixed(1)
-                }}
-              </div>
-              <div class="slider-track">
-                <div class="slider-fill" :style="getFillStyle(audioProcessing.eqPreamp, 24)"></div>
-                <div
-                  class="slider-thumb"
-                  :style="{ top: getThumbTop(audioProcessing.eqPreamp, 24) }"
-                ></div>
-                <input
-                  type="range"
-                  min="-24"
-                  max="24"
-                  step="0.1"
-                  :value="audioProcessing.eqPreamp"
-                  :disabled="autoPreampEnabled"
-                  @input="
-                    updateAudioProcessing({
-                      eqPreamp: Number(($event.target as HTMLInputElement).value)
-                    })
-                  "
-                  class="invisible-range"
-                />
-              </div>
-              <div class="slider-freq">{{ autoPreampEnabled ? 'PREAMP · AUTO' : 'PREAMP' }}</div>
-            </div>
-
-            <div
-              v-for="(band, index) in audioProcessing.eqBands"
-              :key="'band-' + index"
-              class="slider-column"
-            >
-              <div class="slider-gain">
-                {{ band.gain > 0 ? '+' + band.gain.toFixed(1) : band.gain.toFixed(1) }}
-              </div>
-              <div class="slider-track">
-                <div class="slider-fill" :style="getFillStyle(band.gain, 12)"></div>
-                <div class="slider-thumb" :style="{ top: getThumbTop(band.gain, 12) }"></div>
-                <input
-                  type="range"
-                  min="-12"
-                  max="12"
-                  step="0.1"
-                  :value="band.gain"
-                  :disabled="isGainDisabled(band)"
-                  @input="
-                    updateEqBand(index, { gain: Number(($event.target as HTMLInputElement).value) })
-                  "
-                  class="invisible-range"
-                />
-              </div>
-              <div
-                class="slider-freq"
-                data-te-interactive
-                role="button"
-                tabindex="0"
-                :aria-label="`高级设置 ${formatFrequency(band.frequency)}`"
-                style="cursor: pointer"
-                @click="openAdvancedSettings(index)"
-                @keydown.enter.prevent="openAdvancedSettings(index)"
-                @keydown.space.prevent="openAdvancedSettings(index)"
-              >
-                {{ formatFrequency(band.frequency) }}
-              </div>
-            </div>
-          </section>
+          <GraphicEqPanel
+            :preamp="audioProcessing.eqPreamp"
+            :bands="audioProcessing.eqBands"
+            :auto-preamp-enabled="autoPreampEnabled"
+            @preview-preamp="stagePreamp"
+            @preview-band="stageBandPatch"
+            @commit="commitStagedBands"
+            @advanced="openAdvancedSettings"
+          />
         </div>
 
         <div v-else-if="activeTab === 'parametric'" class="tab-pane active parametric-pane">
@@ -1739,58 +1076,16 @@ watch([spectrumVisible, responseView, isPlaying], () => scheduleSpectrumPathUpda
             </div>
           </header>
 
-          <section class="parametric-toolbar-card" aria-label="分析器数据视图">
-            <div class="response-view-toolbar">
-              <div class="response-view-switch" aria-label="响应视图">
-                <button
-                  type="button"
-                  :class="{ active: responseView === 'dsp' }"
-                  :aria-pressed="responseView === 'dsp'"
-                  @click="responseView = 'dsp'"
-                >
-                  DSP 响应
-                </button>
-                <button
-                  type="button"
-                  :disabled="!importedFrequencyResponse"
-                  :class="{ active: responseView === 'headphone' }"
-                  :aria-pressed="responseView === 'headphone'"
-                  @click="responseView = 'headphone'"
-                >
-                  耳机频响
-                </button>
-              </div>
-              <div class="frequency-response-actions">
-                <span v-if="importedFrequencyResponse" class="frequency-response-source">
-                  {{ importedFrequencyResponse.sourceName }} ·
-                  {{
-                    importedFrequencyResponse.sourceColumn === 'smoothed'
-                      ? 'AutoEq smoothed 列'
-                      : 'AutoEq raw 列'
-                  }}
-                </span>
-                <span v-if="frequencyResponseError" class="frequency-response-error">
-                  {{ frequencyResponseError }}
-                </span>
-                <button
-                  type="button"
-                  class="frequency-response-import"
-                  :disabled="frequencyResponseImporting"
-                  @click="importFrequencyResponse"
-                >
-                  {{ frequencyResponseImporting ? '导入中' : '导入 AutoEq CSV' }}
-                </button>
-                <button
-                  v-if="importedFrequencyResponse"
-                  type="button"
-                  class="frequency-response-clear"
-                  @click="clearFrequencyResponse"
-                >
-                  清除
-                </button>
-              </div>
-            </div>
-          </section>
+          <FrequencyResponseToolbar
+            card
+            :response-view="responseView"
+            :imported-frequency-response="importedFrequencyResponse"
+            :importing="frequencyResponseImporting"
+            :error="frequencyResponseError"
+            @update:response-view="responseView = $event"
+            @import="importFrequencyResponse"
+            @clear="clearFrequencyResponse"
+          />
 
           <ParametricEqWorkspace
             :bands="audioProcessing.eqBands"
@@ -2218,230 +1513,6 @@ watch([spectrumVisible, responseView, isPlaying], () => scheduleSpectrumPathUpda
   left: 2px;
 }
 
-/* OPRA Panel */
-.opra-panel {
-  background: var(--te-card-bg);
-  border-radius: 20px;
-  border: 1px solid var(--te-card-border);
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.03);
-  overflow: hidden;
-}
-.opra-header {
-  padding: 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--te-card-bg);
-  z-index: 2;
-  position: relative;
-}
-.opra-info h3 {
-  font-size: 16px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.opra-info h3 span.badge {
-  background: var(--te-success-soft-bg);
-  color: var(--te-success-soft-fg);
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 6px;
-}
-.opra-info p {
-  font-size: 13px;
-  color: var(--te-neutral-500);
-  margin-top: 6px;
-  font-weight: 500;
-}
-.opra-action-btn {
-  background: rgba(15, 23, 42, 0.04);
-  border: none;
-  padding: 10px 20px;
-  border-radius: 10px;
-  font-weight: 700;
-  color: var(--te-neutral-900);
-  cursor: pointer;
-  transition: var(--transition);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.opra-action-btn i {
-  font-size: 10px;
-  transition: transform 0.4s var(--te-ease-soft);
-}
-.opra-action-btn:hover {
-  background: var(--te-subtle-bg);
-  transform: translateY(-2px);
-}
-.opra-action-btn.active {
-  background: var(--te-info-soft-bg);
-  color: var(--te-info-soft-fg);
-  transform: translateY(0);
-}
-.opra-action-btn.active i {
-  transform: rotate(180deg);
-}
-
-.opra-drawer-wrapper {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows 0.4s var(--te-ease-soft);
-}
-.opra-drawer-wrapper.collapsed {
-  grid-template-rows: 0fr;
-}
-.opra-drawer {
-  overflow: hidden;
-}
-.opra-drawer-inner {
-  border-top: 1px solid var(--te-card-border);
-  background: var(--te-subtle-bg);
-  padding: 20px 24px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.opra-search {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-.opra-search-input-wrap {
-  flex: 1;
-  position: relative;
-}
-.opra-search-input-wrap .search-icon {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--te-neutral-500);
-}
-.opra-search-input-wrap input {
-  width: 100%;
-  padding: 12px 16px 12px 40px;
-  border-radius: 12px;
-  border: 1px solid var(--te-card-border);
-  background: var(--te-card-bg);
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--te-neutral-900);
-  outline: none;
-  transition: var(--transition);
-  font-weight: 500;
-}
-.opra-search-input-wrap input:focus {
-  border-color: var(--te-primary-500);
-  box-shadow: 0 0 0 3px rgba(var(--te-primary-rgb), 0.1);
-}
-.opra-refresh {
-  background: var(--te-card-bg);
-  border: 1px solid var(--te-card-border);
-  padding: 11px 20px;
-  border-radius: 12px;
-  font-weight: 700;
-  color: var(--te-neutral-900);
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.02);
-  transition: var(--transition);
-}
-.opra-refresh:hover {
-  background: var(--te-hover-bg);
-  border-color: var(--te-active-bg);
-}
-
-.opra-results {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
-  max-height: 200px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-.opra-results::-webkit-scrollbar {
-  width: 6px;
-}
-.opra-results::-webkit-scrollbar-track {
-  background: transparent;
-}
-.opra-results::-webkit-scrollbar-thumb {
-  background: rgba(15, 23, 42, 0.1);
-  border-radius: 999px;
-}
-
-.opra-result-item {
-  background: var(--te-card-bg);
-  border: 1px solid var(--te-card-border);
-  padding: 16px;
-  border-radius: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: var(--transition);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.02);
-}
-.opra-result-item:hover {
-  border-color: rgba(99, 102, 241, 0.3);
-  box-shadow: 0 8px 16px rgba(99, 102, 241, 0.08);
-  transform: translateY(-2px);
-}
-.result-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.result-brand {
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--te-neutral-500);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.result-model {
-  font-size: 15px;
-  font-weight: 800;
-  color: var(--te-neutral-900);
-}
-.result-author {
-  font-size: 12px;
-  font-weight: 500;
-  color: rgba(15, 23, 42, 0.4);
-  margin-top: 4px;
-}
-.result-apply {
-  background: rgba(99, 102, 241, 0.1);
-  color: var(--te-primary-500);
-  border: none;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: var(--transition);
-}
-.result-apply:hover {
-  background: var(--te-primary-500);
-  color: #fff;
-}
-
-.opra-attribution {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--te-neutral-500);
-  margin-top: 4px;
-}
-.opra-attribution a {
-  color: var(--te-primary-500);
-  text-decoration: none;
-  font-weight: 700;
-}
-.opra-attribution a:hover {
-  text-decoration: underline;
-}
-
 /* Detailed SVG Chart Area */
 .parametric-pane {
   gap: 10px;
@@ -2514,439 +1585,6 @@ watch([spectrumVisible, responseView, isPlaying], () => scheduleSpectrumPathUpda
   border-radius: 50%;
   background: var(--te-success-500);
   box-shadow: 0 0 8px color-mix(in srgb, var(--te-success-500) 62%, transparent);
-}
-
-.parametric-toolbar-card {
-  min-height: 38px;
-  padding: 5px 7px 5px 10px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid color-mix(in srgb, var(--te-card-border) 76%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--te-card-bg) 50%, transparent);
-  box-shadow: inset 0 1px color-mix(in srgb, var(--te-neutral-50) 3%, transparent);
-}
-
-.parametric-toolbar-label {
-  flex: 0 0 auto;
-  color: var(--te-neutral-500);
-}
-
-.parametric-toolbar-card .response-view-toolbar {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  gap: 6px 12px;
-}
-
-.parametric-toolbar-card .response-view-switch {
-  padding: 2px;
-  border-color: color-mix(in srgb, var(--te-card-border) 76%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--te-neutral-900) 5%, transparent);
-}
-
-.parametric-toolbar-card .response-view-switch button,
-.parametric-toolbar-card .frequency-response-import,
-.parametric-toolbar-card .frequency-response-clear {
-  min-height: 25px;
-  border-radius: 4px;
-  padding: 5px 9px;
-  font-size: 9px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.parametric-toolbar-card .response-view-switch button.active {
-  color: var(--te-neutral-100);
-  background: color-mix(in srgb, var(--te-neutral-900) 88%, var(--te-primary-500));
-  box-shadow: none;
-}
-
-.parametric-toolbar-card .frequency-response-actions {
-  gap: 6px;
-}
-
-.parametric-toolbar-card .frequency-response-source,
-.parametric-toolbar-card .frequency-response-error {
-  overflow: hidden;
-  max-width: min(30vw, 320px);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.parametric-toolbar-card .frequency-response-import {
-  border: 1px solid color-mix(in srgb, var(--te-primary-500) 32%, transparent);
-  color: var(--te-primary-500);
-  background: color-mix(in srgb, var(--te-primary-500) 7%, transparent);
-}
-
-.parametric-toolbar-card .frequency-response-clear {
-  border: 1px solid color-mix(in srgb, var(--te-card-border) 68%, transparent);
-}
-
-.chart-card {
-  background: var(--te-card-bg);
-  border-radius: 20px;
-  padding: 16px 16px 36px 40px;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.03);
-  border: 1px solid var(--te-card-border);
-  position: relative;
-}
-.response-view-toolbar {
-  margin: -2px 0 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-}
-.response-view-switch {
-  display: inline-flex;
-  padding: 3px;
-  border: 1px solid var(--te-card-border);
-  border-radius: 10px;
-  background: var(--te-neutral-100);
-}
-.response-view-switch button,
-.frequency-response-import,
-.frequency-response-clear {
-  appearance: none;
-  border: 0;
-  border-radius: 7px;
-  padding: 6px 10px;
-  background: transparent;
-  color: var(--te-neutral-600);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.response-view-switch button.active {
-  background: var(--te-card-bg);
-  color: var(--te-primary-500);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
-}
-.response-view-switch button:disabled {
-  cursor: not-allowed;
-  opacity: 0.42;
-}
-.frequency-response-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.frequency-response-source {
-  color: var(--te-neutral-500);
-  font-size: 11px;
-}
-.frequency-response-error {
-  max-width: 360px;
-  color: var(--te-danger-soft-fg);
-  font-size: 11px;
-}
-.frequency-response-import {
-  background: var(--te-primary-500);
-  color: var(--te-neutral-50);
-}
-.frequency-response-import:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-.frequency-response-clear {
-  color: var(--te-neutral-500);
-}
-.response-legend {
-  min-height: 28px;
-  margin: -2px 0 10px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  color: var(--te-neutral-600);
-  font-size: 11px;
-}
-.response-legend-item {
-  appearance: none;
-  border: 0;
-  padding: 2px 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-button.response-legend-item {
-  cursor: pointer;
-}
-.response-legend-item.muted {
-  opacity: 0.38;
-}
-.response-legend-item i {
-  display: inline-block;
-  width: 20px;
-  height: 0;
-  border-top: 2px solid var(--te-neutral-500);
-}
-.response-legend-item.total i {
-  border-top-width: 3px;
-  border-color: var(--te-primary-500);
-}
-.response-legend-item.manual i {
-  border-color: var(--te-info-soft-fg);
-}
-.response-legend-item.opra i {
-  border-color: var(--te-favorite-500);
-}
-.response-legend-item.estimated i {
-  border-color: var(--te-warning-500);
-  border-top-style: dashed;
-}
-.response-legend-item.measured i {
-  border-color: var(--te-info-soft-fg);
-}
-.response-legend-item.target i {
-  border-color: var(--te-neutral-500);
-  border-top-style: dashed;
-}
-.response-legend-item.individual i {
-  border-color: var(--te-favorite-500);
-}
-.response-legend-item.combined i {
-  border-color: var(--te-warning-500);
-  border-top-style: dashed;
-}
-.response-legend-item.corrected i {
-  border-color: var(--te-success-500);
-  border-top-width: 3px;
-}
-.response-estimate-note {
-  color: var(--te-neutral-500);
-  white-space: nowrap;
-}
-.svg-container {
-  width: 100%;
-  height: 210px;
-  position: relative;
-}
-svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-  overflow: visible;
-}
-
-.grid-line {
-  stroke: rgba(15, 23, 42, 0.05);
-  stroke-width: 1px;
-  vector-effect: non-scaling-stroke;
-}
-
-/* Faint per-band response curves under the composite line */
-.equalizer-band-line {
-  stroke: var(--te-primary-500);
-  stroke-width: 1px;
-  opacity: 0.18;
-}
-.equalizer-manual-response-line,
-.equalizer-opra-response-line,
-.equalizer-estimated-deviation-line,
-.equalizer-measured-source-line,
-.equalizer-target-response-line,
-.equalizer-combined-filter-line,
-.equalizer-corrected-acoustic-line {
-  stroke-width: 1.6px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  opacity: 0.82;
-}
-.equalizer-manual-response-line {
-  stroke: var(--te-info-soft-fg);
-}
-.equalizer-opra-response-line {
-  stroke: var(--te-favorite-500);
-}
-.equalizer-estimated-deviation-line {
-  stroke: var(--te-warning-500);
-  stroke-dasharray: 5 4;
-  opacity: 0.9;
-}
-.equalizer-measured-source-line {
-  stroke: var(--te-info-soft-fg);
-}
-.equalizer-target-response-line {
-  stroke: var(--te-neutral-500);
-  stroke-dasharray: 6 4;
-  opacity: 0.85;
-}
-.equalizer-combined-filter-line {
-  stroke: var(--te-warning-500);
-  stroke-dasharray: 3 3;
-  stroke-width: 2px;
-  opacity: 0.9;
-}
-.equalizer-corrected-acoustic-line {
-  stroke: var(--te-success-500);
-  stroke-width: 2.6px;
-  opacity: 0.95;
-}
-.grid-line.zero {
-  stroke: rgba(15, 23, 42, 0.15);
-  stroke-width: 2px;
-  stroke-dasharray: 4 4;
-  vector-effect: non-scaling-stroke;
-}
-
-/* HTML based labels & points */
-.chart-labels-y {
-  position: absolute;
-  top: 0;
-  left: -32px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  color: var(--te-neutral-500);
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--te-font-sans);
-  text-align: right;
-  width: 24px;
-}
-.chart-labels-y span.zero {
-  font-weight: 800;
-  color: var(--te-neutral-900);
-}
-
-.chart-labels-x {
-  position: absolute;
-  bottom: -24px;
-  left: 0;
-  width: 100%;
-  height: 16px;
-  color: var(--te-neutral-500);
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--te-font-sans);
-}
-.chart-labels-x span {
-  position: absolute;
-  transform: translateX(-50%);
-  text-align: center;
-}
-
-/* Pure HTML perfect circles for points to avoid SVG transform stretching */
-.chart-point {
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #fff; /* keep-white: chart point center */
-  border: 3px solid;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
-  z-index: 10;
-}
-
-/* Graphic Sliders Board */
-.sliders-board {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  background: var(--te-glass-bg);
-  padding: 30px 40px;
-  border-radius: 20px;
-  border: 1px solid var(--te-glass-border);
-}
-.slider-column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  flex: 1;
-}
-.slider-gain {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--te-primary-500);
-  background: var(--te-card-bg);
-  padding: 4px 10px;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
-}
-.slider-freq {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--te-neutral-500);
-}
-.slider-track {
-  width: 6px;
-  height: 180px;
-  background: rgba(15, 23, 42, 0.06);
-  border-radius: 999px;
-  position: relative;
-}
-.slider-fill {
-  position: absolute;
-  left: 0;
-  width: 100%;
-  background: linear-gradient(to top, var(--te-primary-500), #818cf8);
-  border-radius: 999px;
-  z-index: 1;
-}
-.slider-thumb {
-  width: 20px;
-  height: 20px;
-  background: #fff; /* keep-white: slider knob */
-  border-radius: 50%;
-  position: absolute;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border: 2px solid var(--te-primary-500);
-  cursor: grab;
-  transition: transform 0.1s;
-  z-index: 2;
-}
-.slider-thumb:hover {
-  transform: translate(-50%, -50%) scale(1.2);
-}
-
-.invisible-range {
-  position: absolute;
-  width: 180px;
-  height: 24px;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%) rotate(-90deg);
-  opacity: 0;
-  cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
-  margin: 0;
-  z-index: 3;
-}
-
-.master-column {
-  padding-right: 20px;
-  margin-right: 10px;
-  border-right: 2px dashed rgba(15, 23, 42, 0.08);
-}
-.master-column .slider-gain {
-  color: #ec4899;
-}
-.master-column .slider-fill {
-  background: linear-gradient(to top, #ec4899, #f472b6);
-}
-.master-column .slider-thumb {
-  border-color: #ec4899;
 }
 
 /* Parametric Specific Styles */
@@ -3060,19 +1698,6 @@ svg {
   .parametric-page-title p {
     max-width: 44vw;
   }
-
-  .parametric-toolbar-card {
-    align-items: flex-start;
-  }
-
-  .parametric-toolbar-card .response-view-toolbar {
-    align-items: flex-start;
-  }
-
-  .parametric-toolbar-card .frequency-response-source,
-  .parametric-toolbar-card .frequency-response-error {
-    max-width: 220px;
-  }
 }
 
 @media (max-width: 620px) {
@@ -3098,32 +1723,8 @@ svg {
     max-width: none;
     white-space: normal;
   }
-
-  .parametric-toolbar-card {
-    padding: 5px;
-  }
-
-  .parametric-toolbar-card .response-view-toolbar,
-  .parametric-toolbar-card .frequency-response-actions {
-    width: 100%;
-  }
-
-  .parametric-toolbar-card .frequency-response-actions {
-    justify-content: flex-start;
-  }
-
-  .parametric-toolbar-card .frequency-response-source,
-  .parametric-toolbar-card .frequency-response-error {
-    order: 3;
-    width: 100%;
-    max-width: none;
-  }
 }
 
-:global(html[data-te-equalizer-panel] .eq-page .opra-panel),
-:global(html[data-te-equalizer-panel] .eq-page .parametric-toolbar-card),
-:global(html[data-te-equalizer-panel] .eq-page .chart-card),
-:global(html[data-te-equalizer-panel] .eq-page .sliders-board),
 :global(html[data-te-equalizer-panel] .eq-page .band-selector),
 :global(html[data-te-equalizer-panel] .eq-page .parameter-card),
 :global(html[data-te-equalizer-panel] .eq-page .square-card) {
@@ -3132,20 +1733,12 @@ svg {
   background: var(--te-equalizer-panel-bg);
 }
 
-:global(html[data-te-equalizer-panel='tinted'] .eq-page .opra-panel),
-:global(html[data-te-equalizer-panel='tinted'] .eq-page .parametric-toolbar-card),
-:global(html[data-te-equalizer-panel='tinted'] .eq-page .chart-card),
-:global(html[data-te-equalizer-panel='tinted'] .eq-page .sliders-board),
 :global(html[data-te-equalizer-panel='tinted'] .eq-page .band-selector),
 :global(html[data-te-equalizer-panel='tinted'] .eq-page .parameter-card),
 :global(html[data-te-equalizer-panel='tinted'] .eq-page .square-card) {
   background: color-mix(in srgb, var(--te-equalizer-panel-bg) 82%, var(--te-primary-500));
 }
 
-:global(html[data-te-equalizer-panel='glass'] .eq-page .opra-panel),
-:global(html[data-te-equalizer-panel='glass'] .eq-page .parametric-toolbar-card),
-:global(html[data-te-equalizer-panel='glass'] .eq-page .chart-card),
-:global(html[data-te-equalizer-panel='glass'] .eq-page .sliders-board),
 :global(html[data-te-equalizer-panel='glass'] .eq-page .band-selector),
 :global(html[data-te-equalizer-panel='glass'] .eq-page .parameter-card),
 :global(html[data-te-equalizer-panel='glass'] .eq-page .square-card) {
@@ -3154,82 +1747,8 @@ svg {
   -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
-:global(html[data-te-equalizer-panel] .eq-page .parametric-toolbar-card) {
-  border-color: color-mix(in srgb, var(--te-equalizer-panel-border) 76%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--te-equalizer-panel-bg) 46%, transparent);
-}
-
-:global(html[data-te-equalizer-panel='tinted'] .eq-page .parametric-toolbar-card) {
-  background: color-mix(in srgb, var(--te-equalizer-panel-bg) 72%, var(--te-primary-500));
-}
-
-:global(html[data-te-equalizer-panel='glass'] .eq-page .parametric-toolbar-card) {
-  background: color-mix(in srgb, var(--te-equalizer-panel-bg) 42%, transparent);
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
-}
-
-:global(html[data-te-equalizer-slider] .eq-page .slider-track) {
-  background: var(--te-equalizer-slider-track);
-}
-
-:global(html[data-te-equalizer-slider] .eq-page .slider-fill),
-:global(html[data-te-equalizer-slider] .eq-page .master-column .slider-fill) {
-  background: var(--te-equalizer-slider-fill);
-}
-
-:global(html[data-te-equalizer-slider] .eq-page .slider-thumb) {
-  width: var(--te-equalizer-slider-thumb-size);
-  height: var(--te-equalizer-slider-thumb-size);
-  background: var(--te-equalizer-slider-thumb);
-}
-
-:global(html[data-te-equalizer-slider='ring'] .eq-page .slider-thumb) {
-  border: 2px solid var(--te-primary-500);
-}
-
-:global(html[data-te-equalizer-slider='solid'] .eq-page .slider-thumb) {
-  border: 0;
-  background: var(--te-primary-500);
-}
-
-:global(html[data-te-equalizer-panel] .eq-page .grid-line) {
-  stroke: var(--te-equalizer-grid);
-}
-
-:global(html[data-te-equalizer-panel] .eq-page .grid-line.zero),
-:global(html[data-te-equalizer-panel] .eq-page .frequency-guide) {
-  stroke: var(--te-equalizer-guide);
-}
-
-:global(html[data-te-equalizer-spectrum] .eq-page .equalizer-spectrum-line) {
-  stroke: var(--te-equalizer-spectrum);
-}
-
-:global(html[data-te-equalizer-spectrum] .eq-page .equalizer-spectrum-area) {
-  fill: color-mix(in srgb, var(--te-equalizer-spectrum) 28%, transparent);
-}
-
-:global(html[data-te-equalizer-spectrum='line'] .eq-page .equalizer-spectrum-area),
-:global(html[data-te-equalizer-spectrum='bars'] .eq-page .equalizer-spectrum-area) {
-  display: none;
-}
-
-:global(html[data-te-equalizer-spectrum='bars'] .eq-page .equalizer-spectrum-line) {
-  stroke-width: 8px;
-  stroke-dasharray: 1.5 5;
-  stroke-linecap: butt;
-}
-
-:global(html[data-te-equalizer-spectrum='area'] .eq-page .equalizer-spectrum-line) {
-  stroke-width: 2px;
-}
-
 :global(html[data-te-equalizer-button] .eq-page .eq-command),
-:global(html[data-te-equalizer-button] .eq-page .band-tab),
-:global(html[data-te-equalizer-button] .eq-page .opra-action-btn),
-:global(html[data-te-equalizer-button] .eq-page .result-apply) {
+:global(html[data-te-equalizer-button] .eq-page .band-tab) {
   border-radius: var(--te-equalizer-button-radius);
 }
 
@@ -3278,21 +1797,6 @@ svg {
   border-radius: 50%;
 }
 
-:global(html[data-te-visible-equalizer-grid='false'] .eq-page .grid-line),
-:global(html[data-te-visible-equalizer-frequency-guides='false'] .eq-page .chart-labels-x),
-:global(html[data-te-visible-equalizer-frequency-guides='false'] .eq-page .chart-labels-y),
-:global(html[data-te-visible-equalizer-frequency-guides='false'] .eq-page .frequency-guide),
-:global(html[data-te-visible-equalizer-spectrum='false'] .eq-page .equalizer-spectrum-line),
-:global(html[data-te-visible-equalizer-spectrum='false'] .eq-page .equalizer-spectrum-area),
-:global(html[data-te-visible-equalizer-spectrum='false'] .eq-page .equalizer-band-line),
-:global(html[data-te-visible-equalizer-spectrum='false'] .eq-page .chart-point) {
-  display: none;
-}
-
-:global(html[data-te-equalizer-spectrum] .eq-page .equalizer-band-line) {
-  stroke: var(--te-equalizer-spectrum);
-}
-
 /* The parametric view is a flat instrument surface that follows the page theme. */
 .parametric-pane {
   padding: 0;
@@ -3322,55 +1826,11 @@ svg {
   color: var(--te-neutral-500);
 }
 
-.parametric-toolbar-card {
-  border-color: var(--te-card-border);
-  border-radius: 8px;
-  background: var(--te-card-bg);
-  box-shadow: none;
-}
-
-.parametric-toolbar-label,
-.parametric-toolbar-card .frequency-response-source {
-  color: var(--te-neutral-500);
-}
-
-.parametric-toolbar-card .response-view-switch {
-  border-color: var(--te-card-border);
-  background: var(--te-neutral-100);
-}
-
-.parametric-toolbar-card .response-view-switch button {
-  color: var(--te-neutral-600);
-}
-
-.parametric-toolbar-card .response-view-switch button.active {
-  color: var(--te-neutral-900);
-  background: var(--te-card-bg);
-  box-shadow: none;
-}
-
-.parametric-toolbar-card .frequency-response-import {
-  border-color: color-mix(in srgb, var(--te-neutral-900) 18%, transparent);
-  color: var(--te-neutral-700);
-  background: transparent;
-}
-
-.parametric-toolbar-card .frequency-response-clear {
-  border-color: var(--te-card-border);
-  color: var(--te-neutral-500);
-}
-
 :global(html[data-theme='pureWhite'] .parametric-pane) {
   background: transparent;
 }
 
 :global(html[data-theme='pureWhite'] .parametric-page-title h1) {
   color: var(--te-neutral-900);
-}
-
-:global(html[data-theme='pureWhite'] .parametric-toolbar-card) {
-  border-color: var(--te-card-border);
-  background: var(--te-card-bg);
-  box-shadow: none;
 }
 </style>

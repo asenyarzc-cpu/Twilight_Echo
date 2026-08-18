@@ -13,66 +13,38 @@
  */
 
 export type SurfaceMaterial = 'standard' | 'liquidGlass'
+export type LiquidGlassCoverage = 'functional' | 'expanded'
 
 export const SURFACE_MATERIALS: readonly SurfaceMaterial[] = ['standard', 'liquidGlass']
 
 /** Filter ids referenced from CSS. Cards and the playbar differ in aspect ratio. */
 export const LIQUID_GLASS_CARD_FILTER_ID = 'te-lg-card'
+export const LIQUID_GLASS_EXPANDED_CARD_FILTER_ID = 'te-lg-expanded-card'
+export const LIQUID_GLASS_HOME_CARD_FILTER_ID = 'te-lg-home-card'
 export const LIQUID_GLASS_PLAYBAR_FILTER_ID = 'te-lg-playbar'
+export const LIQUID_GLASS_TUNING_CHANGED_EVENT = 'twilight:liquid-glass-tuning-changed'
+export const LIQUID_GLASS_OFFSCREEN_CLASS = 'te-liquid-glass-offscreen'
+export const LIQUID_GLASS_BUDGET_CLASS = 'te-liquid-glass-budget'
+export const LIQUID_GLASS_MAX_VISIBLE_EXPANDED_SURFACES = 24
 
-/**
- * Class names that receive the liquid glass card surface. Kept in sync with the
- * selector list in `base.css`; the surfaces test asserts parity so the pointer
- * tracker and the stylesheet can never drift apart.
- */
-export const LIQUID_GLASS_CARD_CLASSES = [
-  'artist-card',
-  'album-card',
-  'playlist-card',
-  'glass-card',
-  'feature-card',
-  'playlist-grid-card',
-  'playlist-tile',
-  'favorites-card',
-  'streaming-placeholder',
-  'empty-recommend',
-  'detail-playlist-header',
-  'track-table-wrapper',
-  'profile-panel',
-  'liked-panel',
-  'playlist-list-item',
-  'profile-card',
-  'recent-card',
-  'ranking-card',
-  'create-playlist-card',
-  'folder-card',
-  'empty-list-card',
-  'filter-card',
-  'sponsor-card',
-  'update-card',
-  'dsp-module-card',
-  'device-card',
-  'card',
-  'account-card',
-  'plugin-card',
-  'market-card',
-  'plugin-extension-card',
-  'bili-qr-card',
-  'chart-card',
-  'parameter-card',
-  'square-card',
-  'opra-panel',
-  'opra-result-item',
-  'device-panel',
-  'plugin-panel',
-  'output-diagnostic-panel',
-  'background-accordion-panel'
-] as const
+/** Clear glass is reserved for the dashboard's media-rich Hero treatment. */
+export const LIQUID_GLASS_HOME_CARD_SELECTOR = '.home .feature-card'
 
-/** Selector used by the pointer tracker to resolve the hovered card surface. */
-export const LIQUID_GLASS_CARD_SELECTOR = LIQUID_GLASS_CARD_CLASSES.map(
-  (className) => `.${className}`
-).join(',')
+/** Selector used by the pointer tracker and visibility observer. */
+export const LIQUID_GLASS_CARD_SELECTOR = LIQUID_GLASS_HOME_CARD_SELECTOR
+
+/** Explicit content surfaces used only by the opt-in expanded coverage mode. */
+export const LIQUID_GLASS_EXPANDED_SURFACE_SELECTOR = [
+  '.artist-card',
+  '.album-card',
+  '.playlist-card',
+  '.glass-card',
+  '.signal-card',
+  '.chart-card',
+  '.profile-card',
+  '.recent-card',
+  '.ranking-card'
+].join(',')
 
 export interface LiquidGlassTheme {
   /** Displacement magnitude in px fed to feDisplacementMap. */
@@ -92,9 +64,33 @@ export interface LiquidGlassTheme {
 }
 
 export interface LiquidGlassSettings {
+  /** Functional chrome by default; expanded also applies a bounded card profile. */
+  coverage: LiquidGlassCoverage
   /** Highlight gradient angle follows the pointer (rAF-throttled). */
   followPointer: boolean
   /** Tint the glass dark on light backgrounds for visibility ("Over Light"). */
+  overLight: boolean
+  /**
+   * Flip to the dark glass profile automatically when the sampled backdrop is
+   * bright, instead of waiting on the manual overLight switch. The renderer's
+   * environment analysis publishes the decision as `data-te-lg-adaptive-tone`.
+   */
+  adaptiveTone: boolean
+  light: LiquidGlassTheme
+  dark: LiquidGlassTheme
+  /** Enables title bar and main navigation independently. */
+  navigationEnabled: boolean
+  /** Enables the playbar independently while reusing the global glass profile. */
+  playbarEnabled: boolean
+  /** Enables the settings navigation independently while reusing the global profile. */
+  settingsNavigationEnabled: boolean
+  /** Optional liquid-glass profile applied only to the local dashboard cards. */
+  homeCards: LiquidGlassHomeCardsSettings
+}
+
+export interface LiquidGlassHomeCardsSettings {
+  enabled: boolean
+  /** Tint the homepage dark profile over a light background for legibility. */
   overLight: boolean
   light: LiquidGlassTheme
   dark: LiquidGlassTheme
@@ -115,33 +111,51 @@ export const LIQUID_GLASS_BOUNDS: Readonly<Record<keyof LiquidGlassTheme, Bound>
   tintOpacity: { min: 0, max: 100 }
 }
 
+/**
+ * Tuned against the Apple material: a thin refracting rim with a fully clear
+ * center (see DEFAULT_RIM_FRACTION), restrained chromatic fringing, and a
+ * bright shape-following specular. Legibility comes from blur and saturation,
+ * not from darkening — dark-mode tint stays low so the backdrop's colour shows
+ * through the way Apple's clear material does.
+ */
 export const DEFAULT_LIQUID_GLASS_LIGHT: LiquidGlassTheme = {
-  // Blur and refraction remain interaction-only in CSS, so these values improve
-  // hover fidelity without making a full scrolling card grid expensive at rest.
-  displacementScale: 58,
-  blurAmount: 14,
-  saturation: 132,
-  aberrationIntensity: 1.1,
-  elasticity: 8,
-  specularOpacity: 56,
-  tintOpacity: 6
+  displacementScale: 46,
+  blurAmount: 12,
+  saturation: 140,
+  aberrationIntensity: 0.7,
+  elasticity: 12,
+  specularOpacity: 68,
+  tintOpacity: 3
 }
 
 export const DEFAULT_LIQUID_GLASS_DARK: LiquidGlassTheme = {
-  displacementScale: 62,
-  blurAmount: 18,
-  saturation: 136,
-  aberrationIntensity: 1.35,
-  elasticity: 7,
-  specularOpacity: 48,
-  tintOpacity: 17
+  displacementScale: 50,
+  blurAmount: 14,
+  saturation: 144,
+  aberrationIntensity: 0.9,
+  elasticity: 10,
+  specularOpacity: 68,
+  tintOpacity: 5
+}
+
+export const DEFAULT_LIQUID_GLASS_HOME_CARDS: LiquidGlassHomeCardsSettings = {
+  enabled: false,
+  overLight: false,
+  light: { ...DEFAULT_LIQUID_GLASS_LIGHT },
+  dark: { ...DEFAULT_LIQUID_GLASS_DARK }
 }
 
 export const DEFAULT_LIQUID_GLASS: LiquidGlassSettings = {
+  coverage: 'functional',
   followPointer: true,
   overLight: false,
+  adaptiveTone: true,
   light: DEFAULT_LIQUID_GLASS_LIGHT,
-  dark: DEFAULT_LIQUID_GLASS_DARK
+  dark: DEFAULT_LIQUID_GLASS_DARK,
+  navigationEnabled: false,
+  playbarEnabled: false,
+  settingsNavigationEnabled: false,
+  homeCards: DEFAULT_LIQUID_GLASS_HOME_CARDS
 }
 
 function clamp(value: unknown, bound: Bound, fallback: number): number {
@@ -151,6 +165,10 @@ function clamp(value: unknown, bound: Bound, fallback: number): number {
 
 export function normalizeSurfaceMaterial(value: unknown): SurfaceMaterial {
   return value === 'liquidGlass' ? 'liquidGlass' : 'standard'
+}
+
+export function normalizeLiquidGlassCoverage(value: unknown): LiquidGlassCoverage {
+  return value === 'expanded' ? 'expanded' : 'functional'
 }
 
 export function normalizeLiquidGlassTheme(
@@ -183,11 +201,42 @@ export function normalizeLiquidGlassTheme(
 
 export function normalizeLiquidGlass(raw: unknown): LiquidGlassSettings {
   const value = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
+  const homeCards = (
+    typeof value.homeCards === 'object' && value.homeCards !== null ? value.homeCards : {}
+  ) as Record<string, unknown>
   return {
+    coverage: normalizeLiquidGlassCoverage(value.coverage),
     followPointer: value.followPointer !== false,
     overLight: value.overLight === true,
+    adaptiveTone: value.adaptiveTone !== false,
     light: normalizeLiquidGlassTheme(value.light, DEFAULT_LIQUID_GLASS_LIGHT),
-    dark: normalizeLiquidGlassTheme(value.dark, DEFAULT_LIQUID_GLASS_DARK)
+    dark: normalizeLiquidGlassTheme(value.dark, DEFAULT_LIQUID_GLASS_DARK),
+    navigationEnabled: value.navigationEnabled === true,
+    playbarEnabled: value.playbarEnabled === true,
+    settingsNavigationEnabled: value.settingsNavigationEnabled === true,
+    homeCards: {
+      enabled: homeCards.enabled === true,
+      overLight: homeCards.overLight === true,
+      light: normalizeLiquidGlassTheme(homeCards.light, DEFAULT_LIQUID_GLASS_HOME_CARDS.light),
+      dark: normalizeLiquidGlassTheme(homeCards.dark, DEFAULT_LIQUID_GLASS_HOME_CARDS.dark)
+    }
+  }
+}
+
+/**
+ * Expanded content surfaces use a deliberately restrained derivative of the
+ * shared profile. This keeps the functional chrome tunable without turning
+ * large content cards into high-contrast plastic panels.
+ */
+export function resolveExpandedLiquidGlassTheme(theme: LiquidGlassTheme): LiquidGlassTheme {
+  return {
+    displacementScale: Math.min(theme.displacementScale, 16),
+    blurAmount: Math.min(theme.blurAmount, 16),
+    saturation: Math.min(theme.saturation, 150),
+    aberrationIntensity: Math.min(theme.aberrationIntensity, 0.5),
+    elasticity: 0,
+    specularOpacity: Math.min(theme.specularOpacity, 36),
+    tintOpacity: theme.tintOpacity
   }
 }
 
@@ -222,13 +271,32 @@ export function resolveAberrationBlur(aberrationIntensity: number): number {
 }
 
 export function liquidGlassCssVariables(theme: LiquidGlassTheme): Record<string, string> {
+  return liquidGlassCssVariablesWithPrefix(theme, '--te-lg')
+}
+
+/** Homepage cards keep an independent profile while reusing the same shader contract. */
+export function liquidGlassHomeCardCssVariables(theme: LiquidGlassTheme): Record<string, string> {
+  return liquidGlassCssVariablesWithPrefix(theme, '--te-home-lg')
+}
+
+export function liquidGlassExpandedCssVariables(theme: LiquidGlassTheme): Record<string, string> {
+  return liquidGlassCssVariablesWithPrefix(
+    resolveExpandedLiquidGlassTheme(theme),
+    '--te-lg-expanded'
+  )
+}
+
+function liquidGlassCssVariablesWithPrefix(
+  theme: LiquidGlassTheme,
+  prefix: '--te-lg' | '--te-home-lg' | '--te-lg-expanded'
+): Record<string, string> {
   return {
-    '--te-lg-displacement': String(theme.displacementScale),
-    '--te-lg-blur': `${theme.blurAmount}px`,
-    '--te-lg-saturate': `${theme.saturation}%`,
-    '--te-lg-aberration': String(theme.aberrationIntensity),
-    '--te-lg-elasticity': String(theme.elasticity),
-    '--te-lg-specular': (theme.specularOpacity / 100).toFixed(3),
-    '--te-lg-tint': (theme.tintOpacity / 100).toFixed(3)
+    [`${prefix}-displacement`]: String(theme.displacementScale),
+    [`${prefix}-blur`]: `${theme.blurAmount}px`,
+    [`${prefix}-saturate`]: `${theme.saturation}%`,
+    [`${prefix}-aberration`]: String(theme.aberrationIntensity),
+    [`${prefix}-elasticity`]: String(theme.elasticity),
+    [`${prefix}-specular`]: (theme.specularOpacity / 100).toFixed(3),
+    [`${prefix}-tint`]: (theme.tintOpacity / 100).toFixed(3)
   }
 }

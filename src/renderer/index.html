@@ -8,9 +8,14 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; base-uri 'none'; object-src 'none'; frame-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: cover: background: theme-asset: twilight-media:; font-src 'self' data: theme-asset:; media-src 'self' blob: twilight-audio: twilight-media:; connect-src 'self' http://localhost:3100 http://127.0.0.1:3100 ws://localhost:* ws://127.0.0.1:*; worker-src 'self' blob:; form-action 'none'"
     />
-    <!-- MiSans SC subsets + optional full faces under /font/misans/full/*.woff2 -->
-    <link rel="stylesheet" href="/font/misans/misans.css" />
-    <link rel="stylesheet" href="/font/misans/full/misans-full.css" />
+    <!-- MiSans CSS is preloaded for the first post-mount font request; main.ts promotes it after mount. -->
+    <link rel="preload" as="style" href="/font/misans/misans.css" data-deferred-font="true" />
+    <link
+      rel="preload"
+      as="style"
+      href="/font/misans/full/misans-full.css"
+      data-deferred-font="true"
+    />
   </head>
 
   <body>

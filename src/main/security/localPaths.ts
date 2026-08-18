@@ -1,11 +1,11 @@
 import { app } from 'electron'
 import { stat } from 'fs/promises'
-import { dirname, extname, resolve } from 'path'
+import { dirname, extname, join, resolve } from 'path'
 import type { AppSettings } from '../core/types'
 import { runtime } from '../core/runtime'
 import { getDefaultCachePath } from '../core/settings'
-import { getMusicCacheStorageDirectories } from '../cache/musicCacheLayout.ts'
-import { SUPPORTED_EXTENSIONS } from '../library/libraryFiles.ts'
+import { SUPPORTED_EXTENSIONS } from '../../shared/audioFormats.ts'
+import { MANAGED_MUSIC_CACHE_DIRECTORY_NAMES } from '../../shared/musicCacheLayout.ts'
 import {
   CanonicalPathGrantSet,
   isCanonicalPathInside,
@@ -325,8 +325,8 @@ async function refreshDeclaredImpulseResponseFiles(): Promise<void> {
 async function grantCacheRoot(rootPath: string): Promise<string> {
   const canonicalRoot = await resolveCanonicalExistingPath(rootPath, 'directory')
   const managedDirectories = await Promise.all(
-    getMusicCacheStorageDirectories(rootPath).map((directory) =>
-      resolveCanonicalExistingPath(directory, 'directory')
+    MANAGED_MUSIC_CACHE_DIRECTORY_NAMES.map((name) =>
+      resolveCanonicalExistingPath(join(canonicalRoot, name), 'directory')
     )
   )
   if (managedDirectories.some((directory) => !isCanonicalPathInside(canonicalRoot, directory))) {

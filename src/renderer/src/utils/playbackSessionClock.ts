@@ -1,10 +1,4 @@
-export type PlaybackTransportState =
-  | 'idle'
-  | 'loading'
-  | 'playing'
-  | 'paused'
-  | 'stalled'
-  | 'ended'
+export type PlaybackTransportState = 'idle' | 'loading' | 'playing' | 'paused' | 'stalled' | 'ended'
 
 export type PlaybackSampleSource = 'native-time-pos' | 'native-info' | 'html-audio' | 'intent'
 
@@ -47,6 +41,13 @@ export interface PlaybackClockOptions {
   transitionGuardMs?: number
   maxPredictionGapMs?: number
   rewindToleranceSeconds?: number
+  /**
+   * Engine samples this far behind the interpolated playhead are treated as
+   * transport lag, not a rewind. Quantized or delayed `time-pos` events otherwise
+   * sawtooth the presentation clock and make karaoke / line highlighting jump
+   * backward at every boundary.
+   */
+  laggingSampleToleranceSeconds?: number
 }
 
 export type PlaybackClockRejectReason =
@@ -100,6 +101,7 @@ export function createPlaybackSessionClock(options: PlaybackClockOptions): Playb
   const confirmationToleranceSeconds = options.confirmationToleranceSeconds ?? 1.5
   const transitionGuardMs = options.transitionGuardMs ?? 3_000
   const rewindToleranceSeconds = options.rewindToleranceSeconds ?? 0.05
+  const laggingSampleToleranceSeconds = options.laggingSampleToleranceSeconds ?? 0.5
 
   let current: PlaybackClockSnapshot = {
     trackId: '',
@@ -188,7 +190,10 @@ export function createPlaybackSessionClock(options: PlaybackClockOptions): Playb
     return publish({ duration })
   }
 
-  function setPosition(position: number, source: PlaybackSampleSource = 'intent'): PlaybackClockSnapshot {
+  function setPosition(
+    position: number,
+    source: PlaybackSampleSource = 'intent'
+  ): PlaybackClockSnapshot {
     const next = publish({ position, source, needsResync: false })
     lastObservedPosition = next.position
     return next
@@ -217,7 +222,12 @@ export function createPlaybackSessionClock(options: PlaybackClockOptions): Playb
             ? Math.max(0, (at - transitionAt) / 1_000) * current.rate
             : 0
         if (Math.abs(position - (transitionPosition + elapsed)) > confirmationToleranceSeconds) {
-          return { accepted: false, reason: 'transition-mismatch', snapshot: current, advanced: false }
+          return {
+            accepted: false,
+            reason: 'transition-mismatch',
+            snapshot: current,
+            advanced: false
+          }
         }
       }
     }
@@ -231,11 +241,18 @@ export function createPlaybackSessionClock(options: PlaybackClockOptions): Playb
     }
 
     lastObservedPosition = position
-    if (
-      !advanced &&
-      !rewind &&
-      ((sample.state ?? current.state) === 'playing' || (sample.state ?? current.state) === 'loading')
-    ) {
+    const interpolating =
+      (sample.state ?? current.state) === 'playing' || (sample.state ?? current.state) === 'loading'
+    if (interpolating && !sample.expectedRewind && !rewind) {
+      const behind = positionAt(at) - position
+      if (behind > 0 && behind <= laggingSampleToleranceSeconds) {
+        // The engine is alive but late. Keep interpolating from the last
+        // presentation anchor so karaoke and the playhead never walk backward.
+        lastProgressAt = at
+        return { accepted: true, snapshot: current, advanced: false }
+      }
+    }
+    if (!advanced && !rewind && interpolating) {
       // Keep the last advancing sample as the anchor. Otherwise repeated
       // time-pos events with a frozen value would stop the shared timeline.
       return { accepted: true, snapshot: current, advanced: false }

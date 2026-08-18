@@ -2,7 +2,12 @@ import {
   DSD_OUTPUT_MODE_OPTIONS,
   VOLUME_NORMALIZATION_OPTIONS
 } from '../../../../shared/audioProcessingOptions.ts'
-import type { PlayerBarMode, PlayerBarPageMode } from '../../../../shared/playerBar.ts'
+import type {
+  PlayerBarMode,
+  PlayerBarPageMode,
+  PlayerBarPageVisibility,
+  PlayerBarVisibility
+} from '../../../../shared/playerBar.ts'
 import type {
   AppTheme,
   AppBackgroundPage,
@@ -21,6 +26,7 @@ import type {
   StreamingAudioCachePolicy,
   UiDensity
 } from '../../types/settings'
+import { DESKTOP_LYRICS_FOLLOW_FONT } from '../../../../shared/desktopLyricsFont.ts'
 
 export type SectionKey =
   | 'general'
@@ -218,6 +224,23 @@ export const playerBarPageModeOptions: { value: PlayerBarPageMode; label: string
   { value: 'inherit', label: '跟随全局形态' },
   { value: 'standard', label: '标准' },
   { value: 'mini', label: '迷你（可自动隐藏）' }
+]
+
+export const playerBarVisibilityOptions: {
+  value: PlayerBarVisibility
+  label: string
+  icon: string
+}[] = [
+  { value: 'visible', label: '常显', icon: 'pi pi-eye' },
+  { value: 'autoHide', label: '自动隐藏', icon: 'pi pi-arrow-down' },
+  { value: 'hidden', label: '完全隐藏', icon: 'pi pi-eye-slash' }
+]
+
+export const playerBarPageVisibilityOptions: { value: PlayerBarPageVisibility; label: string }[] = [
+  { value: 'inherit', label: '跟随全局可见性' },
+  { value: 'visible', label: '常显' },
+  { value: 'autoHide', label: '自动隐藏（需迷你形态）' },
+  { value: 'hidden', label: '完全隐藏' }
 ]
 
 export { GITHUB_URL, HOMEPAGE_URL, RELEASES_URL } from '../../../../shared/projectUrls.ts'
@@ -458,8 +481,14 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = (
     },
     {
       section: 'appearance',
-      title: '播放页自动隐藏',
-      terms: '自动隐藏 播放条 playbar 隐藏 auto hide 播放页'
+      title: '播放条可见性',
+      terms:
+        '可见性 常显 自动隐藏 完全隐藏 隐藏播放条 关闭播放条 不显示播放条 播放条 播放栏 playbar auto hide hidden visibility'
+    },
+    {
+      section: 'appearance',
+      title: '播放页可见性',
+      terms: '播放页 可见性 自动隐藏 完全隐藏 播放条 playbar auto hide hidden now playing 歌词页'
     },
     {
       section: 'appearance',
@@ -467,9 +496,34 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = (
       terms: '触发 距离 阈值 threshold 鼠标 底边 播放条 自动隐藏'
     },
     { section: 'appearance', title: '收起延迟', terms: '收起 延迟 delay 播放条 自动隐藏 隐藏' },
+    // Surface material is a separate dimension from the playbar's shape and
+    // visibility: any combination is valid, so it gets its own entries rather
+    // than sharing the playbar ones.
+    {
+      section: 'appearance',
+      title: '液态玻璃材质',
+      terms:
+        '液态玻璃 玻璃 透明 透明化 折射 材质 质感 liquid glass 卡片 播放条 播放栏 playbar 毛玻璃'
+    },
+    {
+      section: 'appearance',
+      title: '启用液态玻璃',
+      terms: '液态玻璃 启用 开关 透明 透明化 材质 liquid glass 播放条 播放栏 卡片'
+    },
+    {
+      section: 'appearance',
+      title: '高光跟随指针',
+      terms: '高光 跟随 指针 鼠标 光源 镜面 specular 液态玻璃'
+    },
 
     // ── 桌面歌词 ──────────────────────────────────────────
     { section: 'desktopLyrics', title: '启用桌面歌词', terms: '桌面歌词 启用 开关 显示 歌词' },
+    {
+      section: 'desktopLyrics',
+      title: '歌词字体 (Font Family)',
+      terms:
+        '桌面歌词 字体 字体名 跟随 PlayingMusic 系统默认 霞鹜文楷 更纱黑体 本机字体 已安装 font family custom installed follow'
+    },
     {
       section: 'desktopLyrics',
       title: '字体大小 (Font Size)',
@@ -609,7 +663,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = (
 export const RESET_DESKTOP_LYRICS: DesktopLyricsSettings = {
   enabled: false,
   fontSize: 32,
-  fontFamily: 'system',
+  fontFamily: DESKTOP_LYRICS_FOLLOW_FONT,
   fontWeight: 700,
   color: '#ffffff',
   highlightColor: '#3b82f6',
@@ -630,4 +684,26 @@ export const RESET_DESKTOP_LYRICS: DesktopLyricsSettings = {
   clickThrough: false,
   maxLines: 2,
   lineOffset: 0
+}
+export type PluginSettingsFieldType = 'text' | 'password' | 'url' | 'select'
+
+export interface PluginSettingsOption {
+  label: string
+  value: string
+}
+
+export interface PluginSettingsField {
+  key: string
+  label: string
+  type: PluginSettingsFieldType
+  required: boolean
+  placeholder: string
+  value: string
+  options: PluginSettingsOption[]
+}
+
+export interface PluginSettingsForm {
+  submitCommand: string
+  fields: PluginSettingsField[]
+  notice: string
 }

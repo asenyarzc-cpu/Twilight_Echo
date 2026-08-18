@@ -14,7 +14,7 @@ import {
 import {
   DEFAULT_HEADPHONE_COMPENSATION,
   normalizeHeadphoneCompensationSettings
-} from '../audioProcessingEffective'
+} from '../audio/audioProcessingEffective'
 import type {
   AppBackgroundKind,
   AppBackgroundPage,
@@ -69,6 +69,7 @@ import {
   cloneLyricsAppearance,
   normalizeLyricsAppearance
 } from '../../shared/lyricsAppearance.ts'
+import { DESKTOP_LYRICS_FOLLOW_FONT } from '../../shared/desktopLyricsFont.ts'
 import {
   DEFAULT_LYRICS_PRESET_CONFIG,
   cloneLyricsPresetConfig,
@@ -86,7 +87,7 @@ let appSettingsLoadIssue: SettingsFileLoadIssue | null = null
 export const DEFAULT_DESKTOP_LYRICS: DesktopLyricsSettings = {
   enabled: false,
   fontSize: 32,
-  fontFamily: 'system',
+  fontFamily: DESKTOP_LYRICS_FOLLOW_FONT,
   fontWeight: 700,
   color: '#ffffff',
   highlightColor: '#3b82f6',

@@ -41,7 +41,7 @@ test('the lyric font combobox themes its own popup instead of inheriting the sel
 })
 
 test('Playbar lyric source selects use the deck palette for both field and popup', () => {
-  const source = readFileSync(new URL('./player-bar/HiFiSidebar.vue', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('./player-bar/HiFiSidebar.css', import.meta.url), 'utf8')
   const selector = source.match(/\.deck-lyric-source-controls select \{[\s\S]*?\n\}/)?.[0] ?? ''
 
   assert.match(selector, /background:\s*var\(--d-well\)/)

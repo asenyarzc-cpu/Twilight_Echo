@@ -98,7 +98,8 @@ CLAUDE.md
 .omo/
 .superpowers/
 /docs/superpowers/
-/docs/audit-evidence/
+/docs/audit-evidence/*
+!/docs/audit-evidence/ipc-channel-baseline.json
 .worktrees/
 agent-tools/
 .idea/
@@ -114,6 +115,8 @@ agent-tools/
 .opencode/
 .qoder/
 .local/
+.codegraph/
+.zcode/
 
 # Temporary files / local scratch
 tmp/

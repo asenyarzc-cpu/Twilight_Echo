@@ -106,9 +106,16 @@ std::optional<AsioChannelFormat> channelFormatFor(asio_abi::AsioSampleType sampl
 }
 
 int32_t chooseBufferSize(int32_t requested, int32_t minimum, int32_t maximum, int32_t preferred, int32_t granularity) {
-  if (minimum <= 0 || maximum < minimum || preferred < minimum || preferred > maximum) return 0;
-  int32_t value = requested > 0 ? std::clamp(requested, minimum, maximum) : preferred;
-  if (granularity == 0) return preferred;
+  if (minimum <= 0 || maximum < minimum) return 0;
+  // Drivers report distorted ranges surprisingly often (preferred = 0, or
+  // preferred outside [min,max]); clamp instead of rejecting the driver.
+  const int32_t boundedPreferred = std::clamp(preferred, minimum, maximum);
+  int32_t value = requested > 0 ? std::clamp(requested, minimum, maximum) : boundedPreferred;
+  if (granularity == 0) {
+    // Per the ASIO 2 spec this means any size inside the range is legal, so
+    // honor the requested value instead of silently discarding it.
+    return value;
+  }
   if (granularity > 0) {
     const int32_t offset = value - minimum;
     const int32_t lower = minimum + (offset / granularity) * granularity;
@@ -538,12 +545,16 @@ bool AsioDriverSession::open(const AsioOpenConfig& config, AsioOpenResult* resul
         int32_t inputLatency = 0;
         int32_t outputLatency = 0;
         traceAsioDriverCall("before getLatencies");
-        if (!asio_abi::asioErrorIsSuccess(state->driver->getLatencies(&inputLatency, &outputLatency))) {
-          outcome.error = driverError(state->driver, "ASIO latency query failed");
-          return outcome;
+        if (asio_abi::asioErrorIsSuccess(state->driver->getLatencies(&inputLatency, &outputLatency))) {
+          state->latency = outputLatency;
+        } else {
+          // Emulated and proxy drivers (ASIO4ALL, ASIO2WASAPI, WINE) commonly
+          // return ASE_NotPresent before buffers exist. Tolerate it as zero —
+          // the post-createBuffers latency re-read fills in the real value —
+          // instead of failing the whole driver.
+          state->latency = 0;
         }
         traceAsioDriverCall("after getLatencies");
-        state->latency = outputLatency;
         std::array<char, 32> driverName{};
         traceAsioDriverCall("before getDriverName");
         state->driver->getDriverName(driverName.data());
@@ -889,6 +900,18 @@ void AsioDriverSession::close() {
   controlThread_->setMaintenance(nullptr);
   if (!operation || !*operation) {
     traceAsioDriverCall(("close cleanup incomplete: " + cleanupError).c_str());
+    // The worker is wedged inside a driver call and this session is being
+    // abandoned; the cleanup lambda above will never run. The process-wide
+    // callback router still points at this session's State, so without a
+    // forced release every future ASIO session fails at install ("only one
+    // ASIO session may own the callback router") until process restart, and a
+    // late driver callback could reach freed memory. The router's dispatch
+    // double-check makes this race-free: callbacks arriving after the CAS see
+    // a null target and no-op. The drain result is best-effort — the CAS is
+    // the part that matters.
+    std::string forceError;
+    AsioCallbackRouter::uninstall(state.get(), &forceError);
+    traceAsioDriverCall(("forced callback router release: " + forceError).c_str());
     return;
   }
 }

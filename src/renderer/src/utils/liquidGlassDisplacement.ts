@@ -7,16 +7,14 @@
  * the renderer CSS chunk budget is 400KB — the map is generated once at runtime
  * and cached per aspect bucket.
  *
- * Profile note: this does NOT port the reference's `shader` mode SDF. With its
- * parameters (corner radius 0.6 against half-extents 0.3/0.2) the resulting scale
- * factor is ~1.0 across the entire surface, so the map comes out essentially flat
- * and nothing refracts — consistent with that mode being documented as "not the
- * most stable". The reference's default look comes from its prebaked bitmap.
- *
- * Instead the map encodes a rim refraction profile: no displacement through the
- * middle, magnitude ramping up toward the borders, pulling samples inward. That is
- * how a glass edge actually bends what is behind it, and it matches what the
- * filter's own edge mask expects to composite.
+ * The map encodes an SDF-normal rim field: displacement follows the gradient of a
+ * rounded-rect signed distance function (the inward surface normal) multiplied by
+ * a rim magnitude profile, so corners bend diagonally the way a real lens edge
+ * does. Feeding the raw SDF *distance* into the map instead — the reference
+ * implementation's `shader` mode — comes out nearly flat across the interior,
+ * which reads as a translate, not a lens. Direction lives in RGB; the rim
+ * magnitude rides along in the alpha channel as a continuous edge mask for the
+ * filter chain.
  *
  * The math is DOM-free so it can be unit tested; only `getDisplacementMapUrl`
  * touches canvas.
@@ -36,10 +34,14 @@ export const CARD_DISPLACEMENT_BUCKET: DisplacementBucket = { width: 256, height
 export const PLAYBAR_DISPLACEMENT_BUCKET: DisplacementBucket = { width: 512, height: 64 }
 
 /**
- * Fraction of the half-extent occupied by the refracting rim. Smaller values give a
- * tighter, more pronounced glass edge; larger values bend more of the surface.
+ * Width of the refracting rim as a fraction of the map's short axis. The rim is a
+ * fixed physical thickness of the glass edge, so one fraction serves both axes.
+ * Small values keep the center clear and the edge tight, like Apple's material.
  */
-export const DEFAULT_RIM_FRACTION = 0.38
+export const DEFAULT_RIM_FRACTION = 0.16
+
+/** Corner radius of the map's rounded rect as a fraction of the short axis. */
+export const DEFAULT_CORNER_FRACTION = 0.22
 
 /** Byte value meaning "no displacement" for a signed channel. */
 export const NEUTRAL_BYTE = 128
@@ -78,58 +80,104 @@ export interface DisplacementVector {
   y: number
 }
 
+export interface RoundedRectShape {
+  halfWidth: number
+  halfHeight: number
+  radius: number
+}
+
 /**
- * Relative displacement at a normalized coordinate. Points inward (toward the
- * center) with magnitude driven by rim proximity, so the middle stays unrefracted.
+ * Outward unit normal of the rounded rect at a pixel-space point — the analytic
+ * gradient of `roundedRectSDF`. Straight edges are axis-aligned; corner regions
+ * are diagonal, which is what makes a rounded corner refract along its own
+ * normal instead of snapping to the nearest axis.
+ */
+export function sdfNormal(x: number, y: number, shape: RoundedRectShape): DisplacementVector {
+  const qx = Math.abs(x) - shape.halfWidth + shape.radius
+  const qy = Math.abs(y) - shape.halfHeight + shape.radius
+  const sx = x < 0 ? -1 : 1
+  const sy = y < 0 ? -1 : 1
+  if (qx > 0 && qy > 0) {
+    const length = Math.hypot(qx, qy)
+    return { x: (sx * qx) / length, y: (sy * qy) / length }
+  }
+  if (qx > qy) return { x: sx, y: 0 }
+  return { x: 0, y: sy }
+}
+
+export interface RimDisplacementSample extends DisplacementVector {
+  /** Rim magnitude in [0, 1]; 1 at/outside the border, eased to 0 at the rim's inner edge. */
+  magnitude: number
+}
+
+/**
+ * Inward rim displacement at a pixel-space point: the SDF normal negated (so it
+ * points toward the center) scaled by the rim magnitude profile. Beyond the rim
+ * the sample is exactly zero, keeping the middle of a surface unrefracted.
  * Values are relative; `feDisplacementMap scale` sets the real amplitude.
  */
-export function rimDisplacement(
-  u: number,
-  v: number,
-  rimFraction: number = DEFAULT_RIM_FRACTION
-): DisplacementVector {
-  // Sign is inward: left half pushes right, right half pushes left. Dead center
-  // gets zero so there is no discontinuity at the midline.
-  const dirX = u < 0.5 ? 1 : u > 0.5 ? -1 : 0
-  const dirY = v < 0.5 ? 1 : v > 0.5 ? -1 : 0
-  return {
-    x: dirX * rimMagnitude(u, rimFraction),
-    y: dirY * rimMagnitude(v, rimFraction)
+export function sdfRimDisplacement(
+  x: number,
+  y: number,
+  shape: RoundedRectShape,
+  rimWidth: number
+): RimDisplacementSample {
+  const distanceInside = Math.max(
+    0,
+    -roundedRectSDF(x, y, shape.halfWidth, shape.halfHeight, shape.radius)
+  )
+  const magnitude = 1 - smoothStep(0, Math.max(1e-6, rimWidth), distanceInside)
+  const normal = sdfNormal(x, y, shape)
+  // Zero the dead rim instead of returning -0, which strict equality distinguishes.
+  const inward = (component: number): number => {
+    const value = -component * magnitude
+    return value === 0 ? 0 : value
   }
+  return { x: inward(normal.x), y: inward(normal.y), magnitude }
 }
 
 /**
  * Builds RGBA bytes for the displacement map. R holds X offset, G and B both hold
  * Y offset — the filter selects R and B, and G is kept in sync so the map is also
- * readable as a conventional offset map.
+ * readable as a conventional offset map. A holds the rim magnitude as a
+ * continuous edge mask; `feDisplacementMap` ignores it and the filter chain reads
+ * it through `feComponentTransfer`.
  */
 export function buildDisplacementPixels(
   width: number,
   height: number,
-  rimFraction: number = DEFAULT_RIM_FRACTION
+  rimFraction: number = DEFAULT_RIM_FRACTION,
+  cornerFraction: number = DEFAULT_CORNER_FRACTION
 ): Uint8ClampedArray {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
     throw new Error(`invalid displacement map size: ${width}x${height}`)
   }
 
+  const shape: RoundedRectShape = {
+    halfWidth: width / 2,
+    halfHeight: height / 2,
+    radius: Math.min(1, Math.max(0, cornerFraction)) * Math.min(width, height)
+  }
+  const rimWidth = rimFraction * Math.min(width, height)
+
   const pixels = new Uint8ClampedArray(width * height * 4)
 
   for (let y = 0; y < height; y++) {
     // Sample at pixel centers so the field stays symmetric for any size.
-    const v = (y + 0.5) / height
+    const py = y + 0.5 - height / 2
     for (let x = 0; x < width; x++) {
-      const u = (x + 0.5) / width
-      const displacement = rimDisplacement(u, v, rimFraction)
+      const px = x + 0.5 - width / 2
+      const sample = sdfRimDisplacement(px, py, shape, rimWidth)
 
       // Map [-1, 1] onto the byte range around neutral.
-      const r = displacement.x * 0.5 + 0.5
-      const g = displacement.y * 0.5 + 0.5
+      const r = sample.x * 0.5 + 0.5
+      const g = sample.y * 0.5 + 0.5
 
       const p = (y * width + x) * 4
       pixels[p] = r * 255
       pixels[p + 1] = g * 255
       pixels[p + 2] = g * 255
-      pixels[p + 3] = 255
+      pixels[p + 3] = sample.magnitude * 255
     }
   }
 
@@ -138,8 +186,12 @@ export function buildDisplacementPixels(
 
 const cache = new Map<string, string>()
 
-function bucketKey(bucket: DisplacementBucket, rimFraction: number): string {
-  return `${bucket.width}x${bucket.height}@${rimFraction}`
+function bucketKey(
+  bucket: DisplacementBucket,
+  rimFraction: number,
+  cornerFraction: number
+): string {
+  return `${bucket.width}x${bucket.height}@${rimFraction}@${cornerFraction}`
 }
 
 /**
@@ -149,9 +201,10 @@ function bucketKey(bucket: DisplacementBucket, rimFraction: number): string {
  */
 export function getDisplacementMapUrl(
   bucket: DisplacementBucket,
-  rimFraction: number = DEFAULT_RIM_FRACTION
+  rimFraction: number = DEFAULT_RIM_FRACTION,
+  cornerFraction: number = DEFAULT_CORNER_FRACTION
 ): string {
-  const key = bucketKey(bucket, rimFraction)
+  const key = bucketKey(bucket, rimFraction, cornerFraction)
   const cached = cache.get(key)
   if (cached !== undefined) return cached
 
@@ -164,7 +217,9 @@ export function getDisplacementMapUrl(
   if (!context) return ''
 
   const imageData = context.createImageData(bucket.width, bucket.height)
-  imageData.data.set(buildDisplacementPixels(bucket.width, bucket.height, rimFraction))
+  imageData.data.set(
+    buildDisplacementPixels(bucket.width, bucket.height, rimFraction, cornerFraction)
+  )
   context.putImageData(imageData, 0, 0)
 
   const url = canvas.toDataURL()

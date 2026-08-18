@@ -112,6 +112,9 @@ jobs:
       - name: Test radio, podcast, library watcher, and remote control
         run: pnpm run test:radio-remote
 
+      - name: Test network sources
+        run: pnpm run test:network-sources
+
       - name: Test CUE support
         run: pnpm run test:cue
 

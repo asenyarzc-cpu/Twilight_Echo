@@ -75,7 +75,8 @@ function assertRendererBudgets(rendererDir) {
     const rel = path.relative(path.join(rendererDir, 'font'), file).replace(/\\/g, '/')
     const ok =
       /^(Inter|PlusJakartaSans)-latin(-ext)?-wght-normal\.woff2$/i.test(rel) ||
-      /^OFL-(Inter|PlusJakartaSans)\.txt$/i.test(rel) ||
+      /^(Lora|JetBrainsMono|SpaceGrotesk)-latin-wght-normal\.woff2$/i.test(rel) ||
+      /^OFL-(Inter|PlusJakartaSans|Lora|JetBrainsMono|SpaceGrotesk)\.txt$/i.test(rel) ||
       /^misans\/(MiSans-(Regular|Medium|Bold|Heavy)\.[\w-]+\.woff2|misans\.css|LICENSE)$/i.test(
         rel
       ) ||

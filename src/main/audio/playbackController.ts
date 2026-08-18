@@ -17,6 +17,7 @@ import {
   PLAYBACK_INFO_CACHE_TTL_MS,
   UPCOMING_TRACK_CACHE_TTL_MS,
   VISUALIZATION_CACHE_TTL_MS,
+  advanceSoftPlaybackPosition,
   clampNumber,
   clampQueueItemPosition,
   createFallbackVisualizationData,
@@ -24,17 +25,17 @@ import {
   createPlaybackInfoFanoutSignature,
   getAlsaPlaybackDeviceCandidates,
   inferCodec,
+  nativePlayMode,
   normalizeDsdState,
   normalizeVisualizationData,
   normalizeVisualizationOptions,
   parseNativeJson,
+  resolveQueueIndexForSource,
   sourceLooksDsd,
   withPrecomputedVisualizerBars
 } from './audioEngineHelpers.ts'
 import { rendererFallbackAllowed } from './nativeBinding.ts'
 import type { DspGraphConfig } from '../../shared/dspGraph.ts'
-
-const MAX_SOFT_PLAYBACK_CLOCK_GAP_SECONDS = 1.5
 
 export interface PlaybackControllerHost {
   getNative(): NativeAudioBinding | null
@@ -98,6 +99,11 @@ export interface PlaybackControllerHost {
   emit(event: string, payload?: unknown): void
 }
 
+// While paused/stopped with no in-flight transition the native state cannot
+// advance on its own, so the 250ms tick only refreshes the service cache every
+// Nth tick; demand reads (getPlaybackInfo) still bypass this via the TTL gate.
+const NATIVE_IDLE_POLL_INTERVAL_TICKS = 4
+
 export class PlaybackController {
   queue: AudioEngineQueueItem[] = []
   queueJson = '[]'
@@ -105,6 +111,7 @@ export class PlaybackController {
   timer: NodeJS.Timeout | null = null
   lastTick = 0
   lastNativePlaybackInfoTickReadAt = Number.NEGATIVE_INFINITY
+  nativeIdlePollTick = 0
   lastNativeReportedPosition = Number.NaN
   pendingNativePositionTarget: number | null = null
   nativeConfigRevisionObserved = false
@@ -621,22 +628,36 @@ export class PlaybackController {
     const nextQueueJson = JSON.stringify(nextQueue)
     if (nextQueueJson === this.queueJson && nextQueueIndex === this.playbackInfo.queueIndex) return
 
-    const queueLoaded = await this.callNativeMaybeAsync(
-      '加载队列',
-      'LoadQueue',
-      nextQueueJson,
-      nextQueueIndex
-    )
-    if (!queueLoaded) {
-      throw new Error(`原生音频队列加载失败：${this.lastNativeError || '原生音频引擎不可用'}`)
-    }
-    const playModeSynced = await this.callNativeMaybeAsync(
-      '加载队列后同步播放模式',
-      'SetPlayMode',
-      this.nativePlayMode(this.playbackInfo.playMode)
-    )
-    if (!playModeSynced) {
-      throw new Error(`原生播放模式同步失败：${this.lastNativeError || '原生音频引擎不可用'}`)
+    const previousQueueJson = this.queueJson
+    const previousQueueIndex = this.playbackInfo.queueIndex
+    const hasPreviousQueue = this.queue.length > 0
+    try {
+      const queueLoaded = await this.callNativeMaybeAsync(
+        '加载队列',
+        'LoadQueue',
+        nextQueueJson,
+        nextQueueIndex
+      )
+      if (!queueLoaded) {
+        throw new Error(`原生音频队列加载失败：${this.lastNativeError || '原生音频引擎不可用'}`)
+      }
+      const playModeSynced = await this.callNativeMaybeAsync(
+        '加载队列后同步播放模式',
+        'SetPlayMode',
+        nativePlayMode(this.playbackInfo.playMode)
+      )
+      if (!playModeSynced) {
+        throw new Error(`原生播放模式同步失败：${this.lastNativeError || '原生音频引擎不可用'}`)
+      }
+    } catch (error) {
+      // In service mode a rejected LoadQueue does not prove the native side
+      // never ran (slow-tier timeouts reject while the load may still land),
+      // which would leave the engine on the new queue while the local mirror
+      // keeps the old one. Best-effort restore closes that divergence.
+      if (hasPreviousQueue) {
+        this.rollbackQueueAfterFailedLoad(previousQueueJson, previousQueueIndex)
+      }
+      throw error
     }
 
     this.queue = nextQueue
@@ -644,6 +665,21 @@ export class PlaybackController {
     this.playbackInfo.queueIndex = nextQueueIndex
     this.invalidateUpcomingTrackCache()
     this.emit('queue-change', this.queue)
+  }
+
+  private rollbackQueueAfterFailedLoad(queueJson: string, queueIndex: number): void {
+    const native = this.native
+    const callAsync = native?.callAsync?.bind(native)
+    if (typeof callAsync !== 'function') return
+    void (async () => {
+      await callAsync('LoadQueue', [queueJson, queueIndex])
+      await callAsync('SetPlayMode', [nativePlayMode(this.playbackInfo.playMode)])
+    })().catch((error) => {
+      console.warn(
+        '[音频引擎] 队列加载失败后的回滚未完成：',
+        error instanceof Error ? error.message : String(error)
+      )
+    })
   }
 
   async next(): Promise<void> {
@@ -729,10 +765,6 @@ export class PlaybackController {
     await this.play(this.queue[nextIndex].source, 0)
   }
 
-  private nativePlayMode(mode: PlayMode): 'sequential' | 'repeat' | 'shuffle' {
-    return mode === 'repeat' || mode === 'shuffle' ? mode : 'sequential'
-  }
-
   async setPlayMode(mode: PlayMode): Promise<void> {
     if (mode === this.playbackInfo.playMode) return
     // Native QueueManager anchors the current queue item while rebuilding shuffle
@@ -740,7 +772,7 @@ export class PlaybackController {
     const playModeSynced = await this.callNativeMaybeAsync(
       '切换播放模式',
       'SetPlayMode',
-      this.nativePlayMode(mode)
+      nativePlayMode(mode)
     )
     if (!playModeSynced) {
       throw new Error(`原生播放模式切换失败：${this.lastNativeError || '原生音频引擎不可用'}`)
@@ -967,7 +999,7 @@ export class PlaybackController {
     const waitingForNativePosition = this.pendingNativePositionTarget !== null
 
     if (!this.pendingNativeSource) {
-      return this.withQueueIndexForSource({
+      return resolveQueueIndexForSource(this.queue, {
         ...this.playbackInfo,
         ...nativeInfo,
         state: waitingForNativePosition ? this.playbackInfo.state : nativeInfo.state,
@@ -982,7 +1014,7 @@ export class PlaybackController {
 
     if (nativeInfo.source === this.pendingNativeSource) {
       this.pendingNativeSource = null
-      return this.withQueueIndexForSource({
+      return resolveQueueIndexForSource(this.queue, {
         ...this.playbackInfo,
         ...nativeInfo,
         state: waitingForNativePosition ? this.playbackInfo.state : nativeInfo.state,
@@ -1009,18 +1041,6 @@ export class PlaybackController {
       appliedConfigRevision: nativeInfo.appliedConfigRevision,
       outputInfo: nativeInfo.outputInfo,
       nativePlaybackActive: this.nativePlaybackActive
-    }
-  }
-
-  private withQueueIndexForSource(info: PlaybackInfo): PlaybackInfo {
-    if (!info.source) return info
-    const indexed = this.queue[info.queueIndex]
-    if (indexed?.source === info.source) return info
-    const sourceQueueIndex = this.queue.findIndex((item) => item.source === info.source)
-    if (sourceQueueIndex < 0 || sourceQueueIndex === info.queueIndex) return info
-    return {
-      ...info,
-      queueIndex: sourceQueueIndex
     }
   }
 
@@ -1303,6 +1323,18 @@ export class PlaybackController {
     this.pollAudioDeviceOptionsForChanges()
 
     if (this.nativePlaybackActive) {
+      const nativeIdle =
+        this.playbackInfo.state !== 'playing' &&
+        this.pendingNativeSource === null &&
+        this.pendingNativePositionTarget === null
+      if (nativeIdle) {
+        this.nativeIdlePollTick += 1
+        if (this.nativeIdlePollTick < NATIVE_IDLE_POLL_INTERVAL_TICKS) {
+          this.publishProperty('time-pos', this.playbackInfo.position)
+          return
+        }
+      }
+      this.nativeIdlePollTick = 0
       const previousCapabilitySignature = this.createDeviceCapabilityRefreshSignature(
         this.playbackInfo
       )
@@ -1311,15 +1343,15 @@ export class PlaybackController {
       const previousQueueIndex = this.playbackInfo.queueIndex
       const previousPosition = this.playbackInfo.position
       const now = this.scheduler.now()
-      const elapsed = Math.max(0, (now - this.lastTick) / 1000)
-      const softElapsed = elapsed > MAX_SOFT_PLAYBACK_CLOCK_GAP_SECONDS ? 0 : elapsed
+      const elapsed = (now - this.lastTick) / 1000
       const rate = this.playbackInfo.playbackRate ?? 1
-      if (this.playbackInfo.state === 'playing' && softElapsed > 0) {
-        const estimatedPosition = previousPosition + softElapsed * rate
-        this.playbackInfo.position =
-          this.playbackInfo.duration > 0
-            ? Math.min(estimatedPosition, this.playbackInfo.duration)
-            : estimatedPosition
+      if (this.playbackInfo.state === 'playing') {
+        this.playbackInfo.position = advanceSoftPlaybackPosition(
+          previousPosition,
+          elapsed,
+          rate,
+          this.playbackInfo.duration
+        )
       }
       this.lastTick = now
 
@@ -1382,8 +1414,12 @@ export class PlaybackController {
     const now = this.scheduler.now()
     const elapsed = (now - this.lastTick) / 1000
     this.lastTick = now
-    const softElapsed = elapsed > MAX_SOFT_PLAYBACK_CLOCK_GAP_SECONDS ? 0 : Math.max(0, elapsed)
-    this.playbackInfo.position += softElapsed * (this.playbackInfo.playbackRate ?? 1)
+    this.playbackInfo.position = advanceSoftPlaybackPosition(
+      this.playbackInfo.position,
+      elapsed,
+      this.playbackInfo.playbackRate ?? 1,
+      this.playbackInfo.duration
+    )
     if (
       this.playbackInfo.duration > 0 &&
       this.playbackInfo.position >= this.playbackInfo.duration

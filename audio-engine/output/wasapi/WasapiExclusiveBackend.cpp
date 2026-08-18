@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <charconv>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <deque>
@@ -146,6 +147,9 @@ struct WasapiExclusiveBackend::Impl {
   std::thread renderThread;
   std::thread recoveryThread;
   std::mutex threadMutex;
+  // Wakes the recovery thread's backoff waits when stop() is requested, so
+  // stop()/close() are never parked for seconds inside sleep_for().
+  std::condition_variable threadCv;
   std::atomic<bool> running{false};
   std::atomic<bool> stopRequested{false};
   UINT32 bufferFrameCount = 0;
@@ -561,10 +565,33 @@ struct WasapiExclusiveBackend::Impl {
     const double initialBufferLatencyMs = renderBufferLatencyMs.load();
     const double sleepMsDouble = initialBufferLatencyMs > 0 ? initialBufferLatencyMs * 0.5 : 5.0;
     const DWORD sleepMs = std::max<DWORD>(1, static_cast<DWORD>(sleepMsDouble));
+    // Push mode drives its own cadence; the default Windows timer granularity
+    // (~15.6ms) exceeds a typical 10ms exclusive buffer, which turns every
+    // period into an underrun. A high-resolution waitable timer keeps the
+    // cadence without winmm/timeBeginPeriod. Falls back to sleep_for on
+    // pre-1803 systems where the flag is unsupported.
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+#endif
+    const wasapi::UniqueHandle highResolutionTimer(CreateWaitableTimerExW(
+        nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS));
+    const auto pushWait = [&]() {
+      if (highResolutionTimer) {
+        LARGE_INTEGER dueTime{};
+        dueTime.QuadPart = -static_cast<LONGLONG>(sleepMs) * 10000LL;
+        if (SetWaitableTimer(highResolutionTimer.get(), &dueTime, 0, nullptr, nullptr, FALSE)) {
+          HANDLE waitHandles[2] = {highResolutionTimer.get(), samplesReadyEvent.get()};
+          const DWORD handleCount = samplesReadyEvent ? 2 : 1;
+          WaitForMultipleObjects(handleCount, waitHandles, FALSE, INFINITE);
+          return;
+        }
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+    };
 
     while (running.load()) {
       if (wasapiExclusivePushMode.load(std::memory_order_acquire)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+        pushWait();
         if (!running.load()) break;
       } else {
         const DWORD waitResult = WaitForSingleObject(samplesReadyEvent.get(), 2000);
@@ -771,8 +798,14 @@ struct WasapiExclusiveBackend::Impl {
   }
 
   void stop() {
-    stopRequested = true;
-    running = false;
+    {
+      // Under threadMutex so the recovery thread's relaunch re-check cannot
+      // observe a stale stopRequested after launching a fresh render thread.
+      std::lock_guard lock(threadMutex);
+      stopRequested = true;
+      running = false;
+    }
+    threadCv.notify_all();
     if (samplesReadyEvent) SetEvent(samplesReadyEvent.get());
     joinRenderThread();
     joinRecoveryThread();
@@ -904,7 +937,15 @@ struct WasapiExclusiveBackend::Impl {
 
     for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
       recoveryAttempts = attempt;
-      std::this_thread::sleep_for(std::chrono::milliseconds(kBackoffMs[attempt]));
+      // Interruptible backoff: stop()/close() must not block for the full
+      // 500+1000+2000ms ladder while a user command waits on them.
+      {
+        std::unique_lock lock(threadMutex);
+        threadCv.wait_for(
+            lock, std::chrono::milliseconds(kBackoffMs[attempt]), [this] {
+              return stopRequested.load();
+            });
+      }
 
       if (stopRequested.load()) {
         recoveryInProgress = false;
@@ -938,6 +979,10 @@ struct WasapiExclusiveBackend::Impl {
   }
 
   void runQueuedRecovery(std::string reason) {
+    // This runs on the dedicated recovery thread. COM is per-thread: without
+    // an apartment here, every CoCreateInstance in reopenDevice fails with
+    // CO_E_NOTINITIALIZED and all recovery attempts are dead on arrival.
+    const wasapi::ComApartment recoveryCom;
     joinRenderThread();
     if (stopRequested.load()) {
       recoveryQueued = false;
@@ -945,10 +990,20 @@ struct WasapiExclusiveBackend::Impl {
     }
 
     const bool recovered = attemptRecovery(reason);
-    if (recovered && !stopRequested.load()) {
-      running = true;
-      launchRenderThread();
-    } else if (!recovered && !stopRequested.load() && eventCallback) {
+    bool relaunched = false;
+    if (recovered) {
+      // Re-check stopRequested while holding threadMutex (the same lock stop()
+      // uses to set the flag). Without this window a stop() racing the relaunch
+      // returned with a fresh render thread still playing, and the soft-mute
+      // below then touched the same IAudioClient concurrently.
+      std::lock_guard lock(threadMutex);
+      if (!stopRequested.load()) {
+        running = true;
+        renderThread = std::thread([this] { renderLoop(); });
+        relaunched = true;
+      }
+    }
+    if (!relaunched && !recovered && !stopRequested.load() && eventCallback) {
       eventCallback(OutputBackendEvent::DeviceInvalidated, "输出设备已失效");
     }
     recoveryQueued = false;

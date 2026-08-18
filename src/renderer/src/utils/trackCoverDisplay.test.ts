@@ -14,27 +14,21 @@ test('useTrackCoverSrc clears previous src and mints a fresh blob per track', as
   }) as typeof URL.createObjectURL
   URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL
 
-  const globalRecord = globalThis as typeof globalThis & {
-    window?: {
-      api?: {
-        data?: {
-          getCover?: (handle: string) => Promise<string | null>
-        }
-      }
-    }
+  const globalRecord = globalThis as unknown as {
+    window?: unknown
   }
   const previousWindow = globalRecord.window
   globalRecord.window = {
     api: {
       data: {
-        getCover: async (handle: string) => {
+        getCover: async (handle: string): Promise<string | null> => {
           if (handle.includes('a.jpg')) return 'data:image/jpeg;base64,aaa'
           if (handle.includes('b.jpg')) return 'data:image/jpeg;base64,bbb'
           return null
         }
       }
     }
-  }
+  } as unknown
 
   // fetch(dataUrl) for toUniqueDisplayUrl
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -47,13 +41,14 @@ test('useTrackCoverSrc clears previous src and mints a fresh blob per track', as
     const { useTrackCoverSrc } = (await import(
       new URL('./trackCoverDisplay.ts', import.meta.url).href
     )) as typeof import('./trackCoverDisplay')
-    const { ref, nextTick } = await import('vue')
+    const { ref, nextTick, computed } = await import('vue')
 
     const track = ref<{ id: string; cover: string | null; coverSource?: string | null } | null>({
       id: 't1',
       cover: 'cover://a.jpg'
     })
-    const { src, key } = useTrackCoverSrc(track)
+    const trackComputed = computed(() => track.value)
+    const { src, key } = useTrackCoverSrc(trackComputed)
     await nextTick()
     await new Promise((r) => setTimeout(r, 30))
     assert.equal(src.value, 'blob:track-cover-0-3')

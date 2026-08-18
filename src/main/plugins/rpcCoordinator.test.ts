@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PluginRpcCoordinator } from './rpcCoordinator.ts'
+import {
+  normalizeInternalNcmRequestOptions,
+  PluginRpcCoordinator,
+  resolveProviderIdempotencyKey
+} from './rpcCoordinator.ts'
 
 function request(
   coordinator: PluginRpcCoordinator,
@@ -94,7 +98,10 @@ test('a timed out RPC sends cancellation and late success cannot settle a newer 
   await assert.rejects(pending, /timed out/)
   assert.equal(cancellations.length, 1)
   assert.deepEqual(
-    coordinator.complete('com.example.provider', 'provider-timeout', { ok: true, value: 'too late' }),
+    coordinator.complete('com.example.provider', 'provider-timeout', {
+      ok: true,
+      value: 'too late'
+    }),
     { status: 'late' }
   )
   assert.equal(coordinator.getLateResultCount(), 1)
@@ -195,6 +202,27 @@ test('an unknown timeout outcome retries with the same key instead of replaying 
     value: 'liked once'
   })
   assert.equal(await retry, 'liked once')
+})
+
+test('resolves provider write idempotency keys and validates supplied keys', () => {
+  assert.equal(resolveProviderIdempotencyKey('likeTrack', ' key-1 '), 'key-1')
+  assert.match(
+    resolveProviderIdempotencyKey('createDownload', undefined) as string,
+    /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
+  )
+  assert.equal(resolveProviderIdempotencyKey('getPlaybackUrl', 'ignored'), undefined)
+  assert.throws(() => resolveProviderIdempotencyKey('likeTrack', 'bad key'), /invalid/)
+})
+
+test('normalizes built-in NCM request idempotency options', () => {
+  assert.deepEqual(normalizeInternalNcmRequestOptions(undefined), {})
+  assert.deepEqual(normalizeInternalNcmRequestOptions({ idempotencyKey: 'retry-1' }), {
+    idempotencyKey: 'retry-1'
+  })
+  assert.throws(() => normalizeInternalNcmRequestOptions([]), /必须是对象/)
+  assert.throws(() => normalizeInternalNcmRequestOptions({ other: true }), /不支持的字段/)
+  assert.throws(() => normalizeInternalNcmRequestOptions({ idempotencyKey: 'bad key' }), /无效/)
+  assert.throws(() => normalizeInternalNcmRequestOptions({ idempotencyKey: ' retry-1 ' }), /无效/)
 })
 
 test('in-flight idempotency records do not expire or get evicted before their outcome is known', async () => {

@@ -19,12 +19,12 @@ function advance(spring: LyricSpring, frames: number): number[] {
   return positions
 }
 
-test('the vertical spring is underdamped so lines overshoot and settle back', () => {
+test('the vertical spring reaches its destination without bouncing back', () => {
   const spring = new LyricSpring(0, LYRIC_POS_Y_SPRING)
   spring.setTargetPosition(100)
   const positions = advance(spring, 240)
 
-  assert.ok(Math.max(...positions) > 100, 'an underdamped line must pass its target once')
+  assert.ok(Math.max(...positions) <= 100 + 1e-9, 'a lyric line must not pass its target')
   assert.ok(
     Math.abs(spring.getCurrentPosition() - 100) < 0.01,
     'the line must still settle exactly on target'

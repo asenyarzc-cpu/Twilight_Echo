@@ -7,14 +7,26 @@ import { compileStyle } from '@vue/compiler-sfc'
 const scopedStyleFiles = [
   './DspRackPage.vue',
   './EqualizerPage.vue',
+  './equalizer/OpraEqPanel.vue',
+  './equalizer/FrequencyResponseChart.vue',
+  './equalizer/FrequencyResponseToolbar.vue',
+  './equalizer/GraphicEqPanel.vue',
   './LocalDashboard.css',
   './player-bar/PlayerBar.css',
   './PlayingMusic.vue',
   './SideMenu.vue',
+  './StreamingHome.vue',
   './StreamingLibrary.vue',
   './StreamingSearch.vue',
   './TitleBar.vue',
-  './streaming-page/StreamingPage.css'
+  './streaming-page/ProviderDownloadsPanel.vue',
+  './streaming-page/ProviderSidebar.vue',
+  './streaming-page/StreamingContentHeader.css',
+  './streaming-page/StreamingContextMenu.vue',
+  './streaming-page/StreamingPage.css',
+  './streaming-page/StreamingPlaceholder.css',
+  './streaming-page/StreamingSearchControls.css',
+  './streaming-page/NcmPlaylistDialogs.vue'
 ]
 
 test('scoped component styles keep descendants inside global theme selectors', () => {

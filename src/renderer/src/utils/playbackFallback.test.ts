@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Track } from '../types/music'
 
-const { findPlaybackFallbackTrack } = (await import(
+const { clampProviderReliability, findPlaybackFallbackTrack } = (await import(
   new URL('./playbackFallback.ts', import.meta.url).href
 )) as typeof import('./playbackFallback')
 
@@ -219,4 +219,14 @@ test('does not merge provider variants with incomplete logical identity', () => 
   })
 
   assert.equal(fallback, null)
+})
+
+test('clampProviderReliability clamps finite values and defaults invalid values to 1', () => {
+  assert.equal(clampProviderReliability(0.5), 0.5)
+  assert.equal(clampProviderReliability(-1), 0)
+  assert.equal(clampProviderReliability(2), 1)
+  assert.equal(clampProviderReliability(Number.NaN), 1)
+  assert.equal(clampProviderReliability(Number.POSITIVE_INFINITY), 1)
+  assert.equal(clampProviderReliability(Number.NEGATIVE_INFINITY), 1)
+  assert.equal(clampProviderReliability(undefined), 1)
 })

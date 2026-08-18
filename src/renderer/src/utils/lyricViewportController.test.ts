@@ -18,10 +18,11 @@ function createStage(height = STAGE_HEIGHT): LyricStageElement {
   return { clientHeight: height, clientWidth: 1440 }
 }
 
-function createRow(height = ROW_HEIGHT): FakeRow {
+function createRow(height = ROW_HEIGHT, scrollHeight = height): FakeRow {
   const properties = new Map<string, string>()
   return {
     offsetHeight: height,
+    scrollHeight,
     isConnected: true,
     properties,
     style: {
@@ -129,6 +130,51 @@ test('each line gets its own target, so lines are no longer one rigid block', as
   }
 })
 
+test('rows use their full scroll height when layered vocals exceed the button box', async () => {
+  const { controller, activeIndex } = harness(0)
+  controller.registerRow(0, createRow(72, 154))
+  controller.registerRow(1, createRow(72, 72))
+  activeIndex.value = 0
+
+  await controller.follow(0, { mode: 'snap' })
+
+  const firstTop = controller.getRowTop(0) as number
+  const secondTop = controller.getRowTop(1) as number
+  assert.equal(secondTop - firstTop, 154)
+})
+
+test('a configured row gap preserves breathing room between scaled lyric groups', async () => {
+  const { controller, activeIndex } = harness(0, { getRowGapPx: () => 10 })
+  controller.registerRow(0, createRow(72, 154))
+  controller.registerRow(1, createRow(72, 72))
+  activeIndex.value = 0
+
+  await controller.follow(0, { mode: 'snap' })
+
+  const firstTop = controller.getRowTop(0) as number
+  const secondTop = controller.getRowTop(1) as number
+  assert.equal(secondTop - firstTop, 164)
+})
+
+test('resize remeasures responsive row content before stacking following rows', async () => {
+  const { controller, manual, activeIndex } = harness(0, { getRowGapPx: () => 10 })
+  const responsiveRow = createRow(72, 154)
+  controller.registerRow(0, responsiveRow)
+  controller.registerRow(1, createRow(72, 72))
+  activeIndex.value = 0
+  await controller.follow(0, { mode: 'snap' })
+
+  responsiveRow.scrollHeight = 200
+  controller.onResize('snap')
+  manual.runFrame()
+  await Promise.resolve()
+
+  const firstTop = controller.getRowTop(0) as number
+  const secondTop = controller.getRowTop(1) as number
+  assert.equal(secondTop - firstTop, 210)
+  assert.equal(manual.pendingFrames(), 0, 'responsive geometry should not animate through overlap')
+})
+
 test('the anchored line lands at the align position', async () => {
   const { controller, activeIndex } = harness()
   activeIndex.value = 3
@@ -179,7 +225,7 @@ test('lines depart in sequence rather than as one block, which is the cascade', 
   )
 })
 
-test('an underdamped line overshoots its target and settles back', async () => {
+test('line movement reaches its target without bouncing back', async () => {
   const { controller, manual, activeIndex } = harness(10)
   activeIndex.value = 8
   await controller.follow(8, { mode: 'snap' })
@@ -188,15 +234,25 @@ test('an underdamped line overshoots its target and settles back', async () => {
   await controller.follow(0)
 
   const target = controller.getRowTargetTop(0) as number
-  let overshot = false
+  let bouncedBack = false
   for (let frame = 0; frame < 200; frame += 1) {
     manual.runFrame()
     const top = controller.getRowTop(0) as number
-    if (top > target + 0.5) overshot = true
+    if (top > target + 0.01) bouncedBack = true
   }
 
-  assert.ok(overshot, 'scrollTop could never do this; a per-line spring can')
+  assert.ok(!bouncedBack, 'a lyric line must not reverse past its target')
   assert.ok(Math.abs((controller.getRowTop(0) as number) - target) < 1, 'it still settles')
+})
+
+test('the first lyric layout snaps into place instead of falling from the top', async () => {
+  const { controller, manual, activeIndex } = harness(8)
+  activeIndex.value = 4
+
+  await controller.follow(4)
+
+  assert.equal(manual.pendingFrames(), 0, 'the first layout must not animate from the row default')
+  assert.equal(controller.getRowTop(4), controller.getRowTargetTop(4))
 })
 
 test('scale trails position, so the motion is not perfectly rigid', async () => {
@@ -211,7 +267,7 @@ test('scale trails position, so the motion is not perfectly rigid', async () => 
 
   const scale = controller.getRowScale(1) as number
   assert.notEqual(scale, restingScale, 'the scale spring is moving')
-  assert.ok(scale < 100, 'and has not snapped straight to full size')
+  assert.ok(scale > 100 && scale < 104, 'and has not snapped straight to the active size')
 })
 
 test('snap mode places lines without consuming a frame', async () => {
@@ -277,7 +333,7 @@ test('a layout pass belonging to a previous track cannot move the new one', asyn
   controller.registerRow(3, rowB)
   activeIndex.value = 3
   const current = controller.follow(3, { mode: 'snap' })
-  releaseLayout?.()
+  ;(releaseLayout as (() => void) | null)?.()
   await Promise.all([stale, current])
 
   assert.equal(controller.trackId(), 'track-b')
@@ -311,7 +367,7 @@ test('a newer follow cancels an older one still awaiting layout', async () => {
   const stale = controller.follow(0, { mode: 'snap' })
   activeIndex.value = 5
   await controller.follow(5, { mode: 'snap' })
-  releaseFirst?.()
+  ;(releaseFirst as (() => void) | null)?.()
   await stale
 
   // Line 5 is the anchor, so it sits at the align position and line 0 above it.
@@ -410,18 +466,24 @@ test('automatic following never reports manual browsing', async () => {
   assert.deepEqual(manualBrowseStates, [])
 })
 
-test('resize recentres the anchor once per frame', async () => {
+test('content resize recentres once per frame without snapping away lyric motion', async () => {
   const { controller, manual, activeIndex } = harness()
   activeIndex.value = 5
   await controller.follow(5, { mode: 'snap' })
+  const before = controller.getRowTop(5) as number
 
   controller.attach(createStage(400))
-  controller.onResize()
-  controller.onResize()
+  controller.onResize('spring')
+  controller.onResize('spring')
   manual.runFrames(1)
   await Promise.resolve()
-  manual.runFrames(400)
+  manual.runFrames(3)
 
+  const moving = controller.getRowTop(5) as number
+  assert.notEqual(moving, before, 'content remeasurement should start the lyric spring')
+  assert.ok(Math.abs(moving - 164) > 1.5, 'content remeasurement must not snap to its target')
+
+  manual.runFrames(400)
   // 0.5 of 400 = 200, minus half a row = 164.
   assert.ok(Math.abs((controller.getRowTop(5) as number) - 164) < 1.5)
 })
@@ -459,6 +521,63 @@ test('lines outside the viewport are marked so they can stop painting', async ()
 
   assert.equal(rows[0].properties.get('--lyric-line-in-sight'), undefined, 'visible by default')
   assert.equal(rows[29].properties.get('--lyric-line-in-sight'), '0', 'far lines are culled')
+  assert.ok(
+    rows[29].properties.get('--lyric-line-top'),
+    'culled lines still keep a layout top so a later browse cannot stack them at y=0'
+  )
+})
+
+test('browsing does not wait on the cascade, so lines below move with the wheel', async () => {
+  const { controller, activeIndex } = harness(10)
+  activeIndex.value = 0
+  await controller.follow(0, { mode: 'snap' })
+  const restingSeven = controller.getRowTargetTop(7) as number
+
+  controller.browseBy(80)
+  assert.ok(
+    Math.abs((controller.getRowTargetTop(7) as number) - (restingSeven - 80)) < 1e-6,
+    'a line further down must retarget immediately rather than waiting its cascade turn'
+  )
+})
+
+test('culled rows keep their last measured height so browsing cannot collapse them', async () => {
+  const { controller, rows, activeIndex } = harness(30)
+  activeIndex.value = 0
+  await controller.follow(0, { mode: 'snap' })
+
+  for (let index = 8; index < 30; index += 1) {
+    rows[index].offsetHeight = 24
+  }
+
+  controller.browseBy(400)
+  const tops = [18, 19, 20, 21].map((index) => controller.getRowTargetTop(index) as number)
+  for (let index = 1; index < tops.length; index += 1) {
+    assert.ok(
+      Math.abs(tops[index] - tops[index - 1] - ROW_HEIGHT) < 1,
+      `browsed lines must stay one row apart; gap=${tops[index] - tops[index - 1]}`
+    )
+  }
+})
+
+test('browsing expands the focus window so distant lines do not share a row', async () => {
+  const { controller, activeIndex } = harness(8, {
+    getFocusWindow: () => new Set([2, 3, 4]),
+    isPlaying: () => true
+  })
+  activeIndex.value = 3
+  await controller.follow(3, { mode: 'snap' })
+  assert.equal(
+    controller.getRowTargetTop(5),
+    controller.getRowTargetTop(7),
+    'focus mode collapses outsiders onto the same y'
+  )
+
+  controller.browseBy(40)
+  assert.ok(
+    (controller.getRowTargetTop(7) as number) - (controller.getRowTargetTop(5) as number) >
+      ROW_HEIGHT,
+    'browsing must give hidden lines their own rows'
+  )
 })
 
 test('the interlude dots position is published for the view', async () => {

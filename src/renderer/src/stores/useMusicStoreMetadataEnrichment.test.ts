@@ -66,7 +66,7 @@ test('cancelled metadata enrichment cannot overwrite a local track or schedule p
   assert.equal(store.libraryMetadataEnrichmentStatus.value.state, 'enriching')
   assert.equal(store.cancelLibraryMetadataEnrichment(), true)
 
-  resolveProviderSearch?.({
+  ;(resolveProviderSearch as ((value: unknown) => void) | null)?.({
     items: [
       {
         ...localTrack,
@@ -167,7 +167,7 @@ test(
       }
     })
 
-    resolveFirstSearch?.({
+    ;(resolveFirstSearch as ((value: unknown) => void) | null)?.({
       items: [
         {
           ...localTrack,
@@ -192,7 +192,7 @@ test(
     assert.equal(saveCalls, 0)
 
     assert.equal(store.cancelLibraryMetadataEnrichment(), true)
-    resolveSecondSearch?.({ items: [], total: 0 })
+    ;(resolveSecondSearch as ((value: unknown) => void) | null)?.({ items: [], total: 0 })
     await Promise.resolve()
     store.clearTracks()
   }

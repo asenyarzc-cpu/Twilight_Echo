@@ -16,6 +16,7 @@ import type {
   OutputDiagnostics,
   OutputInfo,
   PlaybackInfo,
+  PlayMode,
   VisualizationData,
   VisualizationOptions,
   VisualizationTapStatus,
@@ -507,7 +508,12 @@ export function eqBandsEqual(left: EqualizerBand[], right: EqualizerBand[]): boo
       band.frequency === other.frequency &&
       band.gain === other.gain &&
       band.q === other.q &&
-      band.filterType === other.filterType
+      band.filterType === other.filterType &&
+      // Per-band bypass and channel routing change the rendered response, so a
+      // toggle must not compare equal or setAudioProcessing early-returns and
+      // the band keeps processing audio.
+      (band.enabled !== false) === (other.enabled !== false) &&
+      (band.channelMask ?? 0xffffffff) === (other.channelMask ?? 0xffffffff)
     )
   })
 }
@@ -735,6 +741,38 @@ export function normalizeAudioDeviceOptions(rawOptions: unknown): AudioDeviceOpt
 export function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
   return Math.min(max, Math.max(min, value))
+}
+
+export const MAX_SOFT_PLAYBACK_CLOCK_GAP_SECONDS = 1.5
+
+export function nativePlayMode(mode: PlayMode): 'sequential' | 'repeat' | 'shuffle' {
+  return mode === 'repeat' || mode === 'shuffle' ? mode : 'sequential'
+}
+
+export function resolveQueueIndexForSource(
+  queue: readonly AudioEngineQueueItem[],
+  info: PlaybackInfo
+): PlaybackInfo {
+  if (!info.source) return info
+  if (queue[info.queueIndex]?.source === info.source) return info
+  const sourceQueueIndex = queue.findIndex((item) => item.source === info.source)
+  if (sourceQueueIndex < 0 || sourceQueueIndex === info.queueIndex) return info
+  return {
+    ...info,
+    queueIndex: sourceQueueIndex
+  }
+}
+
+export function advanceSoftPlaybackPosition(
+  position: number,
+  elapsedSeconds: number,
+  rate: number,
+  duration: number
+): number {
+  const softElapsed =
+    elapsedSeconds > MAX_SOFT_PLAYBACK_CLOCK_GAP_SECONDS ? 0 : Math.max(0, elapsedSeconds)
+  const advanced = position + softElapsed * rate
+  return duration > 0 ? Math.min(advanced, duration) : advanced
 }
 
 export function clampQueueItemPosition(

@@ -28,6 +28,9 @@ import {
   type ThemeWindowInheritance
 } from '../../../shared/theme.ts'
 import { useExtensionRegistry, type ThemeContribution } from '../extensions/registry'
+import { getStartupSnapshot } from '../app/startupSnapshot'
+import type { AppStartupSnapshot } from '../../../shared/appStartup.ts'
+import { markThemeRuntimeFresh, persistThemeRuntimeCache } from '../app/themeRuntimeCache'
 import { resolvePluginThemeRuntimeContract } from '../extensions/pluginThemeRuntime'
 import { getPluginThemeKey } from '../extensions/themeSelection'
 import {
@@ -38,7 +41,10 @@ import {
 import type { AppBackgroundColorPair, AppBackgroundPage, AppSettings } from '../types/settings'
 import {
   DEFAULT_LIQUID_GLASS,
+  LIQUID_GLASS_TUNING_CHANGED_EVENT,
   liquidGlassCssVariables,
+  liquidGlassExpandedCssVariables,
+  liquidGlassHomeCardCssVariables,
   normalizeSurfaceMaterial,
   type LiquidGlassSettings,
   type SurfaceMaterial
@@ -90,6 +96,15 @@ let themePreference: AppSettings['theme'] = 'system'
 let appBackground: AppSettings['appBackground'] | null = null
 let surfaceMaterial: SurfaceMaterial = 'standard'
 let liquidGlass: LiquidGlassSettings = DEFAULT_LIQUID_GLASS
+const LIQUID_GLASS_RUNTIME_VARIABLES = Object.keys(
+  liquidGlassCssVariables(DEFAULT_LIQUID_GLASS.light)
+)
+const HOME_LIQUID_GLASS_RUNTIME_VARIABLES = Object.keys(
+  liquidGlassHomeCardCssVariables(DEFAULT_LIQUID_GLASS.homeCards.light)
+)
+const EXPANDED_LIQUID_GLASS_RUNTIME_VARIABLES = Object.keys(
+  liquidGlassExpandedCssVariables(DEFAULT_LIQUID_GLASS.light)
+)
 
 function resolveTone(): ThemeTone {
   return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'pureWhite'
@@ -131,7 +146,76 @@ function cacheSettingsAppearance(settings: SettingsAppearanceInput): void {
 
 export function syncThemeSettingsAppearance(settings: SettingsAppearanceInput): void {
   cacheSettingsAppearance(settings)
+  applyLiquidGlassRuntimeVariables(resolveTone())
   if (loaded.value) queueMicrotask(() => void applyActiveTheme(false))
+}
+
+/**
+ * Adaptive tone: the environment analysis samples the page backdrop and flips a
+ * light-tone glass to its dark profile when the backdrop is bright. Published as
+ * `data-te-lg-adaptive-tone` on the root; `overLight` remains the manual force.
+ */
+function resolveSharedGlassProfileIsDark(tone: ThemeTone): boolean {
+  if (tone === 'dark' || liquidGlass.overLight) return true
+  return (
+    liquidGlass.adaptiveTone &&
+    document.documentElement.dataset.teLiquidGlassAdaptiveTone === 'dark'
+  )
+}
+
+function resolveHomeGlassProfileIsDark(tone: ThemeTone): boolean {
+  if (tone === 'dark' || liquidGlass.homeCards.overLight) return true
+  return (
+    liquidGlass.adaptiveTone &&
+    document.documentElement.dataset.teHomeLiquidGlassAdaptiveTone === 'dark'
+  )
+}
+
+function applyLiquidGlassRuntimeVariables(tone: ThemeTone): void {
+  const root = document.documentElement
+  for (const name of LIQUID_GLASS_RUNTIME_VARIABLES) root.style.removeProperty(name)
+  for (const name of HOME_LIQUID_GLASS_RUNTIME_VARIABLES) root.style.removeProperty(name)
+  for (const name of EXPANDED_LIQUID_GLASS_RUNTIME_VARIABLES) root.style.removeProperty(name)
+  if (usesSharedLiquidGlassProfile()) {
+    const theme = resolveSharedGlassProfileIsDark(tone) ? liquidGlass.dark : liquidGlass.light
+    for (const [name, value] of Object.entries(liquidGlassCssVariables(theme))) {
+      root.style.setProperty(name, value, 'important')
+    }
+  }
+  if (liquidGlass.homeCards.enabled) {
+    const theme = resolveHomeGlassProfileIsDark(tone)
+      ? liquidGlass.homeCards.dark
+      : liquidGlass.homeCards.light
+    for (const [name, value] of Object.entries(liquidGlassHomeCardCssVariables(theme))) {
+      root.style.setProperty(name, value, 'important')
+    }
+  }
+  if (liquidGlass.coverage === 'expanded') {
+    const theme = resolveSharedGlassProfileIsDark(tone) ? liquidGlass.dark : liquidGlass.light
+    for (const [name, value] of Object.entries(liquidGlassExpandedCssVariables(theme))) {
+      root.style.setProperty(name, value, 'important')
+    }
+  }
+  window.dispatchEvent(new Event(LIQUID_GLASS_TUNING_CHANGED_EVENT))
+}
+
+/**
+ * Re-applies the liquid glass runtime variables after the environment analysis
+ * changed the adaptive-tone attributes. Re-dispatches the tuning event so the
+ * SVG filter re-reads its attribute inputs.
+ */
+export function refreshLiquidGlassRuntimeVariables(): void {
+  applyLiquidGlassRuntimeVariables(resolveTone())
+}
+
+function usesSharedLiquidGlassProfile(): boolean {
+  return (
+    surfaceMaterial === 'liquidGlass' ||
+    liquidGlass.navigationEnabled ||
+    liquidGlass.playbarEnabled ||
+    liquidGlass.settingsNavigationEnabled ||
+    liquidGlass.coverage === 'expanded'
+  )
 }
 
 function resolveSettingsAccentColor(color: string): string {
@@ -155,18 +239,25 @@ function applyBootstrapThemeMode(
   cacheSettingsAppearance(bootstrap.settings)
 }
 
-export async function bootstrapThemeRuntime(): Promise<void> {
+export async function bootstrapThemeRuntime(startupSnapshot?: AppStartupSnapshot): Promise<void> {
   if (bootstrapPromise) return bootstrapPromise
   bootstrapPromise = (async () => {
     if (!window.api?.themes || !window.api?.settings) return
-    const [settingsBootstrap, themeBootstrap, nativeTone] = await Promise.all([
-      window.api.settings.get(),
-      window.api.themes.getBootstrap(),
-      window.api.themes.getSystemTone()
-    ])
-    systemTone.value = nativeTone
-    applyBootstrapThemeMode(settingsBootstrap)
-    acceptBootstrap(themeBootstrap)
+    const startup = startupSnapshot ?? (await getStartupSnapshot())
+    if (startup) {
+      systemTone.value = startup.systemTone
+      applyBootstrapThemeMode(startup.settings)
+      acceptBootstrap(startup.themeBootstrap)
+    } else {
+      const [settingsBootstrap, themeBootstrap, nativeTone] = await Promise.all([
+        window.api.settings.get(),
+        window.api.themes.getBootstrap(),
+        window.api.themes.getSystemTone()
+      ])
+      systemTone.value = nativeTone
+      applyBootstrapThemeMode(settingsBootstrap)
+      acceptBootstrap(themeBootstrap)
+    }
     setupThemeListeners()
     await applyActiveTheme(false)
   })()
@@ -305,7 +396,14 @@ async function buildThemeRuntimeState(syncPluginExtensions: boolean): Promise<Th
           css: '',
           dataAttributes: {
             ...themeModesToDataAttributes(resolveThemeProfileModes(null)),
-            'data-te-surface-material': surfaceMaterial
+            'data-te-surface-material': surfaceMaterial,
+            'data-te-liquid-glass-coverage': liquidGlass.coverage,
+            'data-te-home-liquid-glass': liquidGlass.homeCards.enabled ? 'on' : 'off',
+            'data-te-navigation-liquid-glass': liquidGlass.navigationEnabled ? 'on' : 'off',
+            'data-te-playbar-liquid-glass': liquidGlass.playbarEnabled ? 'on' : 'off',
+            'data-te-settings-navigation-liquid-glass': liquidGlass.settingsNavigationEnabled
+              ? 'on'
+              : 'off'
           },
           activeTheme: TWILIGHT_DEFAULT_THEME_ID,
           presetLayout: presetLayoutKey(TWILIGHT_DEFAULT_THEME_ID),
@@ -350,7 +448,14 @@ async function buildThemeRuntimeState(syncPluginExtensions: boolean): Promise<Th
       ...themeModesToDataAttributes(modes),
       ...themeShellLayoutToDataAttributes(shellLayout),
       // Settings-owned, so it wins over anything a theme profile declares.
-      'data-te-surface-material': surfaceMaterial
+      'data-te-surface-material': surfaceMaterial,
+      'data-te-liquid-glass-coverage': liquidGlass.coverage,
+      'data-te-home-liquid-glass': liquidGlass.homeCards.enabled ? 'on' : 'off',
+      'data-te-navigation-liquid-glass': liquidGlass.navigationEnabled ? 'on' : 'off',
+      'data-te-playbar-liquid-glass': liquidGlass.playbarEnabled ? 'on' : 'off',
+      'data-te-settings-navigation-liquid-glass': liquidGlass.settingsNavigationEnabled
+        ? 'on'
+        : 'off'
     },
     activeTheme: activeThemeKey(selection),
     presetLayout: resolvePresetLayout(selection, selectedProfile),
@@ -361,15 +466,24 @@ async function buildThemeRuntimeState(syncPluginExtensions: boolean): Promise<Th
 }
 
 /**
- * Emits the `--te-lg-*` tuning variables when liquid glass is the active material.
- * The stylesheet keys its rules on `data-te-surface-material`, so the variables are
- * only meaningful in that state; skipping them otherwise keeps the payload small.
+ * Emits shared and homepage-card glass variables only for their active scopes.
  */
 function applyLiquidGlassVariables(tone: ThemeTone, variables: Record<string, string>): void {
-  if (surfaceMaterial !== 'liquidGlass') return
-  // "Over Light" tints the glass dark on bright backgrounds so it stays visible.
-  const theme = tone === 'dark' || liquidGlass.overLight ? liquidGlass.dark : liquidGlass.light
-  Object.assign(variables, liquidGlassCssVariables(theme))
+  if (usesSharedLiquidGlassProfile()) {
+    const theme = tone === 'dark' || liquidGlass.overLight ? liquidGlass.dark : liquidGlass.light
+    Object.assign(variables, liquidGlassCssVariables(theme))
+  }
+  if (liquidGlass.homeCards.enabled) {
+    const theme =
+      tone === 'dark' || liquidGlass.homeCards.overLight
+        ? liquidGlass.homeCards.dark
+        : liquidGlass.homeCards.light
+    Object.assign(variables, liquidGlassHomeCardCssVariables(theme))
+  }
+  if (liquidGlass.coverage === 'expanded') {
+    const theme = tone === 'dark' || liquidGlass.overLight ? liquidGlass.dark : liquidGlass.light
+    Object.assign(variables, liquidGlassExpandedCssVariables(theme))
+  }
 }
 
 function applyAppBackgroundVariables(tone: ThemeTone, variables: Record<string, string>): void {
@@ -693,8 +807,18 @@ export async function applyActiveTheme(
     lastAppliedTone = state.tone
     document.documentElement.dataset.theme = state.tone
     document.documentElement.style.colorScheme = state.tone === 'dark' ? 'dark' : 'light'
+    applyLiquidGlassRuntimeVariables(state.tone)
     document.documentElement.dataset.activeTheme = state.activeTheme
     document.documentElement.dataset.tePresetLayout = state.presetLayout
+    if (operation === 'apply') {
+      persistThemeRuntimeCache({
+        css: state.css,
+        attributes: state.dataAttributes,
+        activeTheme: state.activeTheme,
+        tone: state.tone
+      })
+      markThemeRuntimeFresh()
+    }
     error.value = ''
     recordThemePerformance(operation, startedAt)
     decodeThemeResources(state.resourceUrls)

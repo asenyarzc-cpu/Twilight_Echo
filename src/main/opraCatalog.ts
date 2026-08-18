@@ -199,6 +199,7 @@ export class OpraCatalog {
   private lastUpdatedAt: string | null = null
   private lastError = ''
   private loadingPromise: Promise<OpraCatalogStatus> | null = null
+  private cacheLoadingPromise: Promise<OpraCatalogStatus> | null = null
 
   constructor(cachePath: string) {
     this.cachePath = cachePath
@@ -213,7 +214,7 @@ export class OpraCatalog {
   getStatus(): OpraCatalogStatus {
     return {
       loaded: this.eqs.size > 0,
-      loading: this.loadingPromise !== null,
+      loading: this.loadingPromise !== null || this.cacheLoadingPromise !== null,
       source: this.source,
       cachePath: this.cachePath,
       vendorCount: this.vendors.size,
@@ -225,6 +226,18 @@ export class OpraCatalog {
   }
 
   async loadFromCache(): Promise<OpraCatalogStatus> {
+    if (this.eqs.size > 0) return this.getStatus()
+    if (this.cacheLoadingPromise) return await this.cacheLoadingPromise
+    const loading = this.loadFromCacheInternal()
+    this.cacheLoadingPromise = loading
+    try {
+      return await loading
+    } finally {
+      if (this.cacheLoadingPromise === loading) this.cacheLoadingPromise = null
+    }
+  }
+
+  private async loadFromCacheInternal(): Promise<OpraCatalogStatus> {
     if (!this.cachePath || !existsSync(this.cachePath)) {
       this.lastError = 'OPRA cache is not available'
       return this.getStatus()

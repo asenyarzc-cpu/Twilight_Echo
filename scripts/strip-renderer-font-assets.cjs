@@ -8,13 +8,18 @@ const ALLOWED_PUBLIC_FONTS = new Set([
   'Inter-latin-ext-wght-normal.woff2',
   'PlusJakartaSans-latin-wght-normal.woff2',
   'PlusJakartaSans-latin-ext-wght-normal.woff2',
+  'Lora-latin-wght-normal.woff2',
+  'JetBrainsMono-latin-wght-normal.woff2',
+  'SpaceGrotesk-latin-wght-normal.woff2',
   'OFL-Inter.txt',
-  'OFL-PlusJakartaSans.txt'
+  'OFL-PlusJakartaSans.txt',
+  'OFL-Lora.txt',
+  'OFL-JetBrainsMono.txt',
+  'OFL-SpaceGrotesk.txt'
 ])
 
 // Numeric CJK chunks + named script subsets (latin/cyrillic/vietnamese/...).
-const MISANS_FILE_RE =
-  /^(MiSans-(Regular|Medium|Bold|Heavy)\.[\w-]+\.woff2|misans\.css|LICENSE)$/i
+const MISANS_FILE_RE = /^(MiSans-(Regular|Medium|Bold|Heavy)\.[\w-]+\.woff2|misans\.css|LICENSE)$/i
 // Optional full faces + docs under font/misans/full/
 const MISANS_FULL_FILE_RE =
   /^(MiSans-(Regular|Medium|Bold|Heavy)\.woff2|misans-full\.css|README\.md)$/i

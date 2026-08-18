@@ -3,6 +3,26 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { reactive } from 'vue'
 
+function readPreloadSources(): string {
+  const root = new URL('../../../preload/', import.meta.url)
+  return [
+    'index.ts',
+    'domains/audioEngineApi.ts',
+    'domains/dataApi.ts',
+    'domains/desktopLyricsApi.ts',
+    'domains/libraryApi.ts',
+    'domains/mediaSubscriptionsApi.ts',
+    'domains/networkSourcesApi.ts',
+    'domains/pluginsApi.ts',
+    'domains/settingsApi.ts',
+    'domains/systemApi.ts',
+    'domains/themesApi.ts',
+    'domains/versionedData.ts'
+  ]
+    .map((rel) => readFileSync(new URL(rel, root), 'utf8'))
+    .join('\n')
+}
+
 const { MediaProviderRegistry, getProviderLocalId, getTrackProviderId, toProviderIpcArgs } =
   (await import(
     new URL('./mediaProvider.ts', import.meta.url).href
@@ -84,18 +104,15 @@ test('resolveLyricsAcrossProviders fans out to NCM for local tracks', async () =
 })
 
 test('provider abort handling stays in the renderer because AbortSignal cannot cross the contextBridge', () => {
-  const registrySource = readFileSync(
-    new URL('../providers/index.ts', import.meta.url),
-    'utf8'
-  )
-  const preloadSource = readFileSync(
-    new URL('../../../preload/index.ts', import.meta.url),
-    'utf8'
-  )
+  const registrySource = readFileSync(new URL('../providers/index.ts', import.meta.url), 'utf8')
+  const preloadSource = readPreloadSources()
 
   // The renderer owns the real AbortSignal: it generates a request id and asks
   // the preload to cancel the in-flight main-process call on abort.
-  assert.match(registrySource, /options\.signal\.addEventListener\('abort', onAbort, \{ once: true \}\)/)
+  assert.match(
+    registrySource,
+    /options\.signal\.addEventListener\('abort', onAbort, \{ once: true \}\)/
+  )
   assert.match(registrySource, /void api\.cancel\(requestId\)/)
   assert.match(registrySource, /requestId \? \{ requestId \} : undefined/)
 

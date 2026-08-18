@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import type { TwilightMediaProviderRegistration } from '../../../packages/plugin-api/src/index.ts'
+import type { TwilightMediaProviderMethod } from './types.ts'
+
+type ProviderRegistrationMethodKeys = Exclude<
+  keyof TwilightMediaProviderRegistration,
+  'id' | 'name' | 'capabilities' | 'health'
+>
+type MethodsMissingFromRegistration = Exclude<
+  TwilightMediaProviderMethod,
+  ProviderRegistrationMethodKeys
+>
+type MethodsMissingFromUnion = Exclude<ProviderRegistrationMethodKeys, TwilightMediaProviderMethod>
+type AssertNever<T> = [T] extends [never] ? true : never
+const registrationCoversUnion: AssertNever<MethodsMissingFromRegistration> = true
+const unionCoversRegistration: AssertNever<MethodsMissingFromUnion> = true
 
 const managerSource = readFileSync(new URL('./manager.ts', import.meta.url), 'utf8')
 const statePersistenceSource = readFileSync(
@@ -8,6 +23,8 @@ const statePersistenceSource = readFileSync(
   'utf8'
 )
 const operationQueueSource = readFileSync(new URL('./operationQueue.ts', import.meta.url), 'utf8')
+const rpcCoordinatorSource = readFileSync(new URL('./rpcCoordinator.ts', import.meta.url), 'utf8')
+const providerRoutingSource = readFileSync(new URL('./providerRouting.ts', import.meta.url), 'utf8')
 const updateTransactionSource = readFileSync(
   new URL('./updateTransaction.ts', import.meta.url),
   'utf8'
@@ -18,17 +35,44 @@ const themeContributionSource = readFileSync(
   new URL('./themeContribution.ts', import.meta.url),
   'utf8'
 )
-const pluginHostSource = readFileSync(new URL('../pluginHost.ts', import.meta.url), 'utf8')
+const pluginHostSource = readFileSync(new URL('./host.ts', import.meta.url), 'utf8')
 const pluginApiSource = readFileSync(
   new URL('../../../packages/plugin-api/src/index.ts', import.meta.url),
   'utf8'
 )
-const preloadSource = readFileSync(new URL('../../preload/index.ts', import.meta.url), 'utf8')
+function readPreloadSources(): string {
+  const root = new URL('../../preload/', import.meta.url)
+  return [
+    'index.ts',
+    'types.ts',
+    'index.d.ts',
+    'sleepTimerEvents.ts',
+    'domains/dataApi.ts',
+    'domains/audioEngineApi.ts',
+    'domains/desktopLyricsApi.ts',
+    'domains/libraryApi.ts',
+    'domains/mediaSubscriptionsApi.ts',
+    'domains/networkSourcesApi.ts',
+    'domains/settingsApi.ts',
+    'domains/themesApi.ts',
+    'domains/pluginsApi.ts',
+    'domains/systemApi.ts'
+  ]
+    .map((rel) => readFileSync(new URL(rel, root), 'utf8'))
+    .join('\n')
+}
+
+const preloadSource = readPreloadSources()
 const pluginIpcSource = readFileSync(new URL('../ipc/plugins.ts', import.meta.url), 'utf8')
 const pluginExtensionPageSource = readFileSync(
   new URL('../../renderer/src/components/PluginExtensionPage.vue', import.meta.url),
   'utf8'
 )
+
+test('provider method union and plugin-api registration typings stay in sync', () => {
+  assert.equal(registrationCoversUnion, true)
+  assert.equal(unionCoversRegistration, true)
+})
 
 test('plugin manager keeps UI command failures isolated to the owning plugin', () => {
   assert.match(managerSource, /const PLUGIN_UI_COMMAND_TIMEOUT_MS = 5000/)
@@ -38,11 +82,11 @@ test('plugin manager keeps UI command failures isolated to the owning plugin', (
 })
 
 test('plugin manager enforces controlled UI and theme extension contracts', () => {
-  assert.match(managerSource, /permissions\.includes\('ui:inject'\)/)
-  assert.match(managerSource, /'localSidebarItem'/)
-  assert.match(managerSource, /'streamingHome'/)
-  assert.match(managerSource, /const renderMode = 'command'/)
-  assert.doesNotMatch(managerSource, /record\.renderMode === 'html'/)
+  assert.match(themeContributionSource, /permissions\.includes\('ui:inject'\)/)
+  assert.match(themeContributionSource, /'localSidebarItem'/)
+  assert.match(themeContributionSource, /'streamingHome'/)
+  assert.match(themeContributionSource, /const renderMode = 'command'/)
+  assert.doesNotMatch(themeContributionSource, /record\.renderMode === 'html'/)
   assert.doesNotMatch(pluginExtensionPageSource, /srcdoc|allow-same-origin|htmlContent/)
   assert.match(pluginExtensionPageSource, /<pre>\{\{ textResult \}\}<\/pre>/)
   assert.match(managerSource, /this\.resolveThemeStylesheet/)
@@ -67,7 +111,7 @@ test('plugin manager rejects symlink escapes in installed plugin resources', () 
   assert.match(packageSecuritySource, /isZipSymlink\(entry\)/)
   assert.match(packageSecuritySource, /info\.isSymbolicLink\(\)/)
   assert.match(packageSecuritySource, /realpathSync\(root\)/)
-  assert.match(managerSource, /realpathSync\(filePath\)/)
+  assert.match(packageSecuritySource, /realpathSync\(filePath\)/)
   assert.match(managerSource, /resolvePluginFile\(mainPath, descriptor\.paths\.versionRoot\)/)
   assert.match(
     managerSource,
@@ -229,7 +273,7 @@ test('provider downloads are capability-gated and final file access remains host
   assert.match(pluginApiSource, /getDownloadStatus\?\(/)
   assert.match(pluginApiSource, /getDownloadFile\?\(/)
   assert.match(pluginApiSource, /cancelDownload\?\(/)
-  assert.match(managerSource, /'createDownload'/)
+  assert.match(rpcCoordinatorSource, /'createDownload'/)
   assert.match(pluginHostSource, /'getDownloadFile'/)
   assert.match(pluginIpcSource, /const HOST_ONLY_PROVIDER_METHODS/)
   assert.match(pluginIpcSource, /provider download methods are host-only/)
@@ -237,9 +281,12 @@ test('provider downloads are capability-gated and final file access remains host
 
 test('provider write idempotency is connected from renderer bridge through host request context', () => {
   assert.match(preloadSource, /providerWriteIdempotency\.begin\(/)
-  assert.match(managerSource, /const IDEMPOTENT_PROVIDER_WRITE_METHODS/)
-  assert.match(managerSource, /IDEMPOTENT_PROVIDER_WRITE_METHODS[\s\S]*'completeCloudUpload'/)
-  assert.match(managerSource, /IDEMPOTENT_PROVIDER_WRITE_METHODS[\s\S]*'createDownload'/)
+  assert.match(rpcCoordinatorSource, /const IDEMPOTENT_PROVIDER_WRITE_METHODS/)
+  assert.match(
+    rpcCoordinatorSource,
+    /IDEMPOTENT_PROVIDER_WRITE_METHODS[\s\S]*'completeCloudUpload'/
+  )
+  assert.match(rpcCoordinatorSource, /IDEMPOTENT_PROVIDER_WRITE_METHODS[\s\S]*'createDownload'/)
   assert.match(managerSource, /kind: 'provider-call'[\s\S]*idempotencyKey/)
   assert.match(pluginHostSource, /idempotencyKey: message\.idempotencyKey/)
   assert.match(pluginApiSource, /idempotencyKey\?: string/)
@@ -254,22 +301,22 @@ test('plugin manager exposes per-plugin logs for troubleshooting', () => {
 })
 
 test('plugin manager tracks provider health for calls and plugin failures', () => {
-  assert.match(managerSource, /interface ProviderHealthRecord/)
+  assert.match(providerRoutingSource, /export interface ProviderHealthRecord/)
   assert.match(managerSource, /private readonly providerHealth = new Map/)
   assert.match(managerSource, /private getProviderHealth\(/)
-  assert.match(managerSource, /private normalizeProviderHealth\(/)
+  assert.match(providerRoutingSource, /export function normalizeProviderHealth\(/)
   assert.match(managerSource, /private recordProviderCallSuccess\(/)
   assert.match(managerSource, /private recordProviderCallFailure\(/)
-  assert.match(managerSource, /interface ProviderMethodHealthRecord/)
-  assert.match(managerSource, /methodStats:/)
-  assert.match(managerSource, /successRate:/)
-  assert.match(managerSource, /totalCalls:/)
-  assert.match(managerSource, /failedCalls:/)
-  assert.match(managerSource, /lastError:/)
+  assert.match(providerRoutingSource, /export interface ProviderMethodHealthRecord/)
+  assert.match(providerRoutingSource, /methodStats:/)
+  assert.match(providerRoutingSource, /successRate:/)
+  assert.match(providerRoutingSource, /totalCalls:/)
+  assert.match(providerRoutingSource, /failedCalls:/)
+  assert.match(providerRoutingSource, /lastError:/)
   assert.match(managerSource, /pluginStatus:/)
   assert.match(
     managerSource,
-    /const health = this\.normalizeProviderHealth\(record\.health,\s*providerId,\s*pluginId/
+    /const health = normalizeProviderHealth\(record\.health,\s*providerId,\s*pluginId/
   )
   assert.match(managerSource, /if \(health\) this\.providerHealth\.set\(providerId,\s*health\)/)
   assert.match(

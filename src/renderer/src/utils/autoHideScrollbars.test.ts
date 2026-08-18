@@ -63,7 +63,7 @@ test('all renderer back controls opt in to the shared minimal style', () => {
     '../components/PluginExtensionPage.vue',
     '../components/RadioPodcastPage.vue',
     '../components/SongList.vue',
-    '../components/StreamingPage.vue',
+    '../components/streaming-page/StreamingContentHeader.vue',
     '../components/ThemeStudioPage.vue',
     '../components/onboarding/OnboardingWizard.vue',
     '../mini-player/MiniPlayerApp.vue'

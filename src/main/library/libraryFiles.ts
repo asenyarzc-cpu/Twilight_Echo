@@ -1,28 +1,8 @@
 import { readdirSync, statSync } from 'fs'
 import { dirname, extname, join } from 'path'
 
-export const SUPPORTED_EXTENSIONS = [
-  '.mp3',
-  '.flac',
-  '.wav',
-  '.wave',
-  '.aac',
-  '.ogg',
-  '.wma',
-  '.m4a',
-  '.mp4',
-  '.aiff',
-  '.aif',
-  '.opus',
-  '.webm',
-  '.alac',
-  '.ape',
-  '.wv',
-  '.dsf',
-  '.dff',
-  '.mqa',
-  '.iso'
-]
+export { SUPPORTED_EXTENSIONS } from '../../shared/audioFormats.ts'
+import { SUPPORTED_EXTENSIONS } from '../../shared/audioFormats.ts'
 
 export interface FileEntry {
   fullPath: string

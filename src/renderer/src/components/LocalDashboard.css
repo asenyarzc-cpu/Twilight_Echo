@@ -486,7 +486,9 @@
   height: 136%;
   object-fit: cover;
   filter: blur(64px) saturate(1.35);
-  opacity: 0.5;
+  /* Tokenised so the liquid glass surface can thin the bloom: stacked on top of a
+     blurred backdrop, a 0.5 cover wash turns the hero into mud. */
+  opacity: var(--home-hero-art-alpha, 0.5);
   transform: translateZ(0);
 }
 
@@ -2482,5 +2484,266 @@
   .dsp-state.live .dsp-state-dot,
   .dialog-live-state.live i {
     animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Liquid glass — local dashboard
+   ═══════════════════════════════════════════════════════════════════════
+
+   Why this lives here and not in the canonical card list in base.css:
+
+   1. The home page's own surfaces (.signal-card, .chart-panel, .cal-panel,
+      .empty-stage) are the exact classes every preset theme layout restyles
+      (assets/theme-layouts/*.css), while no preset touches a canonical card
+      class. Registering them upstream would let the shared
+      `html[data-card-custom='on']` block overwrite preset layouts with
+      !important background/border/radius/shadow.
+   2. The dashboard is a wallpaper-backed editorial page: its type sits on the
+      user's own background image, so it needs a denser legibility floor than a
+      card floating over an app-coloured page.
+
+   The Hero mixes its own Clear material from the same shared roles the
+   navigation and playbar use (--te-lg-*). Its independent profile maps those
+   roles to --te-home-lg-*; only the veil density is local.
+
+   Readability contract: the Hero copy keeps an adaptive opaque-enough substrate
+   so it clears the wallpaper's worst case (pure black and pure white).
+
+   Only the Hero is included in LIQUID_GLASS_CARD_SELECTOR, so the shared pointer
+   tracker and visibility observer never run for ordinary home content. */
+
+html[data-te-home-liquid-glass='on'] .home {
+  /* Veil roles, densest first. Text-bearing surfaces use `panel` or `strong`;
+     `soft` is for decorative or already-covered areas. */
+  --home-glass-veil-strong: 82%;
+  --home-glass-veil: 76%;
+  --home-glass-veil-soft: 34%;
+  --home-glass-rim: color-mix(in srgb, var(--home-ink) 12%, transparent);
+  /* Inner accents must stop being opaque slabs once their host is translucent. */
+  --home-hover: color-mix(in srgb, var(--home-ink) 8%, transparent);
+  --home-soft: color-mix(in srgb, var(--home-ink) 5%, transparent);
+  /* Secondary copy loses ~2 stops of contrast over a translucent backing.
+     Pulling muted toward ink restores it in both tones, since the neutral scale
+     inverts in dark mode (ink is near-white there). */
+  --home-muted: color-mix(in srgb, var(--te-neutral-500) 58%, var(--home-ink));
+  /* The card's own backdrop blur already carries the wallpaper's colour; a 0.5
+     cover-art bloom on top of it reads as haze rather than light. */
+  --home-hero-art-alpha: 0.28;
+  /* Color form of the shade base for the rim light on the feature-card warp;
+     defined once here so the gradient needs no literal color function. */
+  --te-lg-shade: rgb(15 23 42);
+  --home-lg-blur: var(--te-lg-blur, 16px);
+  --home-lg-saturate: var(--te-lg-saturate, 140%);
+  --home-lg-specular: var(--te-lg-specular, 0.44);
+  --home-lg-filter: url(#te-lg-card);
+}
+
+html[data-te-home-liquid-glass='on'] .home {
+  --home-lg-blur: var(--te-home-lg-blur, var(--te-lg-blur, 16px));
+  --home-lg-saturate: var(--te-home-lg-saturate, var(--te-lg-saturate, 140%));
+  --home-lg-specular: var(--te-home-lg-specular, var(--te-lg-specular, 0.44));
+  --home-lg-filter: url(#te-lg-home-card);
+}
+
+/* ── Clear material recipe for the media hero ─────────────────────────── */
+
+html[data-te-home-liquid-glass='on'] .home .feature-card {
+  position: relative;
+  /* Contains the negative-z warp layer so it cannot slip behind the page. */
+  isolation: isolate;
+  background: transparent !important;
+  /* Press squish toward the press point; the press spring writes the scale. */
+  transform-origin: var(--te-lg-press-x, 50%) var(--te-lg-press-y, 50%);
+  transform: scale(var(--te-lg-press-scale, 1));
+  border-color: transparent !important;
+  box-shadow:
+    inset 0 0 0 0.5px
+      rgba(var(--te-lg-sheen-rgb, 255, 255, 255), calc(var(--home-lg-specular) * 0.54)),
+    inset 0 1px 0.5px
+      rgba(var(--te-lg-sheen-rgb, 255, 255, 255), calc(var(--home-lg-specular) * 0.2)),
+    inset 0 -1px 1px rgba(var(--te-lg-shade-rgb, 15, 23, 42), 0.062),
+    0 2px 7px rgba(var(--te-lg-drop-rgb, 15, 23, 42), 0.026),
+    0 13px 32px rgba(var(--te-lg-drop-rgb, 15, 23, 42), 0.072) !important;
+}
+
+html[data-te-home-liquid-glass='on'] .home .feature-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  /* Rim light first so it traces the shape, then directional sheen, then top/bottom
+     density, then the legibility veil last so it sits under the light. */
+  background:
+    linear-gradient(
+      var(--te-lg-angle, 135deg),
+      color-mix(in srgb, white calc(var(--home-lg-specular) * 40%), transparent) 0%,
+      transparent 12%,
+      transparent 88%,
+      color-mix(in srgb, var(--te-lg-shade) calc(var(--home-lg-specular) * 16%), transparent) 100%
+    ),
+    linear-gradient(
+      var(--te-lg-angle, 135deg),
+      transparent 0%,
+      rgba(var(--te-lg-sheen-rgb, 255, 255, 255), calc(var(--home-lg-specular) * 0.09)) 34%,
+      rgba(var(--te-lg-sheen-rgb, 255, 255, 255), calc(var(--home-lg-specular) * 0.026)) 62%,
+      transparent 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(var(--te-lg-sheen-rgb, 255, 255, 255), 0.055) 0%,
+      transparent 52%,
+      rgba(var(--te-lg-shade-rgb, 15, 23, 42), 0.062) 100%
+    ),
+    color-mix(in srgb, var(--home-card) var(--home-glass-veil), transparent);
+  backdrop-filter: blur(var(--home-lg-blur)) saturate(var(--home-lg-saturate));
+  -webkit-backdrop-filter: blur(var(--home-lg-blur)) saturate(var(--home-lg-saturate));
+  filter: var(--home-lg-filter);
+}
+
+html[data-te-liquid-glass-source='solid'][data-te-home-liquid-glass='on']
+  .home
+  .feature-card::after {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--te-lg-context-rim) 18%, transparent),
+      transparent 48%,
+      color-mix(in srgb, var(--te-lg-context-label) 8%, transparent)
+    ),
+    var(--te-lg-context-material);
+}
+
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+
+/* .feature-card is canonical, so its glass already paints at ::after / z-index -1.
+   What hid it was this scrim: a full-bleed --home-card wash (opaque white in
+   light themes) painted by an in-flow child, on top of the glass. Replaced with a
+   wedge that is dense only under the copy column and clears entirely over the
+   artwork, so the card reads as glass while the type keeps a real substrate. */
+html[data-te-home-liquid-glass='on'] .home .feature-backdrop::after {
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--home-card) var(--home-glass-veil-strong), transparent) 0%,
+      color-mix(in srgb, var(--home-card) var(--home-glass-veil-strong), transparent) 34%,
+      color-mix(in srgb, var(--home-card) var(--home-glass-veil), transparent) 46%,
+      color-mix(in srgb, var(--home-card) var(--home-glass-veil-soft), transparent) 62%,
+      transparent 84%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--home-card) var(--home-glass-veil-soft), transparent),
+      transparent 38%
+    );
+}
+
+/* ── Dark tone ────────────────────────────────────────────────────────── */
+
+/* The sheen stays light — it is a specular highlight, not a fill — while the
+   veil darkens with --home-card (#181818). Depth roles go heavier, matching the
+   canonical dark-card profile. */
+html[data-theme='dark'][data-te-home-liquid-glass='on'] .home {
+  --home-glass-rim: color-mix(in srgb, var(--home-ink) 16%, transparent);
+  --home-hover: color-mix(in srgb, var(--home-ink) 10%, transparent);
+  --home-soft: color-mix(in srgb, var(--home-ink) 6%, transparent);
+}
+
+html[data-theme='dark'][data-te-home-liquid-glass='on'] .home .feature-card {
+  box-shadow:
+    inset 0 0 0 0.5px
+      rgba(var(--te-lg-sheen-rgb, 255, 255, 255), calc(var(--home-lg-specular) * 0.54)),
+    inset 0 1px 0.5px
+      rgba(var(--te-lg-sheen-rgb, 255, 255, 255), calc(var(--home-lg-specular) * 0.2)),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.15),
+    0 2px 7px rgba(0, 0, 0, 0.07),
+    0 13px 32px rgba(0, 0, 0, 0.18) !important;
+}
+
+html[data-theme='dark'][data-te-home-liquid-glass='on'] .home .feature-card::after {
+  background:
+    linear-gradient(
+      var(--te-lg-angle, 135deg),
+      rgba(var(--te-lg-sheen-rgb, 255, 255, 255), 0) 0%,
+      rgba(var(--te-lg-sheen-rgb, 255, 255, 255), calc(var(--home-lg-specular) * 0.12)) 34%,
+      transparent 100%
+    ),
+    linear-gradient(180deg, transparent 52%, rgba(0, 0, 0, 0.08) 100%),
+    color-mix(in srgb, var(--home-card) var(--home-glass-veil), transparent);
+}
+
+/* ── Degradation contracts ────────────────────────────────────────────── */
+
+/* Three existing contracts strip heavy effects; each must also drop the SVG
+   filter, because refraction without its blurred backdrop reads as a smeared
+   artifact rather than glass. The veil stays, so text keeps its substrate.
+
+   These rules must NOT wrap the ancestor in `:global()`. Vue rewrites only the
+   last compound of a scoped selector, so `:global(body.te-no-blur) .foo`
+   compiles to the bare ancestor and lands `filter: none` on <body> itself. */
+
+html[data-te-home-liquid-glass='on'] .home .te-liquid-glass-offscreen::after {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-te-home-liquid-glass='on'] body.te-no-blur .home .feature-card::after {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-te-home-liquid-glass='on'][data-te-effects-mode='reduced'] .home .feature-card::after {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Transparent Linux windows cannot sample the desktop behind the window, so an
+   in-app backdrop snapshot has nothing valid to read. */
+html[data-te-home-liquid-glass='on'][data-window-transparent='on'][data-platform='linux']
+  .home
+  .feature-card::after {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Blur-free modes lose the optical separation the blur provided, so the veil has
+   to carry legibility on its own. */
+html[data-te-home-liquid-glass='on'] body.te-no-blur .home,
+html[data-te-home-liquid-glass='on'][data-te-effects-mode='reduced'] .home,
+html[data-te-home-liquid-glass='on'][data-window-transparent='on'][data-platform='linux'] .home {
+  --home-glass-veil-strong: 94%;
+  --home-glass-veil: 90%;
+  --home-glass-veil-soft: 62%;
+  --home-hero-art-alpha: 0.22;
+}
+
+/* Reduced / disabled motion keeps the material but pins the transition, matching
+   the canonical carve-out. */
+html[data-te-home-liquid-glass='on']:is([data-te-motion='reduced'], [data-te-motion='off'])
+  .home
+  .feature-card::after {
+  transition: none !important;
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  html[data-te-home-liquid-glass='on'] .home .feature-card::after {
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  html[data-te-home-liquid-glass='on'] .home .feature-card::after {
+    background: Canvas !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 }

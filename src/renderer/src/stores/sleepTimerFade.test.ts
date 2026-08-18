@@ -25,10 +25,10 @@ test('sleep fade reaches stop once and restores the user volume afterwards', () 
 
   fade.begin({ mode: 'minutes', endsAt: 1, fadeSeconds: 2, active: false, triggered: true })
   now = 1_000
-  callback?.()
+  ;(callback as (() => void) | null)?.()
   assert.equal(volume, 0.4)
   now = 2_000
-  callback?.()
+  ;(callback as (() => void) | null)?.()
   assert.equal(stopCalls, 1)
   assert.equal(volume, 0.8)
   assert.equal(fade.isActive(), false)

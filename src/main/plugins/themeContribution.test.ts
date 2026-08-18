@@ -1,6 +1,55 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { normalizeThemeContribution } from './themeContribution.ts'
+import {
+  normalizeContributionId,
+  normalizeText,
+  normalizeThemeContribution,
+  normalizeUiContribution
+} from './themeContribution.ts'
+
+test('normalizes UI contributions as command-only for ui and tool plugins', () => {
+  const contribution = normalizeUiContribution(['tool', 'ui'], ['ui:inject'], {
+    id: ' player-actions ',
+    kind: 'playerBarButton',
+    title: ' Player Actions ',
+    description: '  Opens actions  ',
+    icon: ' pi pi-play ',
+    command: 'playerActions',
+    renderMode: 'html',
+    autoLoad: true
+  })
+
+  assert.deepEqual(contribution, {
+    id: 'player-actions',
+    kind: 'playerBarButton',
+    title: 'Player Actions',
+    description: 'Opens actions',
+    icon: 'pi pi-play',
+    command: 'playerActions',
+    renderMode: 'command',
+    autoLoad: true
+  })
+  assert.throws(
+    () => normalizeUiContribution(['theme'], ['ui:inject'], { id: 'x', kind: 'settingsPanel' }),
+    /只有 ui 或 tool/
+  )
+  assert.throws(
+    () => normalizeUiContribution(['ui'], [], { id: 'x', kind: 'settingsPanel' }),
+    /ui:inject/
+  )
+  assert.throws(
+    () => normalizeUiContribution(['ui'], ['ui:inject'], { id: 'x', kind: 'unknown' }),
+    /未知 UI 扩展点/
+  )
+})
+
+test('normalizes contribution ids and bounded text labels', () => {
+  assert.equal(normalizeContributionId(' my-contribution '), 'my-contribution')
+  assert.throws(() => normalizeContributionId('Bad Id'), /小写标识符/)
+  assert.equal(normalizeText('  short  ', 'required'), 'short')
+  assert.equal(normalizeText('x'.repeat(200), 'required').length, 120)
+  assert.throws(() => normalizeText('   ', 'required'), /required/)
+})
 
 test('plugin API v1 keeps legacy variables, stylesheet, and structured themes', () => {
   const contribution = normalizeThemeContribution({

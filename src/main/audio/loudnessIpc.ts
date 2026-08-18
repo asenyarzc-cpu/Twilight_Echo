@@ -15,6 +15,9 @@ import { assertTrustedIpcSender } from '../security/electronSecurity.ts'
 const LOUDNESS_ANALYSIS_CACHE_FILE = 'loudness-analysis-cache.json'
 const MAX_LOUDNESS_TRACK_ID_LENGTH = 512
 const MAX_LOUDNESS_FILE_PATH_LENGTH = 4096
+// Whole-file loudness passes maxAnalysisSeconds: 0; the pool deadline must
+// cover the same 14_400s bound the engine manager clamps loudnorm analysis to.
+const LOUDNESS_WHOLE_FILE_TASK_TIMEOUT_MS = (14_400 + 120) * 1000
 
 export function setupLoudnessAnalysisIpc(): void {
   runtime.loudnessAnalysisManager = new LoudnessAnalysisManager({
@@ -25,7 +28,7 @@ export function setupLoudnessAnalysisIpc(): void {
       return await service.analyzeLoudness(
         request.filePath,
         JSON.stringify({ maxAnalysisSeconds: 0 }),
-        { priority: request.priority ?? 50 }
+        { priority: request.priority ?? 50, timeoutMs: LOUDNESS_WHOLE_FILE_TASK_TIMEOUT_MS }
       )
     },
     cancelFile: (filePath) => {

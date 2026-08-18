@@ -3,7 +3,8 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { runtime } from '../core/runtime'
 import type { DesktopLyricsSettings } from '../core/types'
-import type { DesktopLyricsTrackPayload } from '../../preload/types'
+import type { DesktopLyricsTrackPayload } from '../../shared/lyricsManagement.ts'
+import { resolveDesktopLyricsFontFamily } from '../../shared/desktopLyricsFont.ts'
 import { normalizeDesktopLyrics, writeAppSettings } from '../core/settings'
 import { assertTrustedIpcSender, shouldAcceptIpcEvent } from '../security/electronSecurity.ts'
 
@@ -23,12 +24,39 @@ function persistDesktopLyricsPosition(win: BrowserWindow): void {
   writeAppSettings(runtime.appSettings)
 }
 
+export function getEffectiveDesktopLyricsSettings(): DesktopLyricsSettings {
+  const settings = runtime.appSettings.desktopLyrics
+  return {
+    ...settings,
+    fontFamily: resolveDesktopLyricsFontFamily(
+      settings.fontFamily,
+      runtime.appSettings.lyricsAppearance.styles.active
+    )
+  }
+}
+
+export function syncDesktopLyricsSettings(): void {
+  const win = runtime.desktopLyricsWindow
+  if (!win || win.isDestroyed()) return
+
+  const settings = runtime.appSettings.desktopLyrics
+  win.setAlwaysOnTop(settings.alwaysOnTop, 'screen-saver')
+  win.setIgnoreMouseEvents(settings.clickThrough, { forward: true })
+  if (
+    settings.windowWidth !== win.getBounds().width ||
+    settings.windowHeight !== win.getBounds().height
+  ) {
+    win.setSize(settings.windowWidth, settings.windowHeight)
+  }
+  win.webContents.send('desktopLyrics:initSettings', getEffectiveDesktopLyricsSettings())
+}
+
 function sendDesktopLyricsSnapshot(): void {
   if (!runtime.desktopLyricsWindow || runtime.desktopLyricsWindow.isDestroyed()) return
 
   runtime.desktopLyricsWindow.webContents.send(
     'desktopLyrics:initSettings',
-    runtime.appSettings.desktopLyrics
+    getEffectiveDesktopLyricsSettings()
   )
   if (runtime.latestDesktopLyricsTrack) {
     runtime.desktopLyricsWindow.webContents.send(
@@ -165,18 +193,7 @@ export function applyDesktopLyricsSettings(settings: DesktopLyricsSettings): voi
   const normalized = normalizeDesktopLyrics(settings)
   runtime.appSettings.desktopLyrics = normalized
   writeAppSettings(runtime.appSettings)
-  if (runtime.desktopLyricsWindow && !runtime.desktopLyricsWindow.isDestroyed()) {
-    // Update window properties
-    runtime.desktopLyricsWindow.setAlwaysOnTop(normalized.alwaysOnTop, 'screen-saver')
-    runtime.desktopLyricsWindow.setIgnoreMouseEvents(normalized.clickThrough, { forward: true })
-    if (
-      normalized.windowWidth !== runtime.desktopLyricsWindow.getBounds().width ||
-      normalized.windowHeight !== runtime.desktopLyricsWindow.getBounds().height
-    ) {
-      runtime.desktopLyricsWindow.setSize(normalized.windowWidth, normalized.windowHeight)
-    }
-    runtime.desktopLyricsWindow.webContents.send('desktopLyrics:initSettings', normalized)
-  }
+  syncDesktopLyricsSettings()
 }
 
 export function setupDesktopLyricsIpc(): void {

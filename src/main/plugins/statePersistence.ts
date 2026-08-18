@@ -105,6 +105,16 @@ export class PluginStatePersistence {
   }
 }
 
+export function cloneStateRecord(
+  record: TwilightPluginStateRecord | undefined
+): TwilightPluginStateRecord | undefined {
+  if (!record) return undefined
+  return {
+    ...record,
+    nativeDspParameters: record.nativeDspParameters ? { ...record.nativeDspParameters } : undefined
+  }
+}
+
 export function pluginStateBackupPath(filePath: string): string {
   return `${filePath}.bak`
 }

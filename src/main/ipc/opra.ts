@@ -16,9 +16,6 @@ function requireOpraCatalog(): OpraCatalog {
 }
 
 export function setupOpraIpc(): void {
-  runtime.opraCatalog = new OpraCatalog(getOpraDatabaseCachePath())
-  void runtime.opraCatalog.loadFromCache()
-
   ipcMain.handle('opra:search', async (_event, query: string) => {
     assertTrustedIpcSender(_event, 'OPRA IPC')
     return await requireOpraCatalog().search(

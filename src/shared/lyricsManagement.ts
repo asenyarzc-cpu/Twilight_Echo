@@ -4,6 +4,17 @@
  */
 export type LyricSourcePreference = 'auto' | 'local' | 'provider' | 'manual'
 export type LyricLayerSourceSelection = 'automatic' | 'local' | 'provider' | 'manual'
+export type LyricSource = 'embedded' | 'local' | 'provider' | 'manual' | 'online'
+
+export interface DesktopLyricsTrackPayload {
+  lyrics: string | null
+  translatedLyrics?: string | null
+  romanizedLyrics?: string | null
+  lyricsSource?: LyricSource | null
+  translatedLyricsSource?: LyricSource | null
+  title?: string
+  artist?: string
+}
 
 export interface LyricTrackOverride {
   offsetMs: number
@@ -39,6 +50,31 @@ export interface LyricDisplayContent {
   text: string
   translation: string | null
   romanization: string | null
+}
+
+export interface OnlineLyricsQuery {
+  title: string
+  artist: string
+  album?: string
+  durationSeconds?: number
+}
+
+export interface OnlineLyricsCandidate {
+  id: number | string
+  title: string
+  artist: string
+  album: string
+  durationSeconds: number | null
+  score: number
+  syncedLyrics: string | null
+  plainLyrics: string | null
+  source: 'lrclib'
+}
+
+export interface OnlineLyricsSearchResult {
+  query: OnlineLyricsQuery
+  candidates: OnlineLyricsCandidate[]
+  best: OnlineLyricsCandidate | null
 }
 
 export const DEFAULT_LYRICS_MANAGEMENT: LyricsManagementDocument = {

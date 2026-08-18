@@ -99,7 +99,8 @@ test('unified search merges network library entries with source name', async () 
         }
       }
     ],
-    providers: []
+    providers: [],
+    searchProviderSongs: async () => ({ items: [], total: 0 })
   })
   assert.equal(result.items.length, 1)
   const item = result.items[0]

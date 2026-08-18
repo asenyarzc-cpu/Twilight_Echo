@@ -1868,15 +1868,286 @@ function playPersonalizedStream(section: RecSection | null): void {
     animation: none;
   }
 }
-</style>
 
-.duo-card { gap: 14px; padding: 16px; } .duo-stack { width: 80px; height: 60px; } .duo-stack-cover {
-width: 50px; height: 50px; } .duo-stack-cover-1 { left: 18px; } .duo-stack-cover-2 { left: 34px; }
-.duo-name { font-size: 17px; } .duo-sub { font-size: 11px; } .shelf-grid, .sk-tiles {
-grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 16px 12px; } .shelf-name {
-margin-top: 8px; font-size: 12px; } .shelf-count { left: 8px; bottom: 8px; font-size: 10px; padding:
-2px 7px; } .shelf-open { right: 8px; bottom: 8px; width: 30px; height: 30px; font-size: 11px; }
-.chart-row { grid-template-columns: 28px 42px minmax(0, 1fr) auto; gap: 10px; padding: 8px 8px; }
-.chart-cover { width: 42px; height: 42px; } .chart-title { font-size: 13px; } .chart-artist {
-font-size: 11px; } .chart-duration { font-size: 11px; } .section-head-copy h3 { font-size: 18px; }
-.section-head-copy p { font-size: 11px; } }
+html[data-te-surface-material='liquidGlass'] .home-view {
+  --home-glass-veil: 76%;
+  --home-glass-veil-soft: 34%;
+  --home-glass-hover: color-mix(in srgb, var(--home-ink) 8%, transparent);
+  --home-glass-soft: color-mix(in srgb, var(--home-ink) 6%, transparent);
+  --home-line: color-mix(in srgb, var(--home-ink) 12%, transparent);
+  --home-ink-soft: color-mix(in srgb, var(--te-neutral-500) 58%, var(--home-ink));
+  --home-ambient-alpha: 0.3;
+}
+
+html[data-te-surface-material='liquidGlass']
+  .home-view
+  :is(
+    .hero,
+    .duo-card,
+    .chart-grid,
+    .shelf-tile,
+    .shelf-empty,
+    .section-more,
+    .hero-invite,
+    .home-error
+  ) {
+  position: relative;
+  isolation: isolate;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, calc(var(--te-lg-specular, 0.44) * 0.54)),
+    inset 0 1px 0.5px rgba(255, 255, 255, calc(var(--te-lg-specular, 0.44) * 0.2)),
+    inset 0 -1px 1px rgba(15, 23, 42, 0.062),
+    0 2px 7px rgba(15, 23, 42, 0.026),
+    0 13px 32px rgba(15, 23, 42, 0.072) !important;
+}
+
+html[data-te-surface-material='liquidGlass']
+  .home-view
+  :is(
+    .hero,
+    .duo-card,
+    .chart-grid,
+    .shelf-tile,
+    .shelf-empty,
+    .section-more,
+    .hero-invite,
+    .home-error
+  )::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      112% 126% at 50% 42%,
+      rgba(255, 255, 255, calc(var(--te-lg-specular, 0.44) * 0.17)) 0%,
+      rgba(255, 255, 255, calc(var(--te-lg-specular, 0.44) * 0.055)) 21%,
+      transparent 55%
+    ),
+    linear-gradient(
+      135deg,
+      transparent 0%,
+      rgba(255, 255, 255, calc(var(--te-lg-specular, 0.44) * 0.1)) 35%,
+      rgba(255, 255, 255, calc(var(--te-lg-specular, 0.44) * 0.022)) 62%,
+      transparent 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.055) 0%,
+      transparent 52%,
+      rgba(15, 23, 42, 0.062) 100%
+    ),
+    color-mix(in srgb, var(--te-card-bg) calc(var(--te-lg-tint, 0.12) * 100%), transparent),
+    color-mix(in srgb, var(--te-card-bg) var(--home-glass-veil), transparent);
+  backdrop-filter: blur(var(--te-lg-blur, 16px)) saturate(var(--te-lg-saturate, 140%));
+  -webkit-backdrop-filter: blur(var(--te-lg-blur, 16px)) saturate(var(--te-lg-saturate, 140%));
+  filter: url(#te-lg-card);
+}
+
+html[data-te-liquid-glass-source='solid'][data-te-surface-material='liquidGlass']
+  .home-view
+  :is(
+    .hero,
+    .duo-card,
+    .chart-grid,
+    .shelf-tile,
+    .shelf-empty,
+    .section-more,
+    .hero-invite,
+    .home-error
+  )::after {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--te-lg-context-rim) 18%, transparent),
+      transparent 48%,
+      color-mix(in srgb, var(--te-lg-context-label) 8%, transparent)
+    ),
+    var(--te-lg-context-material);
+}
+
+html[data-te-surface-material='liquidGlass'] .home-view .hero::after {
+  background-color: color-mix(in srgb, var(--te-card-bg) var(--home-glass-veil-soft), transparent);
+}
+
+html[data-te-surface-material='liquidGlass'] .home-view .hero-ambient :deep(img),
+html[data-te-surface-material='liquidGlass'] .home-view .hero-ambient-img {
+  opacity: var(--home-ambient-alpha);
+}
+
+html[data-te-surface-material='liquidGlass'] .home-view .hero-ambient::after {
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--te-card-bg) var(--home-glass-veil), transparent) 0%,
+      color-mix(in srgb, var(--te-card-bg) var(--home-glass-veil), transparent) 36%,
+      color-mix(in srgb, var(--te-card-bg) var(--home-glass-veil-soft), transparent) 58%,
+      transparent 84%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--te-card-bg) var(--home-glass-veil-soft), transparent),
+      transparent 38%
+    );
+}
+
+html[data-te-surface-material='liquidGlass'] .home-view .duo-card:hover {
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, calc(var(--te-lg-specular, 0.44) * 0.54)),
+    inset 0 1px 0.5px rgba(255, 255, 255, calc(var(--te-lg-specular, 0.44) * 0.2)),
+    inset 0 -1px 1px rgba(15, 23, 42, 0.062),
+    0 2px 7px rgba(15, 23, 42, 0.026),
+    0 13px 32px rgba(15, 23, 42, 0.072) !important;
+}
+
+html[data-te-surface-material='liquidGlass'] .home-view .duo-arrow {
+  background: var(--home-glass-soft);
+  border-color: var(--home-line);
+}
+
+html[data-te-surface-material='liquidGlass'] .home-view .chart-grid {
+  padding: 10px 12px;
+  border-radius: var(--home-radius-lg);
+}
+
+html[data-te-surface-material='liquidGlass'] .home-view .chart-row:hover {
+  background: var(--home-glass-hover);
+}
+
+html[data-te-surface-material='liquidGlass'] .home-view .shelf-tile {
+  padding: 10px;
+  border-radius: 26px;
+}
+
+html[data-te-surface-material='liquidGlass'] .home-view .shelf-empty {
+  border-style: solid;
+}
+
+html[data-te-surface-material='liquidGlass'] .home-view .section-more:hover {
+  border-color: var(--home-line) !important;
+}
+
+html[data-te-surface-material='liquidGlass'] .home-view .home-error-retry:hover {
+  background: var(--home-glass-hover);
+}
+
+html[data-theme='dark'][data-te-surface-material='liquidGlass']
+  .home-view
+  :is(
+    .hero,
+    .duo-card,
+    .chart-grid,
+    .shelf-tile,
+    .shelf-empty,
+    .section-more,
+    .hero-invite,
+    .home-error
+  ) {
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, calc(var(--te-lg-specular, 0.38) * 0.54)),
+    inset 0 1px 0.5px rgba(255, 255, 255, calc(var(--te-lg-specular, 0.38) * 0.2)),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.15),
+    0 2px 7px rgba(0, 0, 0, 0.07),
+    0 13px 32px rgba(0, 0, 0, 0.18) !important;
+}
+
+html[data-theme='dark'][data-te-surface-material='liquidGlass']
+  .home-view
+  :is(
+    .hero,
+    .duo-card,
+    .chart-grid,
+    .shelf-tile,
+    .shelf-empty,
+    .section-more,
+    .hero-invite,
+    .home-error
+  )::after {
+  background:
+    radial-gradient(
+      112% 126% at 50% 42%,
+      rgba(255, 255, 255, calc(var(--te-lg-specular, 0.38) * 0.17)) 0%,
+      rgba(255, 255, 255, calc(var(--te-lg-specular, 0.38) * 0.055)) 21%,
+      transparent 55%
+    ),
+    linear-gradient(
+      135deg,
+      transparent 0%,
+      rgba(255, 255, 255, calc(var(--te-lg-specular, 0.38) * 0.1)) 35%,
+      transparent 100%
+    ),
+    linear-gradient(180deg, transparent 48%, rgba(0, 0, 0, 0.13) 100%),
+    color-mix(in srgb, var(--te-card-bg) calc(var(--te-lg-tint, 0.16) * 100%), transparent),
+    color-mix(in srgb, var(--te-card-bg) var(--home-glass-veil), transparent);
+}
+
+html[data-te-surface-material='liquidGlass']
+  body.te-no-blur
+  .home-view
+  :is(
+    .hero,
+    .duo-card,
+    .chart-grid,
+    .shelf-tile,
+    .shelf-empty,
+    .section-more,
+    .hero-invite,
+    .home-error
+  )::after,
+html[data-te-surface-material='liquidGlass'][data-te-effects-mode='reduced']
+  .home-view
+  :is(
+    .hero,
+    .duo-card,
+    .chart-grid,
+    .shelf-tile,
+    .shelf-empty,
+    .section-more,
+    .hero-invite,
+    .home-error
+  )::after,
+html[data-te-surface-material='liquidGlass'][data-window-transparent='on'][data-platform='linux']
+  .home-view
+  :is(
+    .hero,
+    .duo-card,
+    .chart-grid,
+    .shelf-tile,
+    .shelf-empty,
+    .section-more,
+    .hero-invite,
+    .home-error
+  )::after {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-te-surface-material='liquidGlass'] body.te-no-blur .home-view,
+html[data-te-surface-material='liquidGlass'][data-te-effects-mode='reduced'] .home-view,
+html[data-te-surface-material='liquidGlass'][data-window-transparent='on'][data-platform='linux']
+  .home-view {
+  --home-glass-veil: 90%;
+  --home-glass-veil-soft: 62%;
+  --home-ambient-alpha: 0.24;
+}
+
+html[data-te-surface-material='liquidGlass']:is([data-te-motion='reduced'], [data-te-motion='off'])
+  .home-view
+  :is(
+    .hero,
+    .duo-card,
+    .chart-grid,
+    .shelf-tile,
+    .shelf-empty,
+    .section-more,
+    .hero-invite,
+    .home-error
+  )::after {
+  transition: none !important;
+}
+</style>

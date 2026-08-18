@@ -1,18 +1,23 @@
 import { pathToFileURL } from 'url'
-import { deletePluginSetting, getPluginSetting, setPluginSetting } from './plugins/settingsStore'
-import { initProxy } from './plugins/proxyBootstrap'
-import { redactSensitiveText } from './security/secureStorage.ts'
+import { deletePluginSetting, getPluginSetting, setPluginSetting } from './settingsStore'
+import { initProxy } from './proxyBootstrap'
+import { redactSensitiveText } from '../security/secureStorage.ts'
 import type {
   PluginHostApiResult,
   PluginHostRequest,
   PluginHostResponse,
   TwilightMediaProviderMethod,
   TwilightPluginPermission
-} from './plugins/types'
+} from './types'
 
 type ParentPort = {
-  postMessage: (message: PluginHostResponse | Extract<PluginHostResponse, { kind: 'api-call' }>) => void
-  on: (event: 'message', listener: (event: { data: PluginHostRequest | PluginHostApiResult }) => void) => void
+  postMessage: (
+    message: PluginHostResponse | Extract<PluginHostResponse, { kind: 'api-call' }>
+  ) => void
+  on: (
+    event: 'message',
+    listener: (event: { data: PluginHostRequest | PluginHostApiResult }) => void
+  ) => void
 }
 
 type PluginModule = {
@@ -21,7 +26,9 @@ type PluginModule = {
   default?: PluginModule
 }
 
-type ProviderHandler = Partial<Record<TwilightMediaProviderMethod, (...args: unknown[]) => Promise<unknown> | unknown>>
+type ProviderHandler = Partial<
+  Record<TwilightMediaProviderMethod, (...args: unknown[]) => Promise<unknown> | unknown>
+>
 type CommandHandler = (...args: unknown[]) => Promise<unknown> | unknown
 
 interface PluginInvocationContext {
@@ -59,18 +66,25 @@ interface TwilightPluginContext {
       previous: () => Promise<void>
     }
     providers: {
-      register: (provider: {
-        id: string
-        name: string
-        capabilities: string[]
-        ui?: Record<string, unknown>
-        health?: Record<string, unknown>
-      } & ProviderHandler) => Promise<void>
-    },
+      register: (
+        provider: {
+          id: string
+          name: string
+          capabilities: string[]
+          ui?: Record<string, unknown>
+          health?: Record<string, unknown>
+        } & ProviderHandler
+      ) => Promise<void>
+    }
     ui: {
       register: (contribution: {
         id: string
-        kind: 'sidebarPage' | 'playerBarButton' | 'settingsPanel' | 'localSidebarItem' | 'streamingHome'
+        kind:
+          | 'sidebarPage'
+          | 'playerBarButton'
+          | 'settingsPanel'
+          | 'localSidebarItem'
+          | 'streamingHome'
         title: string
         description?: string
         icon?: string
@@ -203,20 +217,28 @@ parentPort.on('message', (event) => {
   }
 })
 
-async function activatePlugin(message: Extract<PluginHostRequest, { kind: 'activate' }>): Promise<void> {
+async function activatePlugin(
+  message: Extract<PluginHostRequest, { kind: 'activate' }>
+): Promise<void> {
   try {
     // Initialize proxy before loading any plugin code — plugins that access
     // blocked external APIs (YouTube, etc.) need the proxy tunnel active.
     await initProxy()
     const module = (await import(pathToFileURL(message.mainPath).href)) as PluginModule
-    activePlugin = module.default && (module.default.activate || module.default.deactivate)
-      ? module.default
-      : module
+    activePlugin =
+      module.default && (module.default.activate || module.default.deactivate)
+        ? module.default
+        : module
     if (typeof activePlugin.activate !== 'function') {
       throw new Error('插件入口必须导出 activate(context)')
     }
     await activePlugin.activate(
-      createContext(message.pluginId, message.apiVersion, message.dataDir, message.manifest.permissions)
+      createContext(
+        message.pluginId,
+        message.apiVersion,
+        message.dataDir,
+        message.manifest.permissions
+      )
     )
     post({ kind: 'activated', pluginId: message.pluginId })
   } catch (error) {
@@ -307,11 +329,16 @@ function createContext(
         request: (path, cookie, options) =>
           callInternalNcmApi(
             'ncmRequest',
-            [path, cookie, options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : undefined],
+            [
+              path,
+              cookie,
+              options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : undefined
+            ],
             options?.signal
           ),
         officialLogin: () => callInternalNcmApi('ncmOfficialLogin', []) as Promise<string>,
-        getCachedSong: (songId) => callInternalNcmApi('ncmGetCachedSong', [songId]) as Promise<string | null>,
+        getCachedSong: (songId) =>
+          callInternalNcmApi('ncmGetCachedSong', [songId]) as Promise<string | null>,
         cacheSong: (songId, url, fileName) =>
           callInternalNcmApi('ncmCacheSong', [songId, url, fileName]) as Promise<string | null>
       }
@@ -361,7 +388,9 @@ function requireLocalPermission(
   }
 }
 
-function callPlayerApi(method: Extract<PluginHostResponse, { kind: 'api-call' }>['method']): Promise<unknown> {
+function callPlayerApi(
+  method: Extract<PluginHostResponse, { kind: 'api-call' }>['method']
+): Promise<unknown> {
   return callApi('player', method, [])
 }
 
@@ -480,12 +509,16 @@ async function callProviderHandler(
   }
 }
 
-async function callCommandHandler(message: Extract<PluginHostRequest, { kind: 'ui-command' }>): Promise<void> {
+async function callCommandHandler(
+  message: Extract<PluginHostRequest, { kind: 'ui-command' }>
+): Promise<void> {
   const controller = beginPluginCall(message.requestId)
   try {
     const handler = commandHandlers.get(message.command)
     if (!handler) throw new Error(`UI command is not registered: ${message.command}`)
-    const value = await handler(...message.args, { signal: controller.signal } satisfies PluginInvocationContext)
+    const value = await handler(...message.args, {
+      signal: controller.signal
+    } satisfies PluginInvocationContext)
     if (controller.signal.aborted) return
     post({ kind: 'ui-command-result', requestId: message.requestId, ok: true, value })
   } catch (error) {

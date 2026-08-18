@@ -19,10 +19,7 @@ import {
   MAX_UTILITY_PROCESS_CONTROL_MESSAGE_BYTES,
   MAX_UTILITY_PROCESS_ERROR_TEXT_BYTES
 } from './security/utilityProcessSafety.ts'
-import {
-  isLoudnessAnalysisResult,
-  type LoudnessAnalysisResult
-} from './audio/loudnessCache.ts'
+import { isLoudnessAnalysisResult, type LoudnessAnalysisResult } from './audio/loudnessCache.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -56,6 +53,7 @@ type AnalysisTask = {
   source: string
   optionsJson: string
   priority: number
+  timeoutMs: number
   sequence: number
   queuedAt: number
   resolve: (value: unknown) => void
@@ -94,6 +92,8 @@ export interface AudioAnalysisServiceClientOptions {
 
 export interface AudioAnalysisRequestOptions {
   priority?: number
+  /** Per-task worker deadline; whole-file analyses override the short default. */
+  timeoutMs?: number
 }
 
 export interface AudioAnalysisServiceStatus {
@@ -108,6 +108,7 @@ export interface AudioAnalysisServiceStatus {
 type AudioAnalysisError = Error & { code?: string }
 
 const DEFAULT_TASK_TIMEOUT_MS = 5 * 60 * 1000
+const MAX_TASK_TIMEOUT_MS = (14_400 + 120) * 1000
 const DEFAULT_QUEUE_TIMEOUT_MS = 5 * 60 * 1000
 const DEFAULT_AGING_INTERVAL_MS = 1000
 const DEFAULT_STARTUP_TIMEOUT_MS = 15_000
@@ -119,7 +120,8 @@ const MAX_AUDIO_ANALYSIS_RESPONSE_BYTES = 512 * 1024
 const MAX_AUDIO_ANALYSIS_MESSAGE_BYTES =
   MAX_AUDIO_ANALYSIS_RESPONSE_BYTES + MAX_UTILITY_PROCESS_CONTROL_MESSAGE_BYTES
 const AUDIO_ANALYSIS_INVALID_RESPONSE_CODE = 'ERR_AUDIO_ANALYSIS_INVALID_RESPONSE'
-const AUDIO_ANALYSIS_INVALID_RESPONSE = 'audio analysis worker returned an invalid or oversized message'
+const AUDIO_ANALYSIS_INVALID_RESPONSE =
+  'audio analysis worker returned an invalid or oversized message'
 
 export class AudioAnalysisServiceClient extends EventEmitter {
   private readonly options: AudioAnalysisServiceClientOptions
@@ -133,6 +135,7 @@ export class AudioAnalysisServiceClient extends EventEmitter {
   private readonly maxStartupFailures: number
   private readonly now: () => number
   private readonly workers: AnalysisWorker[]
+  private workersStarted = false
   private readonly queued: AnalysisTask[] = []
   private readonly active = new Map<string, AnalysisTask>()
   private sequence = 0
@@ -171,12 +174,7 @@ export class AudioAnalysisServiceClient extends EventEmitter {
       60_000,
       DEFAULT_STARTUP_TIMEOUT_MS
     )
-    this.restartDelayMs = clampInteger(
-      options.restartDelayMs,
-      0,
-      30_000,
-      DEFAULT_RESTART_DELAY_MS
-    )
+    this.restartDelayMs = clampInteger(options.restartDelayMs, 0, 30_000, DEFAULT_RESTART_DELAY_MS)
     this.maxStartupFailures = clampInteger(
       options.maxStartupFailures,
       1,
@@ -195,7 +193,6 @@ export class AudioAnalysisServiceClient extends EventEmitter {
       disabled: false,
       logBudget: new UtilityProcessLogBudget()
     }))
-    for (const worker of this.workers) this.startWorker(worker)
   }
 
   async analyzeBpm(
@@ -203,10 +200,7 @@ export class AudioAnalysisServiceClient extends EventEmitter {
     optionsJson: string,
     options: AudioAnalysisRequestOptions = {}
   ): Promise<BpmAnalysisResult> {
-    const value = parseAnalysisJson(
-      await this.request('bpm', source, optionsJson, options),
-      'BPM'
-    )
+    const value = parseAnalysisJson(await this.request('bpm', source, optionsJson, options), 'BPM')
     if (!isBpmAnalysisResult(value)) {
       throw new Error(
         analysisErrorMessage(value, 'audio analysis worker returned invalid BPM data')
@@ -334,6 +328,7 @@ export class AudioAnalysisServiceClient extends EventEmitter {
         source: normalizedSource,
         optionsJson: optionsJson || '{}',
         priority: clampInteger(options.priority, -100, 100, 0),
+        timeoutMs: clampInteger(options.timeoutMs, 1000, MAX_TASK_TIMEOUT_MS, this.taskTimeoutMs),
         sequence: this.sequence++,
         queuedAt: now,
         resolve,
@@ -341,9 +336,17 @@ export class AudioAnalysisServiceClient extends EventEmitter {
         timer: null
       }
       if (!this.admitTask(task, now)) return
+      this.ensureWorkersStarted()
+      if (this.unavailableError) return
       this.scheduleQueueMaintenance(now)
       this.pump()
     })
+  }
+
+  private ensureWorkersStarted(): void {
+    if (this.workersStarted || this.stopped) return
+    this.workersStarted = true
+    for (const worker of this.workers) this.startWorker(worker)
   }
 
   private startWorker(worker: AnalysisWorker): void {
@@ -416,11 +419,7 @@ export class AudioAnalysisServiceClient extends EventEmitter {
     }
   }
 
-  private emitWorkerLog(
-    worker: AnalysisWorker,
-    event: 'log' | 'error-log',
-    chunk: Buffer
-  ): void {
+  private emitWorkerLog(worker: AnalysisWorker, event: 'log' | 'error-log', chunk: Buffer): void {
     const capture = worker.logBudget.capture(chunk)
     if (capture.text) this.emit(event, capture.text)
     if (capture.notice) this.emit(event, capture.notice)
@@ -475,7 +474,10 @@ export class AudioAnalysisServiceClient extends EventEmitter {
         return
       }
       try {
-        if (!isBoundedUtf8String(record.error, MAX_UTILITY_PROCESS_ERROR_TEXT_BYTES) || !record.error.trim()) {
+        if (
+          !isBoundedUtf8String(record.error, MAX_UTILITY_PROCESS_ERROR_TEXT_BYTES) ||
+          !record.error.trim()
+        ) {
           this.handleWorkerProtocolViolation(worker)
           return
         }
@@ -558,11 +560,11 @@ export class AudioAnalysisServiceClient extends EventEmitter {
           worker,
           createAnalysisError(
             'ERR_AUDIO_ANALYSIS_TIMEOUT',
-            `${task.analysis} analysis timed out after ${this.taskTimeoutMs} ms: ${task.source}`
+            `${task.analysis} analysis timed out after ${task.timeoutMs} ms: ${task.source}`
           ),
           true
         )
-      }, this.taskTimeoutMs)
+      }, task.timeoutMs)
       try {
         worker.child.postMessage({
           kind: 'request',
@@ -663,9 +665,7 @@ export class AudioAnalysisServiceClient extends EventEmitter {
   private rejectQueuedUnavailable(): void {
     const message = this.unavailableError || 'audio analysis service unavailable'
     while (this.queued.length > 0) {
-      this.queued.shift()?.reject(
-        createAnalysisError('ERR_AUDIO_ANALYSIS_UNAVAILABLE', message)
-      )
+      this.queued.shift()?.reject(createAnalysisError('ERR_AUDIO_ANALYSIS_UNAVAILABLE', message))
     }
     this.clearQueueMaintenanceTimer()
   }
@@ -727,8 +727,7 @@ export class AudioAnalysisServiceClient extends EventEmitter {
 
   /** Negative means left should run first. Older tasks gain one point per aging interval. */
   private compareTaskPrecedence(left: AnalysisTask, right: AnalysisTask, now: number): number {
-    const priorityDelta =
-      this.effectivePriority(right, now) - this.effectivePriority(left, now)
+    const priorityDelta = this.effectivePriority(right, now) - this.effectivePriority(left, now)
     return priorityDelta || left.sequence - right.sequence
   }
 
@@ -768,13 +767,16 @@ export class AudioAnalysisServiceClient extends EventEmitter {
     if (this.queueMaintenanceTimer && this.queueMaintenanceDueAt <= dueAt) return
     this.clearQueueMaintenanceTimer()
     this.queueMaintenanceDueAt = dueAt
-    this.queueMaintenanceTimer = setTimeout(() => {
-      this.queueMaintenanceTimer = null
-      this.queueMaintenanceDueAt = 0
-      const current = this.now()
-      this.expireQueuedTasks(current)
-      this.pump()
-    }, Math.max(1, dueAt - now))
+    this.queueMaintenanceTimer = setTimeout(
+      () => {
+        this.queueMaintenanceTimer = null
+        this.queueMaintenanceDueAt = 0
+        const current = this.now()
+        this.expireQueuedTasks(current)
+        this.pump()
+      },
+      Math.max(1, dueAt - now)
+    )
   }
 
   private clearQueueMaintenanceTimer(): void {

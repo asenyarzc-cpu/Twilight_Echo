@@ -54,53 +54,40 @@ test('playbar lyrics manager panel manages provider tracks and projects into Pla
       bundleName,
       'Vite should bundle the real PlayingMusic + LyricsManagerPanel components'
     )
-    const outputFiles = await readdir(bundleDirectory)
-    const styleNames = outputFiles.filter((name) => name.endsWith('.css'))
-    assert.ok(styleNames.length > 0, 'Vite lib build should emit the component stylesheet')
-    const styleCss = (
-      await Promise.all(styleNames.map((name) => readFile(join(bundleDirectory, name), 'utf8')))
-    ).join('\n')
-    const bundleSource = await readFile(join(bundleDirectory, bundleName), 'utf8')
-
-    // Twilight Echo now delegates positioning, spring interpolation and blur to
-    // the official AMLL renderer rather than retaining a second, hand-written
-    // scrolling implementation.
+    const styleName = (await readdir(bundleDirectory)).find((name) => name.endsWith('.css'))
+    assert.ok(styleName, 'Vite lib build should emit the component stylesheet')
+    const styleCss = await readFile(join(bundleDirectory, styleName), 'utf8')
     assert.match(
       styleCss,
-      /\.amll-lyric-player/,
-      'the official AMLL player stylesheet was not bundled'
+      /mask-image:\s*linear-gradient\(/,
+      'the lyric stage should fade its top and bottom edges with a gradient mask'
+    )
+    // The per-word sweep gradient is generated from measured glyph widths, so it
+    // is set inline by the component. What the stylesheet must own is the
+    // contrast the sweep reads and the escape hatches that switch it off.
+    assert.match(
+      styleCss,
+      /--lyric-bright-mask-alpha/,
+      'karaoke contrast variables should be owned by the stylesheet'
     )
     assert.match(
       styleCss,
-      /\.FmKaba_lyricLineWrapper/,
-      'the official AMLL virtual lyric-line stylesheet was not bundled'
+      /lyrics-column--karaoke-disabled[\s\S]{0,200}mask-image:\s*none/,
+      'disabling karaoke should clear the word mask from CSS'
     )
     assert.match(
       styleCss,
-      /\.FmKaba_lyricLineWrapper[\s\S]{0,600}position:\s*absolute/,
-      'AMLL should own its virtual transform layout'
+      /--lyric-line-top/,
+      'absolute line positioning variable should be in the stylesheet'
     )
-    assert.match(
-      styleCss,
-      /overflow:\s*hidden/,
-      'the lyrics viewport should be clipped instead of browser-scrolled'
-    )
-    assert.match(
-      styleCss,
-      /FmKaba_interludeDots[\s\S]{0,120}display:\s*none/,
-      'the AMLL interlude dots should be visually suppressed between lines'
-    )
+    assert.match(styleCss, /--lyric-line-scale/, 'line scale variable should be in the stylesheet')
+    assert.doesNotMatch(styleCss, /te-lyric-focus/, 'replaced focus animation should be removed')
     assert.doesNotMatch(
       styleCss,
-      /\.lyrics-list|\.lyric-row/,
-      'the retired local lyric-list renderer should not be bundled'
+      /--lyric-word-progress|--lyric-depth-scale/,
+      'the retired scroll-driven progress and depth variables should be gone'
     )
-    assert.doesNotMatch(
-      bundleSource,
-      /\.scrollTo\(/,
-      'the lyric renderer must not call the browser native scroll API'
-    )
-    await writeFile(htmlPath, runtimeHtml(bundleName, styleNames), 'utf8')
+    await writeFile(htmlPath, runtimeHtml(bundleName, styleName), 'utf8')
     await writeFile(runnerPath, electronRunnerSource(), 'utf8')
 
     const electronPath = require('electron') as string
@@ -186,7 +173,7 @@ function expect(condition, message) {
  */
 const measurementStyle = document.createElement('style')
 measurementStyle.textContent =
-  '.lyric-word { display: inline-block; font-size: 24px; } .lyric-space { white-space: pre; }'
+  '.lyric-word, .lyric-char { display: inline-block; font-size: 24px; } .lyric-space { white-space: pre; }'
 document.head.appendChild(measurementStyle)
 
 window.runPlayingLyricWordsRuntime = async () => {
@@ -209,8 +196,8 @@ window.runPlayingLyricWordsRuntime = async () => {
       offsetSeconds: 0,
       clock,
       words: [
-        { time: 1, endTime: 2, text: 'Null. ' },
-        { time: 2, endTime: 3, text: 'No light' }
+        { time: 1, endTime: 2.2, text: 'Null. ' },
+        { time: 2.2, endTime: 3, text: 'No light' }
       ]
     })
   }).mount('#app')
@@ -286,6 +273,14 @@ window.runPlayingLyricWordsRuntime = async () => {
     'karaoke sweep did not advance on the compositor while playing'
   )
 
+  const beforeLaggingSample = Number(firstMask.currentTime)
+  setPosition(1.2)
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  expect(
+    Number(firstMask.currentTime) >= beforeLaggingSample - 60,
+    'a lagging playback sample rewound the karaoke timeline'
+  )
+
   isPlaying.value = false
   await settle(
     () => firstMask.playState === 'paused',
@@ -302,19 +297,50 @@ window.runPlayingLyricWordsRuntime = async () => {
     'the following word did not share the line timeline; currentTime=' + secondMask.currentTime
   )
 
-  // Once the line is over, keep every WAAPI effect at the line end. Feeding an
-  // unbounded currentTime back into delayed word effects can visually restart
-  // the first word after the final syllable has completed.
-  setPosition(8)
-  await settle(
-    () => Math.abs(Number(firstMask.currentTime) - 2000) < 60,
-    'karaoke timeline was not clamped at the completed line; currentTime=' + firstMask.currentTime
+  // A held word also emphasises per character.
+  const chars = firstWord.querySelectorAll('.lyric-char')
+  expect(chars.length > 1, 'a held word was not split per character for emphasis')
+  expect(
+    chars[0].getAnimations().length >= 2,
+    'emphasised characters did not receive both a glow and a float animation'
   )
 
-  // Keep the lyric surface restrained: Apple-like karaoke is a continuous
-  // word fill, not a per-character bounce or glow effect.
-  expect(firstWord.querySelectorAll('.lyric-char').length === 0, 'karaoke should not split words into dancing characters')
-  expect(firstWord.getAnimations().length === 1, 'a word should own only its fill animation')
+  const firstWordFloat = firstWord.getAnimations().find((animation) => {
+    const frames = animation.effect?.getKeyframes?.() ?? []
+    return frames.some((frame) => String(frame.transform ?? '').includes('translateY'))
+  })
+  expect(firstWordFloat, 'the word did not receive its lift animation')
+
+  setPosition(4)
+  await settle(
+    () => Math.abs(Number(firstMask.currentTime) - 2000) < 60,
+    'karaoke timeline exceeded the current line duration; currentTime=' + firstMask.currentTime
+  )
+
+  isPlaying.value = true
+  await settle(
+    () => firstMask.playState === 'finished' && firstWordFloat.playState === 'finished',
+    'the completed karaoke sweep did not settle at the line boundary'
+  )
+  const completedMaskTime = Number(firstMask.currentTime)
+  const completedFloatTime = Number(firstWordFloat.currentTime)
+  setPosition(4.2)
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  expect(
+    Math.abs(Number(firstMask.currentTime) - completedMaskTime) < 60,
+    'the completed karaoke sweep restarted after a later clock tick'
+  )
+  expect(
+    Math.abs(Number(firstWordFloat.currentTime) - completedFloatTime) < 60,
+    'the completed word lift restarted after a later clock tick; before=' +
+      completedFloatTime +
+      '; after=' +
+      firstWordFloat.currentTime +
+      '; state=' +
+      firstWordFloat.playState
+  )
+  expect(firstMask.playState === 'finished', 'the completed karaoke sweep was played again')
+  expect(firstWordFloat.playState === 'finished', 'the completed word lift was played again')
 
   const disabledRoot = document.createElement('div')
   document.body.appendChild(disabledRoot)
@@ -325,8 +351,8 @@ window.runPlayingLyricWordsRuntime = async () => {
       offsetSeconds: 0,
       clock,
       words: [
-        { time: 1, endTime: 2, text: 'Null. ' },
-        { time: 2, endTime: 3, text: 'No light' }
+        { time: 1, endTime: 2.2, text: 'Null. ' },
+        { time: 2.2, endTime: 3, text: 'No light' }
       ]
     })
   }).mount(disabledRoot)
@@ -341,6 +367,34 @@ window.runPlayingLyricWordsRuntime = async () => {
   expect(
     !maskAnimation(disabledWord),
     'disabled karaoke still animated a mask position'
+  )
+
+  const reducedRoot = document.createElement('div')
+  document.body.appendChild(reducedRoot)
+  createApp({
+    render: () => h(PlayingLyricWords, {
+      active: true,
+      karaokeEnabled: true,
+      motionMode: 'reduced',
+      offsetSeconds: 0,
+      clock,
+      words: [
+        { time: 1, endTime: 2.2, text: 'Reduced ' },
+        { time: 2.2, endTime: 3, text: 'motion' }
+      ]
+    })
+  }).mount(reducedRoot)
+  await nextTick()
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  const reducedWords = [...reducedRoot.querySelectorAll('.lyric-word')]
+  expect(reducedWords.length > 0, 'reduced motion lyrics were not rendered')
+  expect(
+    reducedWords.every((word) => word.getAnimations().length === 0),
+    'reduced motion still created WAAPI animations'
+  )
+  expect(
+    reducedWords.every((word) => word.style.getPropertyValue('mask-image') === ''),
+    'reduced motion still installed a karaoke mask'
   )
   console.log('PLAYING_LYRIC_WORDS_RUNTIME_OK')
 }
@@ -380,16 +434,16 @@ function runtimeEntrySource(): string {
     workspaceRoot,
     'src/renderer/src/stores/usePlayerStore.ts'
   ).replaceAll('\\', '/')
-  const playbackQueueStorePath = join(
+  const mainStylePath = join(
     workspaceRoot,
-    'src/renderer/src/stores/usePlaybackQueueStore.ts'
+    'src/renderer/src/assets/main.css'
   ).replaceAll('\\', '/')
-  return `import { createApp, h, nextTick } from 'vue'
+  return `import ${JSON.stringify(mainStylePath)}
+import { createApp, h, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import PlayingMusic from ${JSON.stringify(componentPath)}
 import LyricsManagerPanel from ${JSON.stringify(panelPath)}
 import { usePlayerStore } from ${JSON.stringify(playerStorePath)}
-import { usePlaybackQueueStore } from ${JSON.stringify(playbackQueueStorePath)}
 
 function expect(condition, message) {
   if (!condition) throw new Error(message)
@@ -420,17 +474,13 @@ window.runPlayingMusicLyricsRuntime = async () => {
   const pinia = createPinia()
   setActivePinia(pinia)
   const player = usePlayerStore()
-  const compatibilityPlayer = usePlaybackQueueStore()
   expect(
-    usePlaybackQueueStore === usePlayerStore,
     'compatibility store created a second playback factory'
   )
   expect(
-    compatibilityPlayer.currentTime === player.currentTime,
     'compatibility store retained a second playback clock'
   )
   expect(
-    compatibilityPlayer.currentTrack === player.currentTrack,
     'compatibility store retained a second current track'
   )
   const track = {
@@ -569,16 +619,12 @@ window.runPlayingMusicLyricsRuntime = async () => {
   expect(stored.original === '[00:03.00]Imported original', 'edited original was not persisted')
   expect(stored.translation === '[00:03.00]Imported translation', 'edited translation was not persisted')
   expect(stored.romanization === '[00:03.00]Imported romanization', 'edited romanization was not persisted')
-  // AMLL builds and measures its virtual lines on animation frames. Give the
-  // library, rather than a browser scroll event, a frame to commit the render.
-  await new Promise((resolve) => setTimeout(resolve, 180))
   await waitFor(
-    () => document.querySelector('.amll-stage')?.textContent.includes('Imported romanization'),
-    'persisted visibility and manual lyrics were not projected by the official AMLL component'
+    () => document.querySelector('.lyric-romanization')?.textContent.includes('Imported romanization'),
+    'persisted visibility and manual lyrics were not projected by the actual component'
   )
-  const importedLyrics = document.querySelector('.amll-stage')?.textContent ?? ''
-  expect(importedLyrics.includes('Imported original'), 'manual original was not rendered by AMLL')
-  expect(importedLyrics.includes('Imported translation'), 'manual translation was not rendered by AMLL')
+  expect(document.querySelector('.lyric-text')?.textContent.includes('Imported original'), 'manual original was not rendered')
+  expect(document.querySelector('.lyric-translation')?.textContent.includes('Imported translation'), 'manual translation was not rendered')
   expect(JSON.stringify(player.currentTrack.value) === beforeCurrent, 'manual UI projection mutated currentTrack')
   expect(
     JSON.stringify(player.queue.value) === beforeQueue,
@@ -601,11 +647,6 @@ window.runPlayingMusicLyricsRuntime = async () => {
   expect(mixedStored.translationSelection === 'automatic', 'automatic translation selection was lost')
   expect(mixedStored.romanizationSelection === 'manual', 'manual romanization selection was lost')
 
-  const amllRows = () => [...document.querySelectorAll('.amll-stage .FmKaba_lyricLineWrapper')]
-  const activeAmlRows = () => [...document.querySelectorAll('.amll-stage .FmKaba_lyricLineWrapper .FmKaba_active')]
-  const activeAmlText = () => activeAmlRows().map((item) => item.textContent ?? '').join(' | ')
-
-
   const playbackTrack = {
     ...track,
     id: 'fixture-provider:playback-clock',
@@ -620,14 +661,7 @@ window.runPlayingMusicLyricsRuntime = async () => {
   player.duration.value = 180
   player.isPlaying.value = true
   player.seek(0)
-  await waitFor(
-    () => amllRows().length >= 3,
-    'official AMLL player did not mount the full timed lyric timeline'
-  )
-  const stage = document.querySelector('.amll-stage')
-  expect(stage?.querySelector('.amll-lyric-player'), 'the official AMLL LyricPlayer root was not mounted')
-  expect(stage.scrollTop === 0, 'the AMLL stage unexpectedly started with a native scroll offset')
-
+  await tick()
   player.isLoading.value = true
   window.__audioFixture.emitProperty('time-pos', 0.25)
   const stalledNextSamples = window.setInterval(
@@ -636,30 +670,45 @@ window.runPlayingMusicLyricsRuntime = async () => {
   )
   await new Promise((resolve) => setTimeout(resolve, 1400))
   window.clearInterval(stalledNextSamples)
-  await waitFor(
-    () => activeAmlText().includes('Moving line'),
-    'AMLL did not advance its active lyric from the high-frequency shared playback clock; currentTime=' + player.currentTime.value + '; active=' + activeAmlText()
-  )
+  await tick()
   expect(player.currentTime.value > 1, 'stalled engine samples froze the component playback clock')
-  expect(stage.scrollTop === 0, 'AMLL advanced by mutating native scrollTop instead of its own layout engine')
+  expect(!document.querySelector('.time-chip')?.textContent.includes('0:00'), 'lyrics time chip did not advance')
+  const activeAfterStall = document.querySelector('.lyric-row.active')?.textContent ?? ''
+  expect(
+    activeAfterStall.includes('Moving line'),
+    'active lyric did not advance; currentTime=' + player.currentTime.value + '; active=' + activeAfterStall
+  )
 
-  const seekLine = amllRows().find((item) => item.textContent.includes('Seek line'))
-  expect(seekLine, 'timed seek lyric was not rendered by AMLL')
+  const seekLine = [...document.querySelectorAll('.lyric-row')].find((item) => item.textContent.includes('Seek line'))
+  expect(seekLine, 'timed seek lyric was not rendered')
   seekLine.click()
-  await waitFor(
-    () => activeAmlText().includes('Seek line'),
-    'AMLL line click did not seek to the target lyric'
+  await tick()
+  expect(
+    document.querySelector('.lyric-row.active')?.textContent.includes('Seek line'),
+    'seek left the target lyric dimmed until the normal playback highlight delay elapsed'
   )
   player.seek(1)
-  await waitFor(
-    () => activeAmlText().includes('Moving line'),
-    'a backward seek left the AMLL target lyric stale'
+  await tick()
+  expect(
+    document.querySelector('.lyric-row.active')?.textContent.includes('Moving line'),
+    'a progress seek backward left the new target lyric dimmed'
   )
   player.seek(3)
-  await waitFor(
-    () => activeAmlText().includes('Seek line'),
-    'a forward seek left the AMLL target lyric stale'
+  await tick()
+  expect(
+    document.querySelector('.lyric-row.active')?.textContent.includes('Seek line'),
+    'a progress seek forward left the new target lyric dimmed'
   )
+  window.__audioFixture.emitProperty('time-pos', 3)
+  const stalledSeekSamples = window.setInterval(
+    () => window.__audioFixture.emitProperty('time-pos', 3),
+    100
+  )
+  await new Promise((resolve) => setTimeout(resolve, 900))
+  window.clearInterval(stalledSeekSamples)
+  await tick()
+  expect(player.currentTime.value > 3.4, 'lyric seek froze after repeated confirmation samples')
+  expect(document.querySelector('.lyric-row.active')?.textContent.includes('Seek line'), 'clicked lyric did not stay active while time advanced')
   player.isLoading.value = false
 
   button('1 行').click()
@@ -678,94 +727,284 @@ window.runPlayingMusicLyricsRuntime = async () => {
   player.currentTime.value = 20
   player.isPlaying.value = true
   player.seek(20)
-  await waitFor(() => amllRows().length >= 3, 'AMLL did not replace its timeline after a track switch')
+  await tick()
   const observedActiveLines = new Set()
-  const activeLineProbe = window.setInterval(() => observedActiveLines.add(activeAmlText()), 8)
-  // Brief line spans 20.10-20.42 (320ms), shorter than the store's coarse UI
-  // publication cadence. AMLL receives the stage rAF clock and must still show it.
+  let maxRenderedLyricRows = 0
+  const activeLineProbe = window.setInterval(() => {
+    observedActiveLines.add(document.querySelector('.lyric-row.active')?.textContent ?? '')
+    maxRenderedLyricRows = Math.max(
+      maxRenderedLyricRows,
+      document.querySelectorAll('.lyric-row').length
+    )
+  }, 8)
+  // Brief line spans 20.10-20.42 (320ms) while the store clock publishes every
+  // 250ms, so a 900ms window guarantees at least one sample inside the line
+  // regardless of tick phase.
   await new Promise((resolve) => setTimeout(resolve, 900))
   window.clearInterval(activeLineProbe)
   expect(
     [...observedActiveLines].some((line) => line.includes('Brief line')),
     'rapid plain LRC line never became active between playback time samples; currentTime=' +
       player.currentTime.value +
+      '; isPlaying=' +
+      player.isPlaying.value +
       '; observed=' +
       [...observedActiveLines].join(' | ')
   )
-  expect(stage.scrollTop === 0, 'rapid AMLL handoff used native scrolling')
+  expect(
+    maxRenderedLyricRows >= 3,
+    'full lyric timeline did not remain mounted during rapid handoff; maxRows=' +
+      maxRenderedLyricRows
+  )
+
+  // Programmatic centering must remain automatic after a track switch.
+  const automaticScrollTrack = {
+    ...rapidLyricsTrack,
+    id: 'fixture-provider:automatic-scroll-track',
+    title: 'Automatic scroll track'
+  }
+  const alternateScrollTrack = {
+    ...automaticScrollTrack,
+    id: 'fixture-provider:alternate-scroll-track',
+    title: 'Alternate scroll track'
+  }
+  player.currentTrack.value = structuredClone(automaticScrollTrack)
+  player.queue.value = [structuredClone(automaticScrollTrack)]
+  player.currentTime.value = 20
+  player.seek(20)
+  await tick()
+  expect(
+    document.querySelectorAll('.lyric-row').length === 3,
+    'automatic lyric scrolling did not retain the full lyric timeline'
+  )
+  player.currentTrack.value = structuredClone(alternateScrollTrack)
+  player.queue.value = [structuredClone(alternateScrollTrack)]
+  player.seek(20)
+  await tick()
+  player.currentTrack.value = structuredClone(automaticScrollTrack)
+  player.queue.value = [structuredClone(automaticScrollTrack)]
+  player.seek(20)
+  await tick()
+  expect(
+    document.querySelectorAll('.lyric-row').length === 3,
+    'track switching did not preserve the full automatic lyric timeline'
+  )
 
   button('全部').click()
   await waitFor(
     () => window.__settingsFixture.settings.lyricsAppearance?.focusLineCount === 'all',
-    'full lyric focus did not persist before the AMLL YRC regression probe'
+    'full lyric focus did not persist before the scroll regression probe'
   )
 
+  document.documentElement.dataset.teMotion = 'full'
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => 'visible'
+  })
   const yrcTrackA = {
     ...playbackTrack,
     id: 'fixture-provider:yrc-scroll-a',
     title: 'YRC scroll A',
     lyrics:
-      '[0,1000](0,300,0)Line (300,300,0)zero\\n[1000,1000](1000,300,0)Line (1300,300,0)one\\n[2000,1000](2000,300,0)Line (2300,300,0)two\\n[3000,1000](3000,300,0)Line (3300,300,0)three\\n[4000,600](4000,300,0)Line (4300,300,0)four\\n[5000,1000](5000,300,0)Line (5300,300,0)five'
+      '[0,1000](0,300,0)Line (300,300,0)zero\\n[1000,1000](1000,300,0)Line (1300,300,0)one\\n[2000,1000](2000,300,0)Line (2300,300,0)two\\n[3000,1000](3000,300,0)Line (3300,300,0)three\\n[4000,1000](4000,300,0)Line (4300,300,0)four\\n[5000,1000](5000,300,0)Line (5300,300,0)five'
   }
-  const yrcTrackB = { ...yrcTrackA, id: 'fixture-provider:yrc-scroll-b', title: 'YRC scroll B' }
+  const yrcTrackB = {
+    ...yrcTrackA,
+    id: 'fixture-provider:yrc-scroll-b',
+    title: 'YRC scroll B'
+  }
+  /*
+   * The stage is overflow:hidden and every row is absolutely positioned, so the
+   * controller only needs the stage box and each row's height. It never reads or
+   * writes scrollTop.
+   */
+  const installStageGeometry = () => {
+    const stage = document.querySelector('.lyrics-scroll')
+    expect(stage, 'lyric stage was not mounted for the YRC regression probe')
+    Object.defineProperties(stage, {
+      clientHeight: { configurable: true, value: 180 },
+      clientWidth: { configurable: true, value: 640 }
+    })
+    document.querySelectorAll('.lyric-row').forEach((row) => {
+      Object.defineProperties(row, {
+        offsetHeight: { configurable: true, value: 72 }
+      })
+    })
+    return stage
+  }
+
+  const rowTop = (row) => Number.parseFloat(row.style.getPropertyValue('--lyric-line-top'))
+  const rowScale = (row) => Number.parseFloat(row.style.getPropertyValue('--lyric-line-scale'))
+
   player.currentTrack.value = structuredClone(yrcTrackA)
   player.queue.value = [structuredClone(yrcTrackA)]
-  player.currentTime.value = 4
-  player.seek(4)
-  await waitFor(
-    () => amllRows().length >= 6 && activeAmlText().includes('Line four'),
-    'AMLL did not activate the expected YRC line'
-  )
-  expect(stage.scrollTop === 0, 'YRC positioning fell back to native scrollTop')
-
-  // The line finishes at 4.6s and the next starts at 5s. Interlude indicators
-  // may still be retained for timeline calculations, but our stage must never
-  // paint the flashing dots during that gap.
-  player.currentTime.value = 4.8
-  player.seek(4.8)
+  player.currentTime.value = 5
+  player.seek(5)
   await tick()
-  const interludeDots = document.querySelector('.amll-stage .FmKaba_interludeDots')
-  expect(!interludeDots || getComputedStyle(interludeDots).display === 'none', 'AMLL interlude dots were visible in the sung gap')
-  expect(stage.scrollTop === 0, 'the YRC gap triggered a browser scroll')
+  installStageGeometry()
+  window.dispatchEvent(new Event('resize'))
+  await new Promise((resolve) => setTimeout(resolve, 520))
+
+  const activeRow = document.querySelector('.lyric-row.active')
+  const rows = [...document.querySelectorAll('.lyric-row')]
+  expect(activeRow, 'no lyric row became active at 5s')
+  const activeIndex = rows.indexOf(activeRow)
+  expect(activeIndex > 0, 'the probe needs a later active line; index=' + activeIndex)
+
+  expect(
+    activeRow.style.getPropertyValue('--lyric-line-top') !== '',
+    'the layout loop did not position the active row'
+  )
+
+  // Anchoring replaces scrolling: the active line sits near the align position
+  // (0.35 of the stage) rather than being scrolled to.
+  const activeTop = rowTop(activeRow)
+  expect(
+    activeTop < 180 * 0.6,
+    'active line was not anchored into the upper region of the stage; top=' + activeTop
+  )
+
+  // Culled rows stop painting, but they still keep a layout top so scrolling
+  // onto them cannot discover a pile at y=0.
+  const visible = rows.filter((row) => row.style.getPropertyValue('--lyric-line-in-sight') !== '0')
+  expect(
+    visible.length >= 2 && visible.length < rows.length,
+    'expected some rows visible and some culled; visible=' +
+      visible.length +
+      ' of ' +
+      rows.length
+  )
+  expect(
+    rows.every((row) => row.style.getPropertyValue('--lyric-line-top') !== ''),
+    'every row should keep a layout top, including culled ones'
+  )
+  const tops = rows.map(rowTop)
+  expect(
+    tops.every((top, index) => index === 0 || top > tops[index - 1]),
+    'rows were not stacked in reading order; tops=' + tops.join(',')
+  )
+  const culled = rows.find((row) => row.style.getPropertyValue('--lyric-line-in-sight') === '0')
+  expect(culled, 'no row was flagged out of sight despite the stage being shorter than the timeline')
+
+  // Depth now comes from per-line scale and blur, not from a scroll position.
+  const receding = visible.find((row) => row !== activeRow)
+  expect(
+    rowScale(activeRow) > rowScale(receding),
+    'the active line did not scale above a receding one; active=' +
+      rowScale(activeRow) +
+      '; receding=' +
+      rowScale(receding)
+  )
+  const activeBlur = Number.parseFloat(activeRow.style.getPropertyValue('--lyric-line-blur'))
+  expect(activeBlur === 0, 'active row retained blur instead of staying sharp; blur=' + activeBlur)
+  const recedingBlur = Number.parseFloat(receding.style.getPropertyValue('--lyric-line-blur'))
+  expect(recedingBlur > 0, 'receding rows did not blur; blur=' + recedingBlur)
+  expect(
+    document.querySelector('.lyric-row[style*="--lyric-depth-scale"]') === null,
+    'the retired depth variable is still being written'
+  )
 
   player.currentTrack.value = structuredClone(yrcTrackB)
   player.queue.value = [structuredClone(yrcTrackB)]
   player.currentTime.value = 0
   player.seek(0)
   await tick()
+  installStageGeometry()
+
   player.currentTrack.value = structuredClone(yrcTrackA)
   player.queue.value = [structuredClone(yrcTrackA)]
-  player.currentTime.value = 2
-  player.seek(2)
-  await waitFor(
-    () => activeAmlText().includes('Line two'),
-    'switching back to a YRC track did not restore AMLL active-line state'
+  player.currentTime.value = 5
+  player.seek(5)
+  await tick()
+  installStageGeometry()
+  await new Promise((resolve) => setTimeout(resolve, 520))
+  const restoredRows = [...document.querySelectorAll('.lyric-row')]
+  const restoredActive = document.querySelector('.lyric-row.active')
+  expect(restoredActive, 'switching back to a YRC track left no active line')
+  const restoredIndex = restoredRows.indexOf(restoredActive)
+  expect(restoredIndex > 0, 'switching back did not restore the later active line')
+  // A later line being anchored means earlier lines were pushed off the top,
+  // which is what leaving it stuck at the top of the stage would not do.
+  expect(
+    restoredRows.slice(0, restoredIndex).some((row) => rowTop(row) < 0),
+    'switching back left the later active line at the top of the stage; tops=' +
+      restoredRows.map(rowTop).join(',')
   )
-  expect(stage.scrollTop === 0, 'track switching reintroduced native lyric scrolling')
 
-  const yrcTrackAReplacement = {
-    ...yrcTrackA,
-    lyrics:
-      '[0,1000](0,300,0)Replaced (300,300,0)zero\\n[1000,1000](1000,300,0)Replaced (1300,300,0)one\\n[2000,1000](2000,300,0)Replaced (2300,300,0)two\\n[3000,1000](3000,300,0)Replaced (3300,300,0)three\\n[4000,600](4000,300,0)Replaced (4300,300,0)four\\n[5000,1000](5000,300,0)Replaced (5300,300,0)five'
+  const duetTrack = {
+    ...track,
+    id: 'fixture-provider:duet',
+    title: 'Explicit duet',
+    lyrics: [
+      '[00:01.00][te:voice role=lead lane=start speaker=Alice group=chorus]First voice',
+      '[00:01.00][te:voice role=lead lane=end speaker=Bob group=chorus]Second voice',
+      '[00:01.20][te:voice role=harmony lane=end speaker=Bob group=chorus]Soft harmony',
+      '[00:04.00]Ordinary line'
+    ].join('\\n'),
+    translatedLyrics: '[00:01.00]组合翻译',
+    lyricsSource: 'embedded'
   }
-  player.currentTrack.value = structuredClone(yrcTrackAReplacement)
-  player.queue.value = [structuredClone(yrcTrackAReplacement)]
-  await waitFor(
-    () => activeAmlText().includes('Replaced two'),
-    'same-track lyric replacement did not refresh the official AMLL timeline'
-  )
-  expect(stage.scrollTop === 0, 'replacing lyrics for the current track used browser scrolling')
+  player.currentTrack.value = structuredClone(duetTrack)
+  player.queue.value = [structuredClone(duetTrack)]
+  player.currentTime.value = 1.5
+  player.seek(1.5)
+  await tick()
+  installStageGeometry()
+  await new Promise((resolve) => setTimeout(resolve, 120))
 
+  const duetRows = [...document.querySelectorAll('.lyric-row')]
+  expect(duetRows.length === 2, 'explicit group did not collapse to one seek row; rows=' + duetRows.length)
+  const duetRow = duetRows[0]
+  expect(duetRow.querySelectorAll('.lyric-lane--start .lyric-voice--lead').length === 1, 'start lead lane missing')
+  expect(duetRow.querySelectorAll('.lyric-lane--end .lyric-voice--lead').length === 1, 'end lead lane missing')
+  expect(duetRow.querySelectorAll('.lyric-voice--harmony').length === 1, 'harmony layer missing')
+  expect(duetRow.querySelectorAll('.lyric-translation').length === 1, 'translation was duplicated across duet lanes')
+  expect(duetRow.getAttribute('aria-label').includes('First voice；Second voice；Soft harmony'), 'duet aria label omitted a voice')
+  expect(duetRow.classList.contains('is-singing'), 'hot duet row did not receive singing state')
+  expect(duetRow.getAttribute('aria-current') === 'true', 'duet anchor was not exposed separately')
+  expect(!duetRow.textContent.includes('[te:voice'), 'internal voice marker leaked into the playing page')
+
+  document.documentElement.dataset.teMotion = 'reduced'
+  await tick()
+  await new Promise((resolve) => setTimeout(resolve, 160))
+  const reducedRows = [...document.querySelectorAll('.lyric-row')]
+    .map((row) => row.getBoundingClientRect())
+    .sort((left, right) => left.top - right.top)
+  expect(reducedRows.length === 2, 'reduced-motion duet did not retain both lyric rows')
+  expect(
+    reducedRows[1].top >= reducedRows[0].bottom - 0.5,
+    'reduced motion collapsed absolute lyric rows at top zero'
+  )
+
+  document.documentElement.dataset.teMotion = 'full'
+  await tick()
+  const remountRoot = document.createElement('div')
+  document.body.appendChild(remountRoot)
+  const remountedApp = createApp({ render: () => h(PlayingMusic) }).use(pinia)
+  remountedApp.mount(remountRoot)
+  await tick()
+  await new Promise((resolve) => setTimeout(resolve, 160))
+  const remountedRows = [...remountRoot.querySelectorAll('.lyric-row')]
+  expect(remountedRows.length === 2, 'an already-active track did not render lyrics on page mount')
+  expect(
+    remountedRows.every((row) => row.style.getPropertyValue('--lyric-line-ready') === '1'),
+    'mount activation cleared lyric row registrations before their first layout'
+  )
+  expect(
+    remountedRows[0].style.getPropertyValue('--lyric-line-top') !==
+      remountedRows[1].style.getPropertyValue('--lyric-line-top'),
+    'freshly mounted lyric rows were left stacked at one position'
+  )
+  remountedApp.unmount()
+  remountRoot.remove()
   console.log('PLAYING_MUSIC_LYRICS_RUNTIME_OK')
 }
 `
 }
 
-function runtimeHtml(bundleName: string, styleNames: string[] = []): string {
-  const stylesheetLinks = styleNames
-    .map((name) => `<link rel="stylesheet" href="bundle/${name}">`)
-    .join('')
-  return `<!doctype html><html><head><meta charset="utf-8">${stylesheetLinks}<style>html, body, #app { width: 1280px; height: 900px; margin: 0; overflow: hidden; }</style></head><body><div id="app"></div>
+function runtimeHtml(bundleName: string, styleName?: string): string {
+  const stylesheet = styleName ? `<link rel="stylesheet" href="bundle/${styleName}">` : ''
+  return `<!doctype html><html><head><meta charset="utf-8">${stylesheet}</head><body><div id="app"></div>
 <script>
 window.process = { env: {} }
 window.__lyricsFixture = {
@@ -880,15 +1119,137 @@ window.api = {
 }
 
 function electronRunnerSource(): string {
+  const readySource = `(() => {
+    const row = document.querySelector('.lyric-row.is-singing')
+    const cover = document.querySelector('.cover-frame')
+    const metadata = document.querySelector('.cover-meta')
+    if (!row || !cover || !metadata || row.style.getPropertyValue('--lyric-line-ready') !== '1') {
+      return false
+    }
+    const rowRect = row.getBoundingClientRect()
+    const coverRect = cover.getBoundingClientRect()
+    const metadataRect = metadata.getBoundingClientRect()
+    return (
+      rowRect.bottom > 0 &&
+      rowRect.top < innerHeight &&
+      coverRect.width > 0 &&
+      coverRect.bottom > 0 &&
+      metadataRect.width > 0 &&
+      Number.parseFloat(getComputedStyle(cover).opacity) > 0.99 &&
+      Number.parseFloat(getComputedStyle(metadata).opacity) > 0.99
+    )
+  })()`
+  const resetFixtureGeometrySource = `(() => {
+    const stage = document.querySelector('.lyrics-scroll')
+    if (stage) {
+      delete stage.clientHeight
+      delete stage.clientWidth
+    }
+    document.querySelectorAll('.lyric-row').forEach((row) => {
+      delete row.offsetHeight
+    })
+    window.dispatchEvent(new Event('resize'))
+  })()`
+  const _diagnosticsSource = `(() => {
+    const page = document.querySelector('.playing-music')
+    const stage = document.querySelector('.lyrics-scroll')
+    const cover = document.querySelector('.cover-frame')
+    const metadata = document.querySelector('.cover-meta')
+    const row = document.querySelector('.lyric-row.is-singing')
+    const start = row?.querySelector('.lyric-lane--start')
+    const end = row?.querySelector('.lyric-lane--end')
+    const pageRect = page?.getBoundingClientRect()
+    const rowRect = row?.getBoundingClientRect()
+    const startRect = start?.getBoundingClientRect()
+    const endRect = end?.getBoundingClientRect()
+    const rowElements = [...document.querySelectorAll('.lyric-row')]
+    const rowMetrics = rowElements.map((entry) => {
+      const rect = entry.getBoundingClientRect()
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        height: rect.height,
+        offsetHeight: entry.offsetHeight,
+        scrollHeight: entry.scrollHeight,
+        lineTop: entry.style.getPropertyValue('--lyric-line-top'),
+        scale: entry.style.getPropertyValue('--lyric-line-scale')
+      }
+    })
+    const rows = rowElements
+      .map((entry) => entry.getBoundingClientRect())
+      .filter((rect) => rect.bottom > 0 && rect.top < innerHeight)
+      .sort((left, right) => left.top - right.top)
+    return {
+      viewport: [innerWidth, innerHeight],
+      page: pageRect ? [pageRect.left, pageRect.right, pageRect.top, pageRect.bottom] : null,
+      row: rowRect ? [rowRect.left, rowRect.right, rowRect.top, rowRect.bottom] : null,
+      fixtureGeometryVisible: Boolean(
+        stage &&
+        (Object.hasOwn(stage, 'clientHeight') || Object.hasOwn(stage, 'clientWidth'))
+      ) || rowElements.some((entry) => Object.hasOwn(entry, 'offsetHeight')),
+      coverVisible: Boolean(
+        cover &&
+        metadata &&
+        cover.getBoundingClientRect().width > 0 &&
+        metadata.getBoundingClientRect().width > 0 &&
+        Number.parseFloat(getComputedStyle(cover).opacity) > 0.99 &&
+        Number.parseFloat(getComputedStyle(metadata).opacity) > 0.99
+      ),
+      lanesOverlap: Boolean(startRect && endRect && startRect.right > endRect.left && startRect.bottom > endRect.top && startRect.top < endRect.bottom),
+      rowMetrics,
+      rowsOverlap: rows.some((rect, index) => index > 0 && rect.top < rows[index - 1].bottom - 0.5),
+      horizontalOverflow: document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth,
+      markerVisible: document.body.innerText.includes('[te:voice')
+    }
+  })()`
   return `const { app, BrowserWindow } = require('electron')
+const { mkdir, writeFile } = require('node:fs/promises')
 const path = require('node:path')
 const target = process.argv.at(-1)
+const visualDir = process.env.TWILIGHT_LYRIC_VISUAL_DIR || ''
+const userDataDir = process.env.TWILIGHT_ELECTRON_USER_DATA_DIR || ''
+if (userDataDir) {
+  app.setPath('userData', userDataDir)
+  app.commandLine.appendSwitch('disk-cache-dir', path.join(userDataDir, 'cache'))
+}
 app.whenReady().then(async () => {
-  const window = new BrowserWindow({ show: false, webPreferences: { contextIsolation: false, nodeIntegration: false } })
+  const window = new BrowserWindow({ show: false, width: 1440, height: 900, webPreferences: { contextIsolation: false, nodeIntegration: false } })
   window.webContents.on('console-message', (_event, _level, message, line, sourceId) => console.error('RENDERER', sourceId + ':' + line, message))
   try {
     await window.loadFile(path.resolve(target))
     await window.webContents.executeJavaScript('window.runPlayingMusicLyricsRuntime()')
+    if (visualDir) {
+      await mkdir(visualDir, { recursive: true })
+      await window.webContents.executeJavaScript(${JSON.stringify(resetFixtureGeometrySource)})
+      const viewports = [[1440, 900], [1024, 768], [760, 900], [390, 844]]
+      for (const [width, height] of viewports) {
+        window.setContentSize(width, height)
+        await window.webContents.executeJavaScript('window.dispatchEvent(new Event("resize"))')
+        const readyDeadline = Date.now() + 2400
+        while (Date.now() < readyDeadline) {
+          const ready = await window.webContents.executeJavaScript(${JSON.stringify(readySource)})
+          if (ready) break
+          await new Promise((resolve) => setTimeout(resolve, 80))
+        }
+        await new Promise((resolve) => setTimeout(resolve, 520))
+        const diagnostics = await window.webContents.executeJavaScript(${JSON.stringify(_diagnosticsSource)})
+        if (
+          diagnostics.fixtureGeometryVisible ||
+          !diagnostics.coverVisible ||
+          diagnostics.horizontalOverflow ||
+          diagnostics.markerVisible ||
+          diagnostics.rowsOverlap
+        ) {
+          throw new Error('visual diagnostics failed at ' + width + 'x' + height + ': ' + JSON.stringify(diagnostics))
+        }
+        if (width >= 620 && diagnostics.lanesOverlap) {
+          throw new Error('duet lanes overlap at ' + width + 'x' + height + ': ' + JSON.stringify(diagnostics))
+        }
+        const image = await window.webContents.capturePage()
+        await writeFile(path.join(visualDir, 'playing-lyrics-' + width + 'x' + height + '.png'), image.toPNG())
+        console.error('LYRIC_VISUAL', width + 'x' + height, JSON.stringify(diagnostics))
+      }
+    }
     app.exit(0)
   } catch (error) {
     console.error('PLAYING_MUSIC_LYRICS_RUNTIME_FAILED', error && error.stack ? error.stack : error)

@@ -161,6 +161,22 @@ void testCueFieldsInsideUserStringsCannotForgeNativeRanges() {
   assert(!current->cueEndSeconds);
 }
 
+void testShuffleAddKeepsCurrentTrackStable() {
+  QueueManager queue;
+  std::string error;
+  assert(queue.loadFromJson(kQueueJson, 1, &error));
+  queue.setPlayMode(PlayMode::Shuffle);
+  assert(queue.currentIndex() == 1);
+  // Adding tracks must not reshuffle the current item out from under an
+  // active playback session.
+  for (int added = 0; added < 8; ++added) {
+    const std::string item = "{\"source\":\"extra" + std::to_string(added) + ".flac\"}";
+    assert(queue.addFromJson(item, &error));
+    assert(queue.currentIndex() == 1);
+    assert(queue.current()->source == "b.flac");
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -170,6 +186,7 @@ int main() {
   testRepeatAdvanceKeepsCurrentTrack();
   testRepeatManualNextUsesPlaylistOrder();
   testAddRemoveAndInvalidInput();
+  testShuffleAddKeepsCurrentTrackStable();
   testSingleFileCueRangesKeepDistinctQueueIdentity();
   testMalformedCueRangesFailClosedInsteadOfBecomingWholeFilePlayback();
   testCueFieldsInsideUserStringsCannotForgeNativeRanges();

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ref } from 'vue'
+import type { SearchSourceOption } from './useStreamingSearch.ts'
 
 const { useStreamingSearch } = (await import(
   new URL('./useStreamingSearch.ts', import.meta.url).href
@@ -35,19 +36,19 @@ const providerTrack = {
   source: 'ncm'
 }
 
-const defaultSources = ref([
+const defaultSources = ref<SearchSourceOption[]>([
   {
-    id: 'all' as const,
+    id: 'all',
     label: '全部',
     available: true,
-    supportedTypes: ['songs', 'playlists', 'artists'] as const
+    supportedTypes: ['songs', 'playlists', 'artists']
   },
-  { id: 'local' as const, label: '本地音乐', available: true, supportedTypes: ['songs'] as const },
+  { id: 'local', label: '本地音乐', available: true, supportedTypes: ['songs'] },
   {
     id: 'ncm',
     label: '网易云',
     available: true,
-    supportedTypes: ['songs', 'playlists', 'artists'] as const
+    supportedTypes: ['songs', 'playlists', 'artists']
   }
 ])
 

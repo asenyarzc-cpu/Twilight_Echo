@@ -47,14 +47,17 @@ function compareFallbackCandidates(
   )
 }
 
+export function clampProviderReliability(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1
+  return Math.max(0, Math.min(1, value))
+}
+
 function getSourceReliability(
   source: TrackSource,
   sourceReliability: Record<string, number | undefined>
 ): number {
   if (source === 'local') return 1
-  const value = sourceReliability[normalizeSource(source)]
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 1
-  return Math.max(0, Math.min(1, value))
+  return clampProviderReliability(sourceReliability[normalizeSource(source)])
 }
 
 function normalizeSource(source: string): TrackSource {

@@ -11,6 +11,8 @@ const localTrack: Track = {
   album: 'Breakfast',
   duration: 180,
   filePath: 'D:/Music/Moon River.flac',
+  fileName: 'Moon River.flac',
+  size: 1,
   cover: null,
   lyrics: null,
   source: 'local'
@@ -73,7 +75,9 @@ test('favorite button routes NetEase tracks to the NetEase provider instead of l
     calls,
     provider: {
       isTrackLiked: () => false,
-      likeTrack: async (trackId, like) => calls.push(`ncm:${trackId}:${like}`)
+      likeTrack: async (trackId, like): Promise<void> => {
+        calls.push(`ncm:${trackId}:${like}`)
+      }
     }
   })
   await settleFavoriteState()
@@ -98,7 +102,9 @@ test('a pending provider state read cannot overwrite a completed favorite toggle
         new Promise<boolean>((resolve) => {
           resolveLiked = resolve
         }),
-      likeTrack: async (trackId, like) => calls.push(`ncm:${trackId}:${like}`)
+      likeTrack: async (trackId, like): Promise<void> => {
+        calls.push(`ncm:${trackId}:${like}`)
+      }
     }
   })
   await settleFavoriteState()
@@ -119,7 +125,9 @@ test('favorite button removes liked NetEase tracks through the provider', async 
     isFavorite: true,
     provider: {
       isTrackLiked: () => true,
-      likeTrack: async (trackId, like) => calls.push(`ncm:${trackId}:${like}`)
+      likeTrack: async (trackId, like): Promise<void> => {
+        calls.push(`ncm:${trackId}:${like}`)
+      }
     }
   })
   await settleFavoriteState()
@@ -146,7 +154,9 @@ test('favorite button routes third-party streaming tracks to their provider', as
     calls,
     provider: {
       isTrackLiked: () => false,
-      likeTrack: async (trackId, like) => calls.push(`bili:${trackId}:${like}`)
+      likeTrack: async (trackId, like): Promise<void> => {
+        calls.push(`bili:${trackId}:${like}`)
+      }
     }
   })
   await settleFavoriteState()

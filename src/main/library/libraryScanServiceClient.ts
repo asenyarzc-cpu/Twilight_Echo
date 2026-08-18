@@ -73,7 +73,6 @@ export class LocalLibraryScanServiceClient extends EventEmitter implements Local
   constructor(options: LocalLibraryScanServiceClientOptions) {
     super()
     this.options = options
-    this.start()
   }
 
   async scan(
@@ -83,7 +82,8 @@ export class LocalLibraryScanServiceClient extends EventEmitter implements Local
   ): Promise<LocalLibraryWorkerScanResult> {
     await this.waitUntilReady()
     const child = this.child
-    if (!child) throw new Error(this.unavailableError || 'local library scan service is unavailable')
+    if (!child)
+      throw new Error(this.unavailableError || 'local library scan service is unavailable')
     const requestId = jobId || randomUUID()
     return await new Promise<LocalLibraryWorkerScanResult>((resolve, reject) => {
       this.pending.set(requestId, { resolve, reject, onProgress })
@@ -145,8 +145,12 @@ export class LocalLibraryScanServiceClient extends EventEmitter implements Local
       })
       this.child = child
       child.on('message', (message) => this.handleMessage(message as LocalLibraryScanWorkerMessage))
-      child.on('error', (error) => this.handleExit(error instanceof Error ? error.message : String(error)))
-      child.on('exit', (code) => this.handleExit(`local library scan service exited (${code ?? 'unknown'})`))
+      child.on('error', (error) =>
+        this.handleExit(error instanceof Error ? error.message : String(error))
+      )
+      child.on('exit', (code) =>
+        this.handleExit(`local library scan service exited (${code ?? 'unknown'})`)
+      )
       this.startupTimer = setTimeout(() => {
         this.handleExit('local library scan service startup timed out')
       }, this.options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS)

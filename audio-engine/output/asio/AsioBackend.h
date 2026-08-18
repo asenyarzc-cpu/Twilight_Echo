@@ -71,6 +71,8 @@ class AsioBackend final : public IOutputBackend {
   void queueRecoveryFromHostCallback(AsioHostEvent event, std::string message);
   void recoveryWorkerLoop();
   void joinRecoveryThread();
+  /** Stops the recovery worker (clearing pending requests), joins it, and re-arms start. */
+  void stopAndJoinRecoveryWorker();
   bool recover(AsioHostEvent event, const std::string& message);
   bool createAndStartHost(std::string* error);
 

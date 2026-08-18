@@ -71,14 +71,14 @@ test('configure and cancel enqueue immediate writes through the playback session
     ...(state ? { sleepTimer: state } : {})
   })
   const api = {
-    savePlaybackSession: async (next: PlaybackSession) => {
+    savePlaybackSession: async (next: PlaybackSession, _expectedRevision: number) => {
       savedTimers.push(next.sleepTimer)
       revision++
-      return { version: 2 as const, revision, updatedAt: new Date(0).toISOString(), data: next }
+      return { version: 2 as const, revision, savedAt: new Date(0).toISOString(), data: next }
     },
-    clearPlaybackSession: async () => {
+    clearPlaybackSession: async (_expectedRevision: number) => {
       revision++
-      return { version: 2 as const, revision, updatedAt: new Date(0).toISOString(), data: null }
+      return { version: 2 as const, revision, savedAt: new Date(0).toISOString(), data: null }
     }
   }
   const controller = createSleepTimerController({
@@ -138,14 +138,14 @@ test('a main-process trigger immediately persists a session without the terminal
     ...(state?.active ? { sleepTimer: state } : {})
   })
   const api = {
-    savePlaybackSession: async (next: PlaybackSession) => {
+    savePlaybackSession: async (next: PlaybackSession, _expectedRevision: number) => {
       snapshots.push(next)
       revision++
-      return { version: 2 as const, revision, updatedAt: new Date(0).toISOString(), data: next }
+      return { version: 2 as const, revision, savedAt: new Date(0).toISOString(), data: next }
     },
-    clearPlaybackSession: async () => {
+    clearPlaybackSession: async (_expectedRevision: number) => {
       revision++
-      return { version: 2 as const, revision, updatedAt: new Date(0).toISOString(), data: null }
+      return { version: 2 as const, revision, savedAt: new Date(0).toISOString(), data: null }
     }
   }
   const controller = createSleepTimerController({

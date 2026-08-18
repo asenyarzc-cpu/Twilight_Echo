@@ -4,6 +4,17 @@
  * local metadata matching so results stay consistent with library enrichment.
  */
 import { parseJsonWithNestingLimit } from '../security/jsonSafety.ts'
+import type {
+  OnlineLyricsCandidate,
+  OnlineLyricsQuery,
+  OnlineLyricsSearchResult
+} from '../../shared/lyricsManagement.ts'
+
+export type {
+  OnlineLyricsCandidate,
+  OnlineLyricsQuery,
+  OnlineLyricsSearchResult
+} from '../../shared/lyricsManagement.ts'
 
 export const LRCLIB_BASE_URL = 'https://lrclib.net/api'
 export const ONLINE_LYRICS_TIMEOUT_MS = 8_000
@@ -13,31 +24,6 @@ export const ONLINE_LYRICS_CACHE_MAX_ENTRIES = 64
 export const ONLINE_LYRICS_MIN_INTERVAL_MS = 800
 export const ONLINE_LYRICS_MAX_REQUESTS_PER_WINDOW = 20
 export const ONLINE_LYRICS_RATE_WINDOW_MS = 60_000
-
-export interface OnlineLyricsQuery {
-  title: string
-  artist: string
-  album?: string
-  durationSeconds?: number
-}
-
-export interface OnlineLyricsCandidate {
-  id: number | string
-  title: string
-  artist: string
-  album: string
-  durationSeconds: number | null
-  score: number
-  syncedLyrics: string | null
-  plainLyrics: string | null
-  source: 'lrclib'
-}
-
-export interface OnlineLyricsSearchResult {
-  query: OnlineLyricsQuery
-  candidates: OnlineLyricsCandidate[]
-  best: OnlineLyricsCandidate | null
-}
 
 type LrclibHit = {
   id?: number

@@ -2,9 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const { isCompatibleTwilightRange, validatePluginManifest } = (await import(
-  new URL('./manifest.ts', import.meta.url).href
-)) as typeof import('./manifest')
+const { compareSemver, isCompatibleTwilightRange, toManifest, validatePluginManifest } =
+  (await import(new URL('./manifest.ts', import.meta.url).href)) as typeof import('./manifest')
 
 const validManifest = {
   id: 'com.example.hello',
@@ -339,6 +338,41 @@ test('checks basic Twilight Echo engine ranges', () => {
   assert.equal(isCompatibleTwilightRange('>=0.21.0', '0.20.0'), false)
   assert.equal(isCompatibleTwilightRange('^0.20.0', '0.20.1'), true)
   assert.equal(isCompatibleTwilightRange('~0.20.0', '0.21.0'), false)
+})
+
+test('compares semver release triples with numeric parts', () => {
+  assert.equal(compareSemver('1.10.0', '1.9.9'), 1)
+  assert.equal(compareSemver('1.0.1', '1.0.0'), 1)
+  assert.equal(compareSemver('1.0.0', '1.0.0'), 0)
+  assert.equal(compareSemver('1.0.0', '1.0.1'), -1)
+})
+
+test('converts descriptors to the host manifest sent to plugin processes', async () => {
+  const manifest = validatePluginManifest({
+    ...validManifest,
+    signature: { schemaVersion: 1 }
+  })
+  const descriptor = {
+    ...manifest,
+    status: 'enabled' as const,
+    enabled: true,
+    builtIn: true,
+    error: null,
+    isDsp: false,
+    source: 'bundled' as const,
+    installedAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    paths: {
+      root: 'C:/plugins/com.example.hello',
+      versionRoot: 'C:/plugins/com.example.hello/1.0.0',
+      manifestPath: 'C:/plugins/com.example.hello/1.0.0/plugin.json',
+      dataDir: 'C:/plugin-data/com.example.hello',
+      logPath: 'C:/plugin-logs/com.example.hello.log'
+    }
+  }
+
+  assert.deepEqual(toManifest(descriptor), manifest)
+  assert.equal(JSON.stringify(toManifest(descriptor)), JSON.stringify(manifest))
 })
 
 test('accepts Phase 3 UI and theme sample manifests', () => {

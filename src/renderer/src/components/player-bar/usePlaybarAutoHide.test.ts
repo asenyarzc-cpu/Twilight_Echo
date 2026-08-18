@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
-import { effectScope, nextTick, ref } from 'vue'
+import { effectScope, nextTick, ref, type Ref } from 'vue'
 
 import { shouldRevealForPointer, usePlaybarAutoHide } from './usePlaybarAutoHide.ts'
 
@@ -50,8 +50,8 @@ interface Harness {
 }
 
 function createHarness(options: {
-  autoHide: ReturnType<typeof ref<boolean>>
-  keepOpen?: ReturnType<typeof ref<boolean>>
+  autoHide: Ref<boolean>
+  keepOpen?: Ref<boolean>
   revealThresholdPx?: number
   hideDelayMs?: number
   bar?: FakeElement
@@ -99,7 +99,7 @@ function createHarness(options: {
   }
   const hook = scope.run(() =>
     usePlaybarAutoHide({
-      autoHide: options.autoHide as ReturnType<typeof ref<boolean>> & { value: boolean },
+      autoHide: options.autoHide as Ref<boolean>,
       keepOpen: options.keepOpen ?? ref(false),
       revealThresholdPx: ref(options.revealThresholdPx ?? 120),
       hideDelayMs: ref(options.hideDelayMs ?? 900),

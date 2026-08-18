@@ -23,6 +23,7 @@ ignoredOptionalDependencies:
 
 patchedDependencies:
   '@neteasecloudmusicapienhanced/api@4.35.1': patches/@neteasecloudmusicapienhanced__api@4.35.1.patch
+  '@phosphor-icons/web@2.1.2': patches/@phosphor-icons__web@2.1.2.patch
 
 allowBuilds:
   electron: true

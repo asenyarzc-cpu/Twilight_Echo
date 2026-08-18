@@ -14,11 +14,45 @@ const lyricStyleVars = readFileSync(new URL('../utils/lyricsStyleVars.ts', impor
 const playerBarComponent = readFileSync(new URL('./PlayerBar.vue', import.meta.url), 'utf8')
 const playerBar = readFileSync(new URL('./player-bar/PlayerBar.css', import.meta.url), 'utf8')
 const equalizer = readFileSync(new URL('./EqualizerPage.vue', import.meta.url), 'utf8')
+const equalizerOpra = readFileSync(new URL('./equalizer/OpraEqPanel.vue', import.meta.url), 'utf8')
+const equalizerChart = readFileSync(
+  new URL('./equalizer/FrequencyResponseChart.vue', import.meta.url),
+  'utf8'
+)
+const equalizerGraphic = readFileSync(
+  new URL('./equalizer/GraphicEqPanel.vue', import.meta.url),
+  'utf8'
+)
+const equalizerToolbar = readFileSync(
+  new URL('./equalizer/FrequencyResponseToolbar.vue', import.meta.url),
+  'utf8'
+)
+const equalizerSurfaces = [
+  equalizer,
+  equalizerOpra,
+  equalizerChart,
+  equalizerGraphic,
+  equalizerToolbar
+].join('\n')
 const dspRack = readFileSync(new URL('./DspRackPage.vue', import.meta.url), 'utf8')
 const app = readFileSync(new URL('../App.vue', import.meta.url), 'utf8')
 const baseStyle = readFileSync(new URL('../assets/base.css', import.meta.url), 'utf8')
 const settingsPage = readFileSync(new URL('./SettingsPage.vue', import.meta.url), 'utf8')
+const settingsAppearance = readFileSync(
+  new URL('./settings-page/AppearanceSettingsSection.vue', import.meta.url),
+  'utf8'
+)
+const settingsThemeControls = readFileSync(
+  new URL('./settings-page/ThemeControlsSettings.vue', import.meta.url),
+  'utf8'
+)
+const settingsSurfaces = [settingsPage, settingsAppearance, settingsThemeControls].join('\n')
 const studio = readFileSync(new URL('./ThemeStudioPage.vue', import.meta.url), 'utf8')
+const studioEditor = readFileSync(
+  new URL('./theme-studio/useThemeStudioEditor.ts', import.meta.url),
+  'utf8'
+)
+const studioSurfaces = [studio, studioEditor].join('\n')
 const studioStyle = readFileSync(
   new URL('./theme-studio/ThemeStudioPage.css', import.meta.url),
   'utf8'
@@ -61,6 +95,11 @@ const pluginThemeRuntime = readFileSync(
 )
 const playerStore = readFileSync(new URL('../stores/usePlayerStore.ts', import.meta.url), 'utf8')
 const preload = readFileSync(new URL('../../../preload/index.ts', import.meta.url), 'utf8')
+const themesApi = readFileSync(
+  new URL('../../../preload/domains/themesApi.ts', import.meta.url),
+  'utf8'
+)
+const preloadSurfaces = [preload, themesApi].join('\n')
 const themeIpc = readFileSync(new URL('../../../main/ipc/themes.ts', import.meta.url), 'utf8')
 const themeArchive = readFileSync(
   new URL('../../../main/themes/themeArchive.ts', import.meta.url),
@@ -114,7 +153,13 @@ test('every registered playback token is wired into a real playback or DSP surfa
   const playbackVariables = THEME_TOKEN_DEFINITIONS.filter(
     (definition) => definition.group === 'playback'
   ).map((definition) => definition.cssVariable)
-  const playbackSurfaces = [playingMusic, lyricStyleVars, playerBar, equalizer, dspRack].join('\n')
+  const playbackSurfaces = [
+    playingMusic,
+    lyricStyleVars,
+    playerBar,
+    equalizerSurfaces,
+    dspRack
+  ].join('\n')
   assert.ok(playbackVariables.length >= 20)
   for (const variable of playbackVariables) assert.match(playbackSurfaces, new RegExp(variable))
 })
@@ -122,9 +167,9 @@ test('every registered playback token is wired into a real playback or DSP surfa
 test('theme studio is a dedicated navigable settings surface', () => {
   assert.match(app, /ThemeStudioPage/)
   assert.match(app, /@open-theme-studio="openThemeStudioPage"/)
-  assert.match(settingsPage, /打开主题工作室/)
-  assert.doesNotMatch(studio, /structuredClone\(profile\)/)
-  assert.match(studio, /个性化与材质/)
+  assert.match(settingsSurfaces, /打开主题工作室/)
+  assert.doesNotMatch(studioSurfaces, /structuredClone\(profile\)/)
+  assert.match(studioSurfaces, /个性化与材质/)
   assert.match(studio, /theme-domain-list/)
   assert.match(studio, /sourceFor\(definition\)/)
   assert.match(studio, /assetSource\(binding\.key\)/)
@@ -181,7 +226,7 @@ test('phase two runtime reuses cached cover media and supports native and timed 
   assert.match(themeStore, /resolveScheduledThemeTone/)
   assert.match(themeStore, /scheduleTimedToneRefresh/)
   assert.match(themeIpc, /nativeTheme\.on\('updated'/)
-  assert.match(preload, /themes:systemToneChanged/)
+  assert.match(preloadSurfaces, /themes:systemToneChanged/)
 })
 
 test('settings appearance choices override the active theme and provide usable density rules', () => {
@@ -201,20 +246,20 @@ test('settings appearance choices override the active theme and provide usable d
 })
 
 test('phase two studio exposes palettes, nine typography settings, and contrast protection', () => {
-  assert.match(studio, /THEME_ACCENT_PALETTES/)
-  assert.match(studio, /THEME_BACKGROUND_PALETTES/)
+  assert.match(studioEditor, /THEME_ACCENT_PALETTES/)
+  assert.match(studioEditor, /THEME_BACKGROUND_PALETTES/)
   assert.match(studio, /accentPalette\.length/)
   assert.match(studio, /backgroundPalette\.length/)
-  assert.match(studio, /typography\.bodySize/)
-  assert.match(studio, /typography\.titleWeight/)
-  assert.match(studio, /typography\.chromeText/)
+  assert.match(studioSurfaces, /typography\.bodySize/)
+  assert.match(studioSurfaces, /typography\.titleWeight/)
+  assert.match(studioSurfaces, /typography\.chromeText/)
   assert.match(studio, /updateTypographyMode\('titleCase'/)
   assert.match(studio, /updateTypographyMode\('lyricAccent'/)
   assert.match(studio, /updateTypographyMode\('titleColor'/)
-  assert.match(studio, /key: 'sansFont', tokenId: 'typography\.sans'/)
-  assert.match(studio, /key: 'displayFont', tokenId: 'typography\.display'/)
-  assert.match(studio, /key: 'roundedFont', tokenId: 'typography\.rounded'/)
-  assert.match(studio, /themeContrastRatio/)
+  assert.match(studioEditor, /key: 'sansFont', tokenId: 'typography\.sans'/)
+  assert.match(studioEditor, /key: 'displayFont', tokenId: 'typography\.display'/)
+  assert.match(studioEditor, /key: 'roundedFont', tokenId: 'typography\.rounded'/)
+  assert.match(studioEditor, /themeContrastRatio/)
   assert.match(themeStore, /ensureThemeTextContrast/)
 })
 
@@ -237,7 +282,7 @@ test('phase three icon, navigation, and library modes use static host-owned pres
   assert.match(sideMenu, /icon-slot="navigation\.streaming"/)
   assert.match(sideMenu, /data-te-navigation-style='rail'/)
   assert.match(sideMenu, /data-te-navigation-icon-scale='lg'/)
-  assert.match(studio, /updateIconFamily/)
+  assert.match(studioSurfaces, /updateIconFamily/)
   assert.match(studio, /updateNavigationMode\('style'/)
   assert.match(studio, /updateLibraryMode\('density'/)
   assert.match(songListView, /icon-slot="library\.search"/)
@@ -257,11 +302,11 @@ test('phase three icon, navigation, and library modes use static host-owned pres
 
 test('phase four player layouts, controls, equalizer modes, and visibility stay host-owned', () => {
   for (const layout of ['standard', 'full-cover', 'lyrics-focus', 'split', 'minimal']) {
-    assert.match(studio, new RegExp(`id: '${layout}'`))
+    assert.match(studioEditor, new RegExp(`id: '${layout}'`))
   }
   assert.match(studio, /class="layout-gallery"/)
-  assert.match(studio, /minimalHiddenSlots/)
-  assert.match(studio, /typeof explicit === 'boolean'/)
+  assert.match(studioEditor, /minimalHiddenSlots/)
+  assert.match(studioEditor, /typeof explicit === 'boolean'/)
   assert.match(playingMusic, /data-te-player-layout='full-cover'/)
   assert.match(playingMusic, /data-te-player-layout='lyrics-focus'/)
   assert.match(playingMusic, /data-te-player-layout='split'/)
@@ -270,22 +315,22 @@ test('phase four player layouts, controls, equalizer modes, and visibility stay 
   assert.match(playerBar, /data-te-player-controls='pro'/)
   assert.match(playerBar, /data-te-player-progress='spectrum'/)
   assert.match(playerBar, /data-te-visible-player-track-menu='false'/)
-  assert.match(equalizer, /data-te-equalizer-panel='glass'/)
-  assert.match(equalizer, /data-te-equalizer-spectrum='bars'/)
-  assert.match(equalizer, /data-te-visible-equalizer-spectrum='false'/)
+  assert.match(equalizerSurfaces, /data-te-equalizer-panel='glass'/)
+  assert.match(equalizerSurfaces, /data-te-equalizer-spectrum='bars'/)
+  assert.match(equalizerSurfaces, /data-te-visible-equalizer-spectrum='false'/)
   assert.match(dspRack, /data-te-equalizer-button='solid'/)
   assert.doesNotMatch(playingMusic, /usePlaybackQueueStore/)
 })
 
 test('phase five presets, recovery, window inheritance, and contextual entries stay declarative', () => {
-  assert.match(studio, /BUILT_IN_THEME_PRESETS/)
+  assert.match(studioEditor, /BUILT_IN_THEME_PRESETS/)
   assert.match(studio, /class="preset-gallery"/)
-  assert.match(studio, /derivePreset/)
-  assert.match(studio, /persistedHistory/)
-  assert.match(studio, /restoreVersion/)
-  assert.match(studio, /resetAll/)
-  assert.match(studio, /独立窗口/)
-  assert.match(studio, /updateWindowDefault/)
+  assert.match(studioSurfaces, /derivePreset/)
+  assert.match(studioEditor, /persistedHistory/)
+  assert.match(studioEditor, /restoreVersion/)
+  assert.match(studioEditor, /resetAll/)
+  assert.match(studioSurfaces, /独立窗口/)
+  assert.match(studioEditor, /updateWindowDefault/)
   assert.match(songListView, /定制此区域外观/)
   assert.match(playingMusic, /定制此区域外观/)
   assert.match(windowInheritance, /surfaceColor/)
@@ -314,8 +359,8 @@ test('phase six plugin shell layouts are API v3, host-owned, and compatibility-r
   assert.match(themeStore, /themeShellLayoutToCssVariables/)
   assert.match(app, /class="app-shell"/)
   assert.match(app, /grid-template-areas: var\(--te-shell-template-areas\)/)
-  assert.match(studio, /profile\.modes = normalizeThemeModes/)
-  assert.match(studio, /selectedPluginTheme\?\.compatibilityNotes/)
+  assert.match(studioEditor, /profile\.modes = normalizeThemeModes/)
+  assert.match(studioSurfaces, /selectedPluginTheme\?\.compatibilityNotes/)
   assert.equal(pluginThemeContract.pluginApiVersion, 3)
   assert.equal(pluginThemeContract.structuredThemeSchemaVersion, 3)
   assert.deepEqual(
@@ -352,7 +397,7 @@ test('preview and failed writes restore the persisted runtime without partially 
       themeStore.indexOf('style.textContent')
   )
   assert.match(themeStore, /previewProfile\.value = null[\s\S]*previewSelection\.value = null/)
-  assert.match(studio, /onBeforeUnmount\([\s\S]*previewTheme\(null\)/)
+  assert.match(studioEditor, /onBeforeUnmount\([\s\S]*previewTheme\(null\)/)
 })
 
 test('theme archives export v2, accept v1 migration input, and reject unknown versions', () => {
@@ -368,15 +413,15 @@ test('disabled or uninstalled plugin themes fall back to the built-in selection'
 })
 
 test('phase seven coalesces previews, records p95, and owns the full Electron matrix', () => {
-  const updateDraft = studio.match(/function updateDraft[\s\S]*?\n}/)?.[0] ?? ''
+  const updateDraft = studioEditor.match(/^  function updateDraft[\s\S]*?\n  \}/m)?.[0] ?? ''
   assert.match(updateDraft, /previewScheduler\.schedule\(next\)/)
   assert.doesNotMatch(updateDraft, /themeStore\.preview|saveProfile|window\.api/)
-  assert.match(studio, /await previewScheduler\.flush\(\)[\s\S]*themeStore\.saveProfile/)
-  assert.match(studio, /const toSave = cloneProfile\(draft\.value\)/)
+  assert.match(studioEditor, /await previewScheduler\.flush\(\)[\s\S]*themeStore\.saveProfile/)
+  assert.match(studioEditor, /const toSave = cloneProfile\(draft\.value\)/)
   assert.match(themeStore, /JSON\.parse\(JSON\.stringify\(profile\)\) as ThemeProfileV2/)
-  assert.match(studio, /请先应用主题后再导出/)
+  assert.match(studioSurfaces, /请先应用主题后再导出/)
   assert.match(studio, /:disabled="!draft \|\| isUnsavedDraft"/)
-  assert.match(studio, /onBeforeUnmount\(\(\) => \{\s*previewScheduler\.cancel\(\)/)
+  assert.match(studioEditor, /onBeforeUnmount\(\(\) => \{\s*previewScheduler\.cancel\(\)/)
   assert.match(previewScheduler, /window\.requestAnimationFrame/)
   assert.match(themePerformance, /preview: 32/)
   assert.match(themePerformance, /apply: 100/)
@@ -385,9 +430,9 @@ test('phase seven coalesces previews, records p95, and owns the full Electron ma
   assert.match(visualRegression, /matrixCases: 90/)
   assert.match(visualRegression, /presetCases: 7/)
   assert.match(visualRegression, /maxMountedRows > 20/)
-  assert.match(studio, /studioSearchQuery/)
-  assert.match(studio, /filteredStudioHits/)
-  assert.match(studio, /visibleDefinitions/)
+  assert.match(studioEditor, /studioSearchQuery/)
+  assert.match(studioEditor, /filteredStudioHits/)
+  assert.match(studioEditor, /visibleDefinitions/)
   assert.match(studio, /updateAppearanceMode\('effectsMode'/)
   assert.match(baseStyle, /data-te-effects-mode='reduced'/)
 })

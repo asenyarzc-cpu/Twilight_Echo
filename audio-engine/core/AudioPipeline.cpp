@@ -18,6 +18,11 @@
 #include <utility>
 #include <vector>
 
+#if defined(__x86_64__) || defined(_M_X64)
+#include <pmmintrin.h>
+#include <xmmintrin.h>
+#endif
+
 namespace twilight::audio {
 
 #if defined(_WIN32) && defined(TAE_ENABLE_ASIO)
@@ -495,6 +500,19 @@ size_t dsdBytesToInterleaved(
 uint64_t dsdRenderedFrameUnits(size_t byteFrames, const AudioFormat& format) {
   return static_cast<uint64_t>(byteFrames) * (isDsdSampleFormat(format.sampleFormat) ? 8U : 1U);
 }
+
+#if defined(__x86_64__) || defined(_M_X64)
+void enableDenormalFlushToZero() noexcept {
+  // IIR tails (EQ/crossfeed/bass management) and convolution tails decay into
+  // denormals after silence; on many x86 CPUs those ops run 1-2 orders of
+  // magnitude slower and blow the render budget exactly when playback resumes
+  // from quiet. MXCSR is per-thread and both setters are register writes.
+  _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+}
+#else
+void enableDenormalFlushToZero() noexcept {}
+#endif
 
 DsdBitOrder dsdBitOrderFromInfo(const DsdStreamInfo& info) {
   return info.bitOrder;
@@ -1522,6 +1540,7 @@ TAE_Result AudioPipeline::playInternal(
     const std::string& forcedDsdFallbackReason,
     const std::optional<NativeDsdRuntimeFacts>& forcedNativeDsdFallbackFacts,
     std::string* error) {
+  std::lock_guard<std::recursive_mutex> transportLock(transportMutex_);
   stop();
   if (item.source.empty()) return TAE_RESULT_INVALID_ARGUMENT;
   const double requestedPlaybackVolume = std::clamp(volume, 0.0, 1.0);
@@ -2121,6 +2140,7 @@ TAE_Result AudioPipeline::playInternal(
     renderedFrames_ = static_cast<uint64_t>(
         boundedStartTime * static_cast<double>(positionSampleRateForStream(stream_, outputFormat_)));
     renderDopMarkerIndex_ = 0;
+    renderVolumeCurrentBits_.store(doubleBits(-1.0), std::memory_order_relaxed);
     resetRateResampler();
     ended_ = false;
     deviceInvalidated_ = false;
@@ -2319,6 +2339,11 @@ TAE_Result AudioPipeline::togglePause() {
 }
 
 TAE_Result AudioPipeline::stop() {
+  std::lock_guard<std::recursive_mutex> transportLock(transportMutex_);
+  return stopUnlocked();
+}
+
+TAE_Result AudioPipeline::stopUnlocked() {
   std::unique_ptr<IOutputBackend> output;
   std::shared_ptr<DecodeStream> active;
   std::shared_ptr<DecodeStream> preload;
@@ -2386,6 +2411,7 @@ TAE_Result AudioPipeline::stop() {
     renderCrossfadeFramesProcessed_ = 0;
     renderCrossfadeTotalFrames_ = 0;
     renderedFrames_ = 0;
+    renderVolumeCurrentBits_.store(doubleBits(-1.0), std::memory_order_relaxed);
     resetRateResampler();
     ended_ = false;
     deviceInvalidated_ = false;
@@ -2929,12 +2955,34 @@ bool AudioPipeline::setOutputConfig(const OutputConfig& config, std::string* err
   // Keep render callbacks silent while the current backend is fully stopped,
   // then only publish the requested config after the candidate has reopened
   // and started. The previous topology is reopened on every candidate failure.
-  IOutputBackend* const output = output_.get();
-  const AudioFormat requestedFormat = outputFormat_;
-  const std::string deviceId = deviceId_;
-  const PipelineState previousState = state_;
   renderState_.store(PipelineState::Paused, std::memory_order_release);
   lock.unlock();
+  // The reopen below runs with mutex_ released; serialize it against
+  // play/stop/skipToPreloaded (transportMutex_) and re-validate the backend
+  // under the lock — a concurrent transport operation may have replaced or
+  // closed output_ while we waited.
+  std::lock_guard<std::recursive_mutex> transportLock(transportMutex_);
+  IOutputBackend* output = nullptr;
+  AudioFormat requestedFormat;
+  std::string deviceId;
+  PipelineState previousState = PipelineState::Stopped;
+  {
+    std::lock_guard revalidate(mutex_);
+    output = output_.get();
+    requestedFormat = outputFormat_;
+    deviceId = deviceId_;
+    previousState = state_;
+  }
+  if (!output) {
+    // The backend went away while we waited for the transport lock; nothing
+    // to reopen, so fall through to the stopped-path bookkeeping.
+    std::lock_guard revalidate(mutex_);
+    outputConfig_ = config;
+    applyRoutingLocked(config);
+    updatePerfectLocked();
+    publishStatusLocked();
+    return true;
+  }
 
   const auto startOutput = [this, output](std::string* startError) {
     return output->startTyped(
@@ -3320,11 +3368,15 @@ bool AudioPipeline::preloadNext(const std::optional<QueueItem>& item, std::strin
 }
 
 bool AudioPipeline::skipToPreloaded(const QueueItem& item, std::string* error) {
+  std::lock_guard<std::recursive_mutex> transportLock(transportMutex_);
   std::shared_ptr<DecodeStream> oldActive;
   {
     std::lock_guard lock(mutex_);
     synchronizeRenderPromotionLocked();
-    if (crossfadeMixActive_) {
+    // The live overlap state lives on the render thread. crossfadeMixActive_ is
+    // the control-side mirror and is never set, so reading it here let a
+    // mid-overlap promotion skip already-consumed preload frames.
+    if (renderCrossfadeMixActive_.load(std::memory_order_acquire)) {
       if (error) *error = "crossfade overlap 已经消耗了预加载流起始数据";
       return false;
     }
@@ -3340,6 +3392,7 @@ bool AudioPipeline::skipToPreloaded(const QueueItem& item, std::string* error) {
     stream_ = activeStream_->stream;
     currentItem_ = activeStream_->item;
     renderedFrames_ = 0;
+    renderVolumeCurrentBits_.store(doubleBits(-1.0), std::memory_order_relaxed);
     resetRateResampler();
     ended_ = false;
     trackStarted_ = true;
@@ -4009,6 +4062,7 @@ void AudioPipeline::prepareRenderScratchLocked(size_t maxFrames) {
 
 size_t AudioPipeline::renderTyped(PcmBlock& output) {
   if (!output.data || output.frames == 0) return 0;
+  enableDenormalFlushToZero();
   const auto renderStarted = std::chrono::steady_clock::now();
   const auto recordPerformance = [this, &output, renderStarted]() noexcept {
     const auto elapsed = std::chrono::steady_clock::now() - renderStarted;
@@ -4218,6 +4272,7 @@ size_t AudioPipeline::renderTyped(PcmBlock& output) {
 
 size_t AudioPipeline::render(float* output, size_t frameCount) {
   if (!output || frameCount == 0) return 0;
+  enableDenormalFlushToZero();
   const auto renderStarted = std::chrono::steady_clock::now();
   const auto recordPerformance = [this, frameCount, renderStarted]() noexcept {
     const auto elapsed = std::chrono::steady_clock::now() - renderStarted;
@@ -4343,13 +4398,17 @@ size_t AudioPipeline::render(float* output, size_t frameCount) {
         const uint64_t crossfadeRequestedFrames =
             static_cast<uint64_t>(std::max(1.0, crossfadeSeconds * static_cast<double>(outputFormat.sampleRate)));
         if (!crossfadeMixActive) {
+          // Unknown duration (radio / live streams report 0): never engage the
+          // overlap, or the preload being ready alone would fade the current
+          // (endless) stream out mid-track.
+          const bool hasKnownDuration = active->stream.durationSeconds > 0.0;
           const double secondsRemaining =
-              active->stream.durationSeconds > 0.0
+              hasKnownDuration
                   ? std::max(0.0, active->stream.durationSeconds -
                                        (static_cast<double>(renderedFrames_.load() + positionRead + read) /
                                         static_cast<double>(outputFormat.sampleRate)))
                   : 0.0;
-          if (secondsRemaining <= crossfadeSeconds + 0.02) {
+          if (hasKnownDuration && secondsRemaining <= crossfadeSeconds + 0.02) {
             crossfadeMixActive = true;
             crossfadeFramesProcessed = 0;
             crossfadeTotalFrames = crossfadeRequestedFrames;
@@ -4407,6 +4466,7 @@ size_t AudioPipeline::render(float* output, size_t frameCount) {
       renderActiveStream_.store(active, std::memory_order_release);
       renderPreloadStream_.store(nullptr, std::memory_order_release);
       renderedFrames_ = 0;
+      renderVolumeCurrentBits_.store(doubleBits(-1.0), std::memory_order_relaxed);
       positionRead = 0;
       resetRateResampler();
       ended_ = false;
@@ -4454,9 +4514,31 @@ size_t AudioPipeline::render(float* output, size_t frameCount) {
     }
   }
 
-  if (!dopPathActive && std::abs(volume - 1.0) > 0.0001) {
-    // On the rate path totalRead is filled output frames (may be < frameCount on underrun).
-    render::applyVolumeToRenderedFrames(output, totalRead, frameCount, channels, volume);
+  if (!dopPathActive) {
+    const double previousGain = doubleFromBits(renderVolumeCurrentBits_.load(std::memory_order_relaxed));
+    const double from = previousGain >= 0.0 ? previousGain : volume;
+    renderVolumeCurrentBits_.store(doubleBits(volume), std::memory_order_relaxed);
+    if (std::abs(volume - 1.0) > 0.0001 || std::abs(from - 1.0) > 0.0001) {
+      // On the rate path totalRead is filled output frames (may be < frameCount
+      // on underrun); gain only applies to real samples.
+      const size_t volumeFrames = std::min(totalRead > 0 ? totalRead : frameCount, frameCount);
+      if (std::abs(volume - from) <= 0.0005) {
+        render::applyVolumeToRenderedFrames(output, volumeFrames, frameCount, channels, volume);
+      } else if (volumeFrames > 0) {
+        // Block-step gain changes zipper on every slider move; ramp linearly
+        // from the last applied gain to the new target across this block.
+        const double step = (volume - from) / static_cast<double>(volumeFrames);
+        double gain = from;
+        for (size_t frame = 0; frame < volumeFrames; ++frame) {
+          for (int channel = 0; channel < channels; ++channel) {
+            const size_t index = frame * static_cast<size_t>(channels) + static_cast<size_t>(channel);
+            output[index] = static_cast<float>(
+                std::clamp(static_cast<double>(output[index]) * gain, -1.0, 1.0));
+          }
+          gain += step;
+        }
+      }
+    }
   }
   if (!dopPathActive && !nativeDsdPathActive) {
     const auto mode = static_cast<DspDitherMode>(renderDitherMode_.load(std::memory_order_acquire));

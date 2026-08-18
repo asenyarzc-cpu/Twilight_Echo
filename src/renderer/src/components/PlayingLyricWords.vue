@@ -1,7 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { requestAnimationFrameWithFallback } from '../utils/animationFrameFallback'
-import { buildKaraokeMaskPlan, type WordMeasurement } from '../utils/lyricEmphasis'
+import {
+  buildEmphasisAnimation,
+  buildKaraokeMaskPlan,
+  buildWordFloatAnimation,
+  computeEmphasisStrength,
+  emphasisGraphemes,
+  MAX_EMPHASIS_GRAPHEMES,
+  shouldEmphasizeChunk,
+  splitGraphemes,
+  type LyricAnimationVoiceRole,
+  type LyricDirection,
+  type WordMeasurement
+} from '../utils/lyricEmphasis'
 import {
   chunkAndSplitLyricWords,
   chunkSpan,
@@ -21,7 +33,7 @@ import type { LyricWord } from '../utils/lyrics'
  * assignment.
  *
  * Every animation shares one time origin (the line's start), so a single
- * `currentTime` value keeps the fill coherent.
+ * `currentTime` value keeps the fill, the lift and the glow coherent.
  */
 
 interface LyricClockSnapshot {
@@ -30,32 +42,48 @@ interface LyricClockSnapshot {
   position: number
 }
 
-const props = defineProps<{
-  words: LyricWord[]
-  active: boolean
-  karaokeEnabled: boolean
-  offsetSeconds: number
-  clock: {
-    snapshot: Ref<LyricClockSnapshot>
-    isPlaying: Ref<boolean>
-    positionAt: (at?: number) => number
+type LyricMotionMode = 'full' | 'reduced' | 'off'
+
+const props = withDefaults(
+  defineProps<{
+    words: LyricWord[]
+    active: boolean
+    karaokeEnabled: boolean
+    offsetSeconds: number
+    motionMode?: LyricMotionMode
+    voiceRole?: LyricAnimationVoiceRole
+    direction?: LyricDirection
+    clock: {
+      snapshot: Ref<LyricClockSnapshot>
+      isPlaying: Ref<boolean>
+      positionAt: (at?: number) => number
+    }
+  }>(),
+  {
+    motionMode: 'full',
+    voiceRole: 'lead',
+    direction: 'ltr'
   }
-}>()
+)
 
 interface RenderSyllable {
   key: number
   word: ResolvedLyricWord
+  /** Split per grapheme only when the word is emphasised. */
+  chars: string[] | null
 }
 
 type RenderChunk =
   | { kind: 'space'; key: string; text: string }
-  | { kind: 'word'; key: string; syllables: RenderSyllable[] }
+  | { kind: 'word'; key: string; syllables: RenderSyllable[]; emphasized: boolean }
 
 /** Drift beyond this is corrected; below it, leave the compositor alone. */
 const DRIFT_TOLERANCE_MS = 80
 const BUILD_FRAME_FALLBACK_MS = 120
 
 const wordElements = ref<Array<HTMLElement | null>>([])
+const charElements = ref<Map<string, HTMLElement>>(new Map())
+
 let activeAnimations: Animation[] = []
 let cancelScheduledBuild: (() => void) | null = null
 let buildGeneration = 0
@@ -74,7 +102,10 @@ const lineEndSeconds = computed(() => {
   return Number.isFinite(end) ? end : lineStartSeconds.value
 })
 
+const emphasisPlan = new Map<string, { span: ResolvedLyricWord; isLast: boolean }>()
+
 const renderChunks = computed<RenderChunk[]>(() => {
+  emphasisPlan.clear()
   const chunks = chunkAndSplitLyricWords(resolvedWords.value)
   const result: RenderChunk[] = []
   let syllableKey = 0
@@ -86,17 +117,37 @@ const renderChunks = computed<RenderChunk[]>(() => {
     }
 
     const span = chunkSpan(chunk)
+    const isLast = chunks.slice(index + 1).every((rest) => rest.kind === 'space')
+    const emphasized =
+      props.motionMode === 'full' && props.karaokeEnabled && shouldEmphasizeChunk(chunk)
     const words = chunk.kind === 'word' ? [chunk.word] : chunk.words
+    const splitForEmphasis =
+      emphasized &&
+      props.voiceRole === 'lead' &&
+      splitGraphemes(span?.text ?? '').length <= MAX_EMPHASIS_GRAPHEMES
 
     result.push({
       kind: 'word',
       key: `w${index}-${span?.time ?? 0}`,
-      syllables: words.map((word) => ({ key: syllableKey++, word }))
+      emphasized,
+      syllables: words.map((word) => ({
+        key: syllableKey++,
+        word,
+        chars: splitForEmphasis ? emphasisGraphemes(word.text) : null
+      }))
     })
+
+    // Recorded for strength; the last word of a line carries the phrase.
+    if (emphasized && span) emphasisPlan.set(`w${index}`, { span, isLast })
   })
 
   return result
 })
+
+function setCharElement(key: string, element: Element | null): void {
+  if (element instanceof HTMLElement) charElements.value.set(key, element)
+  else charElements.value.delete(key)
+}
 
 function supportsWebAnimations(): boolean {
   return typeof Element !== 'undefined' && typeof Element.prototype.animate === 'function'
@@ -107,12 +158,13 @@ function lyricTime(position = props.clock.positionAt()): number {
 }
 
 function timelineMs(time = lyricTime()): number {
-  // All animations use the line as their time origin. Keep that shared clock
-  // inside the line window: after a line is complete, WAAPI should retain its
-  // final fill instead of receiving an ever-growing currentTime that can make
-  // the first word's delayed effects appear to start over.
   const lineDurationMs = Math.max(0, (lineEndSeconds.value - lineStartSeconds.value) * 1000)
   return Math.min(lineDurationMs, Math.max(0, (time - lineStartSeconds.value) * 1000))
+}
+
+function animationEndTime(animation: Animation): number | null {
+  const endTime = animation.effect?.getComputedTiming().endTime
+  return typeof endTime === 'number' && Number.isFinite(endTime) ? endTime : null
 }
 
 function releaseAnimations(): void {
@@ -126,6 +178,7 @@ function releaseAnimations(): void {
     element.style.removeProperty('-webkit-mask-size')
     element.style.removeProperty('mask-repeat')
     element.style.removeProperty('mask-origin')
+    element.classList.remove('lyric-word--karaoke')
   }
 }
 
@@ -147,7 +200,13 @@ function measureWords(): WordMeasurement[] {
  */
 function buildAnimations(): void {
   releaseAnimations()
-  if (!supportsWebAnimations() || !props.active || resolvedWords.value.length === 0) return
+  if (
+    props.motionMode !== 'full' ||
+    !supportsWebAnimations() ||
+    !props.active ||
+    resolvedWords.value.length === 0
+  )
+    return
 
   const words = resolvedWords.value
   const measurements = measureWords()
@@ -158,30 +217,68 @@ function buildAnimations(): void {
   for (const chunk of renderChunks.value) {
     if (chunk.kind === 'space') continue
 
-    for (let wordIndex = 0; wordIndex < chunk.syllables.length; wordIndex += 1) {
+    const plan = emphasisPlan.get(chunk.key.split('-')[0])
+    const strength =
+      chunk.emphasized && plan
+        ? computeEmphasisStrength((plan.span.endTime - plan.span.time) * 1000, plan.isLast)
+        : null
+
+    for (const syllable of chunk.syllables) {
       const element = wordElements.value[syllableIndex]
       const index = syllableIndex
       syllableIndex += 1
       if (!element) continue
 
       if (props.karaokeEnabled) {
-        const mask = buildKaraokeMaskPlan(words, measurements, index, lineStart, lineEnd)
+        const mask = buildKaraokeMaskPlan(
+          words,
+          measurements,
+          index,
+          lineStart,
+          lineEnd,
+          props.direction
+        )
         if (mask) {
           element.style.setProperty('mask-image', mask.maskImage)
           element.style.setProperty('-webkit-mask-image', mask.maskImage)
           element.style.setProperty('mask-size', mask.maskSize)
           element.style.setProperty('-webkit-mask-size', mask.maskSize)
           element.style.setProperty('mask-repeat', 'no-repeat')
-          element.style.setProperty('mask-origin', 'left')
+          element.style.setProperty('mask-origin', mask.maskOrigin)
+          element.classList.add('lyric-word--karaoke')
           try {
             activeAnimations.push(element.animate(mask.keyframes, mask.timing))
           } catch {
             // A malformed keyframe set must not take the line down with it.
             element.style.removeProperty('mask-image')
             element.style.removeProperty('-webkit-mask-image')
+            element.classList.remove('lyric-word--karaoke')
           }
         }
       }
+
+      // Every word lifts slightly while sung, emphasised or not.
+      const float = buildWordFloatAnimation(syllable.word, lineStart, props.voiceRole)
+      activeAnimations.push(element.animate(float.keyframes, float.timing))
+
+      if (!strength || !syllable.chars) continue
+
+      const startDelayMs = (syllable.word.time - lineStart) * 1000
+      syllable.chars.forEach((_char, charIndex) => {
+        const charElement = charElements.value.get(`${syllable.key}:${charIndex}`)
+        if (!charElement) return
+        const emphasis = buildEmphasisAnimation(
+          charIndex,
+          syllable.chars?.length ?? 1,
+          strength,
+          startDelayMs,
+          props.voiceRole
+        )
+        if (emphasis.glow.length > 0)
+          activeAnimations.push(charElement.animate(emphasis.glow, emphasis.glowTiming))
+        if (emphasis.float.length > 0)
+          activeAnimations.push(charElement.animate(emphasis.float, emphasis.floatTiming))
+      })
     }
   }
 
@@ -195,30 +292,34 @@ function buildAnimations(): void {
 function syncAnimations(hard = false): void {
   if (activeAnimations.length === 0) return
 
-  // `positionAt()` is an interpolated clock, unlike the lower-frequency
-  // snapshot samples. Feeding snapshot positions back into a compositor-driven
-  // animation makes its fill visibly step backwards whenever the audio engine
-  // corrects a sample. During ordinary playback, preserve the compositor's
-  // monotonic motion and only correct material forward drift. Epoch changes
-  // (explicit seeks / track transitions) remain precise hard jumps.
   const target = timelineMs()
   const playing = props.active && props.clock.isPlaying.value
 
   for (const animation of activeAnimations) {
+    const endTime = animationEndTime(animation)
+    const boundedTarget = endTime == null ? target : Math.min(target, endTime)
     const current = Number(animation.currentTime ?? 0)
-    const forwardDrift = target - current
+    const forwardDrift = boundedTarget - current
     const shouldCorrect =
       hard ||
-      (!playing
-        ? Math.abs(forwardDrift) > DRIFT_TOLERANCE_MS
-        : forwardDrift > DRIFT_TOLERANCE_MS)
-    if (shouldCorrect) animation.currentTime = target
-    if (playing) animation.play()
-    else animation.pause()
+      (!playing ? Math.abs(forwardDrift) > DRIFT_TOLERANCE_MS : forwardDrift > DRIFT_TOLERANCE_MS)
+    if (shouldCorrect) {
+      animation.currentTime = boundedTarget
+    }
+    if (playing) {
+      const pastEnd = endTime != null && target >= endTime
+      if (pastEnd) {
+        if (animation.playState !== 'finished') {
+          animation.currentTime = endTime
+          animation.finish()
+        }
+      } else if (animation.playState !== 'finished') animation.play()
+    } else animation.pause()
   }
 }
 
 function scheduleBuild(): void {
+  if (props.motionMode !== 'full') return
   const generation = ++buildGeneration
   cancelScheduledBuild?.()
   cancelScheduledBuild = requestAnimationFrameWithFallback(() => {
@@ -229,12 +330,22 @@ function scheduleBuild(): void {
 }
 
 watch(
-  [() => props.active, () => props.karaokeEnabled, () => props.words, () => props.offsetSeconds],
+  [
+    () => props.active,
+    () => props.karaokeEnabled,
+    () => props.motionMode,
+    () => props.voiceRole,
+    () => props.direction,
+    () => props.words,
+    () => props.offsetSeconds,
+    () => props.clock.snapshot.value.epoch
+  ],
   async () => {
     const generation = ++buildGeneration
     cancelScheduledBuild?.()
     cancelScheduledBuild = null
     releaseAnimations()
+    if (props.motionMode !== 'full') return
     await nextTick()
     if (generation !== buildGeneration) return
     scheduleBuild()
@@ -242,28 +353,17 @@ watch(
   { immediate: true, flush: 'post' }
 )
 
-// A seek changes the clock epoch. Retarget the existing compositor effects
-// instead of cancelling, measuring and rebuilding them for a frame.
-watch(
-  () => (props.active ? props.clock.snapshot.value.epoch : null),
-  () => {
-    if (!props.active) return
-    syncAnimations(true)
-  }
-)
-
-// The clock ticks far slower than a frame; this only corrects material forward
-// drift. Backward sample corrections are deliberately left to the continuous
-// compositor timeline so the visible fill never twitches.
+// The clock ticks far slower than a frame; this only corrects drift and seeks.
 watch(
   () => (props.active ? props.clock.snapshot.value.revision : null),
   () => {
-    if (!props.active) return
+    if (!props.active || props.motionMode !== 'full') return
     syncAnimations()
   }
 )
 
 watch(props.clock.isPlaying, () => {
+  if (props.motionMode !== 'full') return
   syncAnimations(true)
 })
 
@@ -276,10 +376,20 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <span class="lyric-text lyric-text--words">
+  <span
+    class="lyric-text lyric-text--words"
+    :class="{ 'lyric-text--static': motionMode !== 'full' }"
+    :dir="direction"
+    :data-motion-mode="motionMode"
+    :data-voice-role="voiceRole"
+  >
     <template v-for="chunk in renderChunks" :key="chunk.key">
       <span v-if="chunk.kind === 'space'" class="lyric-space">{{ chunk.text }}</span>
-      <span v-else class="lyric-word-group">
+      <span
+        v-else
+        class="lyric-word-group"
+        :class="{ 'lyric-word-group--emphasized': chunk.emphasized }"
+      >
         <span
           v-for="syllable in chunk.syllables"
           :key="syllable.key"
@@ -287,9 +397,31 @@ onBeforeUnmount(() => {
           class="lyric-word"
           :data-word-text="syllable.word.text"
         >
-          {{ syllable.word.text }}
+          <template v-if="syllable.chars">
+            <span
+              v-for="(char, charIndex) in syllable.chars"
+              :key="charIndex"
+              :ref="(element) => setCharElement(`${syllable.key}:${charIndex}`, element as Element)"
+              class="lyric-char"
+              >{{ char }}</span
+            >
+          </template>
+          <template v-else>{{ syllable.word.text }}</template>
         </span>
       </span>
     </template>
   </span>
 </template>
+
+<style scoped>
+.lyric-word--karaoke {
+  color: var(--te-playback-lyric-karaoke, currentColor);
+}
+
+.lyric-text--static .lyric-word {
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
+  transform: none !important;
+  text-shadow: none !important;
+}
+</style>

@@ -4,7 +4,10 @@ import '@phosphor-icons/web/regular'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { bootstrapThemeRuntime } from './stores/useThemeStore'
+import { beginStartupSnapshot } from './app/startupSnapshot'
 import { installAutoHideScrollbars } from './utils/autoHideScrollbars'
+import { injectCachedThemeRuntime } from './app/themeRuntimeCache'
+import { activateDeferredFontStyles } from './app/deferredFontStyles'
 
 const query = new URLSearchParams(window.location.search)
 const windowKind = query.get('window')
@@ -20,6 +23,7 @@ if (isMiniPlayer || isTrayPlayer) {
 }
 
 installAutoHideScrollbars()
+if (!isMiniPlayer && !isTrayPlayer) injectCachedThemeRuntime()
 
 // Chromium starts an OS drag for images, links, and arbitrary elements, letting
 // users drag app content out of the window onto the desktop. Block every
@@ -39,13 +43,16 @@ document.addEventListener(
 )
 
 async function mountApp(): Promise<void> {
-  if (!isTrayPlayer) await bootstrapThemeRuntime()
+  const startupSnapshot = !isMiniPlayer && !isTrayPlayer ? beginStartupSnapshot() : null
   const rootComponent = isMiniPlayer
     ? (await import('./mini-player/MiniPlayerApp.vue')).default
     : isTrayPlayer
       ? (await import('./tray-player/TrayPlayerApp.vue')).default
       : (await import('./App.vue')).default
+  if (isMiniPlayer) await bootstrapThemeRuntime()
   createApp(rootComponent).use(createPinia()).mount('#app')
+  activateDeferredFontStyles()
+  void startupSnapshot
 }
 
 void mountApp()

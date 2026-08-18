@@ -1,21 +1,39 @@
 import { app, dialog, shell, utilityProcess, type UtilityProcess } from 'electron'
 import { randomUUID } from 'crypto'
-import { existsSync, mkdirSync, realpathSync } from 'fs'
+import { existsSync, mkdirSync } from 'fs'
 import { cp, readdir, readFile, rm, stat, writeFile } from 'fs/promises'
-import { basename, dirname, extname, join, relative, resolve } from 'path'
+import { basename, dirname, extname, join, resolve } from 'path'
 import { EventEmitter } from 'events'
 import { planPluginStartup } from './dependencies'
-import { isCompatibleTwilightRange, validatePluginManifest } from './manifest'
+import {
+  compareSemver,
+  isCompatibleTwilightRange,
+  toManifest,
+  validatePluginManifest
+} from './manifest'
 import {
   dedupeProviderRegistrations,
   findProviderRoute,
-  isTwilightMediaProviderMethod
+  getProviderCallTimeoutMs,
+  getProviderMethodStats,
+  normalizeProviderHealth,
+  normalizeProviderUi,
+  type ProviderHealthRecord,
+  type ProviderMethodHealthRecord
 } from './providerRouting'
 import { isRecoverableBundledPluginFailure } from './stateRecovery'
 import { PluginOperationQueue } from './operationQueue.ts'
-import { PluginRpcCoordinator } from './rpcCoordinator.ts'
+import {
+  normalizeInternalNcmRequestOptions,
+  PluginRpcCoordinator,
+  resolveProviderIdempotencyKey
+} from './rpcCoordinator.ts'
 import { trialStagedPluginCandidate } from './trialActivation.ts'
-import { PluginStatePersistence, type PluginStateFile } from './statePersistence.ts'
+import {
+  cloneStateRecord,
+  PluginStatePersistence,
+  type PluginStateFile
+} from './statePersistence.ts'
 import {
   PluginUpdateRollbackError,
   commitStagedPluginUpdate,
@@ -30,11 +48,13 @@ import {
 import {
   assertPluginPackageFileSize,
   assertPluginTreeSafe,
-  extractPluginPackage
+  extractPluginPackage,
+  isInsidePath,
+  resolvePluginFile
 } from './packageSecurity.ts'
 import { redactSensitiveText } from '../security/secureStorage.ts'
 import { protectProviderMedia } from '../security/remoteMediaGrants.ts'
-import { normalizeThemeContribution } from './themeContribution.ts'
+import { normalizeThemeContribution, normalizeUiContribution } from './themeContribution.ts'
 import type {
   PluginHostApiResult,
   PluginHostRequest,
@@ -43,8 +63,6 @@ import type {
   TwilightMediaProviderHealth,
   TwilightMediaProviderRegistration,
   TwilightPluginExtensionContribution,
-  TwilightProviderStreamingSection,
-  TwilightProviderUiMetadata,
   TwilightThemeContribution,
   TwilightUiContribution,
   TwilightPluginDescriptor,
@@ -116,25 +134,6 @@ interface DescriptorReadOptions {
   state?: TwilightPluginStateRecord
 }
 
-interface ProviderHealthRecord {
-  providerId: string
-  pluginId: string
-  totalCalls: number
-  successfulCalls: number
-  failedCalls: number
-  methodStats: Partial<Record<TwilightMediaProviderMethod, ProviderMethodHealthRecord>>
-  lastError: string | null
-  lastCheckedAt: string | null
-}
-
-interface ProviderMethodHealthRecord {
-  totalCalls: number
-  successfulCalls: number
-  failedCalls: number
-  lastError: string | null
-  lastCheckedAt: string | null
-}
-
 interface ProviderRpcMetadata {
   providerId: string
   pluginId: string
@@ -157,21 +156,6 @@ const STATE_FILE = 'plugin-state.json'
 const PLUGIN_ACTIVATE_TIMEOUT_MS = 5000
 const PLUGIN_DEACTIVATE_TIMEOUT_MS = 1500
 const PLUGIN_UI_COMMAND_TIMEOUT_MS = 5000
-const PLUGIN_PROVIDER_DEFAULT_TIMEOUT_MS = 15000
-const PLUGIN_PROVIDER_MEDIUM_TIMEOUT_MS = 30000
-const PLUGIN_PROVIDER_SLOW_TIMEOUT_MS = 120000
-const PLUGIN_RPC_IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
-const IDEMPOTENT_PROVIDER_WRITE_METHODS = new Set<TwilightMediaProviderMethod>([
-  'likeTrack',
-  'followArtist',
-  'followUser',
-  'createPlaylist',
-  'deletePlaylist',
-  'addTracksToPlaylist',
-  'removeTracksFromPlaylist',
-  'completeCloudUpload',
-  'createDownload'
-])
 const INTERNAL_NCM_PLUGIN_ID = 'com.twilightecho.provider.ncm'
 const RESERVED_PROVIDER_IDS = new Set(['local', 'ncm'])
 const PUBLIC_APP_EVENTS = new Set(['app:ready', 'app:before-quit'])
@@ -185,48 +169,6 @@ const PLAYER_EVENTS = new Set([
   'player:playback-info'
 ])
 const PLUGIN_EVENT_NAME_PATTERN = /^[a-z][a-zA-Z0-9]*(?::[a-zA-Z0-9-]+)+$/
-
-function getProviderCallTimeoutMs(method: TwilightMediaProviderMethod): number {
-  if (
-    [
-      'fetchPlaylistTracks',
-      'fetchLikedTracks',
-      'fetchLikedTracksPage',
-      'fetchCloudSongsPage',
-      'fetchUserLibrary',
-      'fetchRecommendSongs',
-      'fetchRecommendPlaylists',
-      'fetchPersonalFm',
-      'fetchPrivateContent',
-      'fetchArtistTopSongs',
-      'fetchArtistAlbums',
-      'fetchAlbumTracks',
-      'fetchArtistPlaylists',
-      'fetchUserPlaylistsByUid',
-      'fetchUserFollows',
-      'fetchUserFolloweds',
-      'fetchPlayRecords',
-      'fetchRecentSongs'
-    ].includes(method)
-  ) {
-    return PLUGIN_PROVIDER_SLOW_TIMEOUT_MS
-  }
-  if (
-    [
-      'getPlaybackUrl',
-      'getLyrics',
-      'searchSongs',
-      'searchPlaylists',
-      'searchArtists',
-      'fetchPlaylistCategories',
-      'fetchDiscoveryPlaylists',
-      'fetchHighQualityPlaylists'
-    ].includes(method)
-  ) {
-    return PLUGIN_PROVIDER_MEDIUM_TIMEOUT_MS
-  }
-  return PLUGIN_PROVIDER_DEFAULT_TIMEOUT_MS
-}
 
 export class TwilightPluginManager extends EventEmitter {
   private readonly appVersion: string
@@ -703,7 +645,7 @@ export class TwilightPluginManager extends EventEmitter {
     }
 
     const requestId = randomUUID()
-    const idempotencyKey = this.resolveProviderIdempotencyKey(method, options.idempotencyKey)
+    const idempotencyKey = resolveProviderIdempotencyKey(method, options.idempotencyKey)
     return this.rpcCalls.request<unknown, ProviderRpcMetadata>({
       requestId,
       pluginId: running.descriptor.id,
@@ -787,18 +729,6 @@ export class TwilightPluginManager extends EventEmitter {
     }
   }
 
-  private resolveProviderIdempotencyKey(
-    method: TwilightMediaProviderMethod,
-    suppliedKey: string | undefined
-  ): string | undefined {
-    if (!IDEMPOTENT_PROVIDER_WRITE_METHODS.has(method)) return undefined
-    const key = suppliedKey?.trim() || randomUUID()
-    if (!PLUGIN_RPC_IDEMPOTENCY_KEY_PATTERN.test(key)) {
-      throw new Error('Provider idempotency key is invalid.')
-    }
-    return key
-  }
-
   private async scanAndStartEnabled(): Promise<void> {
     const descriptors = await this.list()
     const startupPlan = planPluginStartup(descriptors)
@@ -806,16 +736,35 @@ export class TwilightPluginManager extends EventEmitter {
       const descriptor = descriptors.find((candidate) => candidate.id === id)
       this.markFailed(id, error, descriptor)
     }
+    // `ordered` is a dependency topological order; activation waits up to 5s
+    // per plugin, so start each dependency level concurrently instead of paying
+    // the sum of every plugin's activation time.
+    const startupDepthById = new Map<string, number>()
+    const wavesByDepth = new Map<number, TwilightPluginDescriptor[]>()
     for (const descriptor of startupPlan.ordered) {
-      if (descriptor.main) {
-        await this.startPlugin(descriptor).catch((error) => {
-          this.markFailed(
-            descriptor.id,
-            error instanceof Error ? error.message : String(error),
-            descriptor
-          )
-        })
+      let depth = 0
+      for (const dependencyId of Object.keys(descriptor.dependencies ?? {})) {
+        depth = Math.max(depth, (startupDepthById.get(dependencyId) ?? -1) + 1)
       }
+      startupDepthById.set(descriptor.id, depth)
+      if (!descriptor.main) continue
+      const wave = wavesByDepth.get(depth) ?? []
+      wave.push(descriptor)
+      wavesByDepth.set(depth, wave)
+    }
+    for (const depth of [...wavesByDepth.keys()].sort((left, right) => left - right)) {
+      const wave = wavesByDepth.get(depth) ?? []
+      await Promise.all(
+        wave.map(async (descriptor) => {
+          await this.startPlugin(descriptor).catch((error) => {
+            this.markFailed(
+              descriptor.id,
+              error instanceof Error ? error.message : String(error),
+              descriptor
+            )
+          })
+        })
+      )
     }
   }
 
@@ -977,7 +926,7 @@ export class TwilightPluginManager extends EventEmitter {
     child.postMessage({
       kind: 'activate',
       pluginId: descriptor.id,
-      manifest: this.toManifest(descriptor),
+      manifest: toManifest(descriptor),
       mainPath: safeMainPath,
       dataDir: descriptor.paths.dataDir,
       apiVersion: descriptor.apiVersion
@@ -1229,8 +1178,8 @@ export class TwilightPluginManager extends EventEmitter {
     this.requirePermission(pluginId, 'network', 'providers.register')
     this.requireProviderCapabilityPermissions(pluginId, capabilities)
     this.assertProviderIdAvailable(pluginId, providerId)
-    const ui = this.normalizeProviderUi(record.ui)
-    const health = this.normalizeProviderHealth(record.health, providerId, pluginId)
+    const ui = normalizeProviderUi(record.ui)
+    const health = normalizeProviderHealth(record.health, providerId, pluginId)
     if (health) this.providerHealth.set(providerId, health)
     const provider: TwilightMediaProviderRegistration = { id: providerId, name, capabilities, ui }
     const existingIndex = running.providers.findIndex((candidate) => candidate.id === providerId)
@@ -1282,116 +1231,6 @@ export class TwilightPluginManager extends EventEmitter {
     }
   }
 
-  private normalizeProviderHealth(
-    raw: unknown,
-    providerId: string,
-    pluginId: string
-  ): ProviderHealthRecord | null {
-    if (!raw || typeof raw !== 'object') return null
-    const record = raw as Record<string, unknown>
-    const totalCalls = normalizeCount(record.totalCalls)
-    const successfulCalls = normalizeCount(record.successfulCalls)
-    const failedCalls = normalizeCount(record.failedCalls)
-    const methodStats: ProviderHealthRecord['methodStats'] = {}
-    if (record.methodStats && typeof record.methodStats === 'object') {
-      for (const [method, value] of Object.entries(record.methodStats as Record<string, unknown>)) {
-        if (!isTwilightMediaProviderMethod(method) || !value || typeof value !== 'object') continue
-        const methodRecord = value as Record<string, unknown>
-        methodStats[method] = {
-          totalCalls: normalizeCount(methodRecord.totalCalls),
-          successfulCalls: normalizeCount(methodRecord.successfulCalls),
-          failedCalls: normalizeCount(methodRecord.failedCalls),
-          lastError: normalizeNullableString(methodRecord.lastError),
-          lastCheckedAt: normalizeNullableString(methodRecord.lastCheckedAt)
-        }
-      }
-    }
-    return {
-      providerId,
-      pluginId,
-      totalCalls,
-      successfulCalls,
-      failedCalls,
-      methodStats,
-      lastError: normalizeNullableString(record.lastError),
-      lastCheckedAt: normalizeNullableString(record.lastCheckedAt)
-    }
-  }
-
-  /**
-   * 解析插件声明的 UI 元数据。如果插件未声明 ui，则根据 capabilities 生成默认值。
-   * 只要插件声明了 login 能力，就必须有 icon 和 qrStatusCodes（否则登录页无法渲染）。
-   */
-  private normalizeProviderUi(raw: unknown): TwilightMediaProviderRegistration['ui'] {
-    if (!raw || typeof raw !== 'object') return undefined
-    const record = raw as Record<string, unknown>
-    const icon = typeof record.icon === 'string' ? record.icon.trim() : ''
-    const authType =
-      record.authType === 'qr' ||
-      record.authType === 'oauth' ||
-      record.authType === 'cookie' ||
-      record.authType === 'settings'
-        ? record.authType
-        : 'qr'
-    // 解析 qrStatusCodes
-    let qrStatusCodes: TwilightProviderUiMetadata['qrStatusCodes'] | undefined
-    if (record.qrStatusCodes && typeof record.qrStatusCodes === 'object') {
-      const codes = record.qrStatusCodes as Record<string, unknown>
-      qrStatusCodes = {
-        waiting: typeof codes.waiting === 'number' ? codes.waiting : -1,
-        scanned: typeof codes.scanned === 'number' ? codes.scanned : null,
-        expired: typeof codes.expired === 'number' ? codes.expired : -1,
-        denied: typeof codes.denied === 'number' ? codes.denied : undefined,
-        success: typeof codes.success === 'number' ? codes.success : 0
-      }
-    }
-    // 解析 streamingSections
-    let streamingSections: TwilightProviderStreamingSection[] | undefined
-    if (Array.isArray(record.streamingSections)) {
-      streamingSections = record.streamingSections
-        .filter(
-          (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object'
-        )
-        .map((item) => ({
-          id: typeof item.id === 'string' ? item.id : '',
-          title: typeof item.title === 'string' ? item.title : '',
-          icon: typeof item.icon === 'string' ? item.icon : 'pi pi-music',
-          method: typeof item.method === 'string' ? item.method : '',
-          args: Array.isArray(item.args) ? item.args : undefined
-        }))
-        .filter((section) => section.id && section.title && section.method)
-    }
-    return {
-      icon,
-      color: typeof record.color === 'string' ? record.color : undefined,
-      description: typeof record.description === 'string' ? record.description : undefined,
-      authType,
-      loginInstructions:
-        typeof record.loginInstructions === 'string' ? record.loginInstructions : undefined,
-      qrStatusCodes,
-      showBrowserButton:
-        typeof record.showBrowserButton === 'boolean' ? record.showBrowserButton : undefined,
-      loginExtraActions: Array.isArray(record.loginExtraActions)
-        ? record.loginExtraActions
-            .filter(
-              (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object'
-            )
-            .map((item) => ({
-              label: typeof item.label === 'string' ? item.label : '',
-              icon: typeof item.icon === 'string' ? item.icon : 'pi pi-external-link',
-              method: typeof item.method === 'string' ? item.method : ''
-            }))
-            .filter((action) => action.label && action.method)
-        : undefined,
-      streamingSections,
-      streamingLibraryTab:
-        typeof record.streamingLibraryTab === 'boolean' ? record.streamingLibraryTab : undefined,
-      streamingSearch:
-        typeof record.streamingSearch === 'boolean' ? record.streamingSearch : undefined,
-      unifiedLibrary: typeof record.unifiedLibrary === 'boolean' ? record.unifiedLibrary : undefined
-    }
-  }
-
   private async handleInternalApiCall(
     pluginId: string,
     message: Extract<PluginHostResponse, { kind: 'api-call' }>,
@@ -1404,7 +1243,7 @@ export class TwilightPluginManager extends EventEmitter {
     if (message.method === 'ncmRequest') {
       const [path, cookie, rawOptions] = message.args
       if (typeof path !== 'string') throw new Error('ncmRequest path 必须是字符串')
-      const options = this.normalizeInternalNcmRequestOptions(rawOptions)
+      const options = normalizeInternalNcmRequestOptions(rawOptions)
       return this.ncm.request(path, typeof cookie === 'string' ? cookie : undefined, {
         ...options,
         signal
@@ -1429,23 +1268,6 @@ export class TwilightPluginManager extends EventEmitter {
     throw new Error('未知内部 API')
   }
 
-  private normalizeInternalNcmRequestOptions(raw: unknown): { idempotencyKey?: string } {
-    if (raw == null) return {}
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      throw new Error('ncmRequest options 必须是对象')
-    }
-    const record = raw as Record<string, unknown>
-    if (Object.keys(record).some((key) => key !== 'idempotencyKey')) {
-      throw new Error('ncmRequest options 包含不支持的字段')
-    }
-    const key = record.idempotencyKey
-    if (key == null) return {}
-    if (typeof key !== 'string' || !PLUGIN_RPC_IDEMPOTENCY_KEY_PATTERN.test(key)) {
-      throw new Error('ncmRequest idempotency key 无效')
-    }
-    return { idempotencyKey: key }
-  }
-
   private registerExtensionFromPlugin(
     pluginId: string,
     message: Extract<PluginHostResponse, { kind: 'api-call' }>
@@ -1453,7 +1275,11 @@ export class TwilightPluginManager extends EventEmitter {
     const running = this.running.get(pluginId)
     if (!running) throw new Error('插件未运行')
     if (message.method === 'registerUi') {
-      const contribution = this.normalizeUiContribution(running, message.args[0])
+      const contribution = normalizeUiContribution(
+        running.descriptor.type,
+        running.descriptor.permissions,
+        message.args[0]
+      )
       running.ui.push(contribution)
       this.emit('changed')
       return contribution
@@ -1462,52 +1288,6 @@ export class TwilightPluginManager extends EventEmitter {
       throw new Error('主题必须通过 manifest contributes.themes 声明，运行时主题注册已禁用')
     }
     throw new Error('未知扩展 API')
-  }
-
-  private normalizeUiContribution(running: RunningPlugin, raw: unknown): TwilightUiContribution {
-    if (!running.descriptor.type.includes('ui') && !running.descriptor.type.includes('tool')) {
-      throw new Error('只有 ui 或 tool 类型插件可以注册 UI 扩展点')
-    }
-    if (!running.descriptor.permissions.includes('ui:inject')) {
-      throw new Error('UI 扩展插件必须声明 ui:inject 权限')
-    }
-    if (!raw || typeof raw !== 'object') throw new Error('UI 扩展注册信息必须是对象')
-    const record = raw as Record<string, unknown>
-    const id = normalizeContributionId(record.id)
-    const kind = typeof record.kind === 'string' ? record.kind : ''
-    if (
-      ![
-        'sidebarPage',
-        'playerBarButton',
-        'settingsPanel',
-        'localSidebarItem',
-        'streamingHome'
-      ].includes(kind)
-    ) {
-      throw new Error('未知 UI 扩展点')
-    }
-    const title = normalizeText(record.title, 'UI 扩展标题必填')
-    const command = typeof record.command === 'string' ? record.command.trim() : undefined
-    if (
-      (kind === 'playerBarButton' || kind === 'sidebarPage' || kind === 'localSidebarItem') &&
-      !command
-    ) {
-      throw new Error(`${kind} 扩展必须声明 command`)
-    }
-    // Legacy renderMode values are accepted as input for API v1 compatibility, but the
-    // normalized renderer contract is command-only. Plugin-provided HTML is never executed.
-    const renderMode = 'command'
-    const autoLoad = typeof record.autoLoad === 'boolean' ? record.autoLoad : false
-    return {
-      id,
-      kind: kind as TwilightUiContribution['kind'],
-      title,
-      description: typeof record.description === 'string' ? record.description.trim() : undefined,
-      icon: typeof record.icon === 'string' ? record.icon.trim() : undefined,
-      command,
-      renderMode,
-      autoLoad
-    }
   }
 
   private normalizeDeclarativeThemeContributions(
@@ -1634,7 +1414,7 @@ export class TwilightPluginManager extends EventEmitter {
       successfulCalls,
       failedCalls,
       successRate: totalCalls > 0 ? successfulCalls / totalCalls : 1,
-      methodStats: this.getProviderMethodStats(health),
+      methodStats: getProviderMethodStats(health),
       lastError: health?.lastError ?? running?.descriptor.error ?? null,
       lastCheckedAt: health?.lastCheckedAt ?? null
     }
@@ -1711,27 +1491,6 @@ export class TwilightPluginManager extends EventEmitter {
     }
     health.methodStats[method] = created
     return created
-  }
-
-  private getProviderMethodStats(
-    health: ProviderHealthRecord | undefined
-  ): TwilightMediaProviderHealth['methodStats'] {
-    if (!health) return {}
-    const stats: TwilightMediaProviderHealth['methodStats'] = {}
-    for (const [method, record] of Object.entries(health.methodStats)) {
-      const totalCalls = record?.totalCalls ?? 0
-      const successfulCalls = record?.successfulCalls ?? 0
-      const failedCalls = record?.failedCalls ?? 0
-      stats[method as TwilightMediaProviderMethod] = {
-        totalCalls,
-        successfulCalls,
-        failedCalls,
-        successRate: totalCalls > 0 ? successfulCalls / totalCalls : 1,
-        lastError: record?.lastError ?? null,
-        lastCheckedAt: record?.lastCheckedAt ?? null
-      }
-    }
-    return stats
   }
 
   private handleUiCommandResult(
@@ -2029,7 +1788,11 @@ export class TwilightPluginManager extends EventEmitter {
     pluginId: string,
     error: PluginUpdateRollbackError
   ): void {
-    const activationError = redactSensitiveText(errorMessage(error.activationError))
+    const activationError = redactSensitiveText(
+      error.activationError instanceof Error
+        ? error.activationError.message
+        : String(error.activationError)
+    )
     const failures = error.failures.map((failure) => ({
       phase: failure.phase,
       message: redactSensitiveText(failure.message)
@@ -2039,29 +1802,6 @@ export class TwilightPluginManager extends EventEmitter {
       .join('; ')}`
     console.error(`[plugin-update] ${message}`)
     this.emit('update-rollback-error', { pluginId, message, activationError, failures })
-  }
-
-  private toManifest(descriptor: TwilightPluginDescriptor): TwilightPluginManifest {
-    return {
-      id: descriptor.id,
-      name: descriptor.name,
-      version: descriptor.version,
-      description: descriptor.description,
-      author: descriptor.author,
-      license: descriptor.license,
-      type: descriptor.type,
-      main: descriptor.main,
-      binary: descriptor.binary,
-      dependencies: descriptor.dependencies,
-      engines: descriptor.engines,
-      apiVersion: descriptor.apiVersion,
-      permissions: descriptor.permissions,
-      contributes: descriptor.contributes,
-      homepage: descriptor.homepage,
-      repository: descriptor.repository,
-      icon: descriptor.icon,
-      signature: descriptor.signature
-    }
   }
 
   private resolveNativeDspBinary(
@@ -2105,83 +1845,4 @@ async function safeReadDir(path: string): Promise<string[]> {
 
 function ensureParent(path: string): void {
   mkdirSync(dirname(path), { recursive: true })
-}
-
-function resolvePluginFile(filePath: string, root: string): string | null {
-  if (!isInsidePath(filePath, root) || !existsSync(filePath)) return null
-  try {
-    const realRoot = realpathSync(root)
-    const realFile = realpathSync(filePath)
-    return isInsidePath(realFile, realRoot) ? realFile : null
-  } catch {
-    return null
-  }
-}
-
-function isInsidePath(child: string, parent: string): boolean {
-  const resolvedChild = resolve(child)
-  const resolvedParent = resolve(parent)
-  const pathBetween = relative(resolvedParent, resolvedChild)
-  return (
-    pathBetween === '' ||
-    (pathBetween !== '..' &&
-      !pathBetween.startsWith(`..${sepForPlatform()}`) &&
-      !isAbsoluteLike(pathBetween))
-  )
-}
-
-function isAbsoluteLike(path: string): boolean {
-  return /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('\\\\') || path.startsWith('/')
-}
-
-function sepForPlatform(): string {
-  return process.platform === 'win32' ? '\\' : '/'
-}
-
-function compareSemver(left: string, right: string): number {
-  const leftParts = left.split('.').map((part) => Number.parseInt(part, 10) || 0)
-  const rightParts = right.split('.').map((part) => Number.parseInt(part, 10) || 0)
-  for (let index = 0; index < 3; index += 1) {
-    if (leftParts[index] > rightParts[index]) return 1
-    if (leftParts[index] < rightParts[index]) return -1
-  }
-  return 0
-}
-
-function cloneStateRecord(
-  record: TwilightPluginStateRecord | undefined
-): TwilightPluginStateRecord | undefined {
-  if (!record) return undefined
-  return {
-    ...record,
-    nativeDspParameters: record.nativeDspParameters ? { ...record.nativeDspParameters } : undefined
-  }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function normalizeContributionId(value: unknown): string {
-  const id = typeof value === 'string' ? value.trim() : ''
-  if (!id || !/^[a-z][a-z0-9-_.]*$/.test(id)) {
-    throw new Error('扩展 id 必须是小写标识符')
-  }
-  return id
-}
-
-function normalizeText(value: unknown, message: string): string {
-  const text = typeof value === 'string' ? value.trim() : ''
-  if (!text) throw new Error(message)
-  return text.slice(0, 120)
-}
-
-function normalizeCount(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
-}
-
-function normalizeNullableString(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const normalized = value.trim()
-  return normalized ? normalized.slice(0, 500) : null
 }

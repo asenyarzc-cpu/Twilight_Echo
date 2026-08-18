@@ -47,6 +47,7 @@ import {
   MAX_METADATA_CACHE_ENTRIES,
   clampNumber,
   createDefaultPlaybackInfo,
+  nativePlayMode,
   parseNativeJson
 } from './audio/audioEngineHelpers.ts'
 import {
@@ -552,6 +553,17 @@ export class AudioEngineManager extends EventEmitter {
           'LoadQueue',
           JSON.stringify(this.queue),
           this.playbackInfo.queueIndex
+        )
+      )
+      // Native LoadQueue starts a fresh service in sequential mode; without
+      // re-applying the play mode, shuffle/repeat silently died with the
+      // crashed process while the UI kept showing the saved mode.
+      results.push(
+        await this.restoreAudioServiceOutputRouteStep(
+          'play-mode',
+          '音频服务恢复后应用播放模式',
+          'SetPlayMode',
+          nativePlayMode(this.playbackInfo.playMode)
         )
       )
     }

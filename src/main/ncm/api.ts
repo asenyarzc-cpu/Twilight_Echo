@@ -51,6 +51,13 @@ export async function requestNcmApi(
   if (!normalizedPath) {
     return { code: -1, message: 'Invalid NetEase API path' }
   }
+  try {
+    await ensureNcmServer()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('网易云音乐服务启动失败：', redactSensitiveText(message))
+    return { code: -1, message }
+  }
   const sep = normalizedPath.includes('?') ? '&' : '?'
   const url = `http://${NCM_API_HOST}:${NCM_API_PORT}${normalizedPath}${sep}timestamp=${Date.now()}`
   const headers: Record<string, string> = {}
@@ -76,7 +83,11 @@ export async function requestNcmApi(
     return await res.json()
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error('网易云请求失败：', redactSensitiveText(normalizedPath), redactSensitiveText(message))
+    console.error(
+      '网易云请求失败：',
+      redactSensitiveText(normalizedPath),
+      redactSensitiveText(message)
+    )
     return {
       code: -1,
       message
@@ -105,7 +116,8 @@ export async function openNcmOfficialLogin(): Promise<string> {
   await ses.clearStorageData().catch(() => undefined)
 
   return await new Promise<string>((resolveLogin, rejectLogin) => {
-    const owner = runtime.mainWindow && !runtime.mainWindow.isDestroyed() ? runtime.mainWindow : undefined
+    const owner =
+      runtime.mainWindow && !runtime.mainWindow.isDestroyed() ? runtime.mainWindow : undefined
     const loginWindow = new BrowserWindow({
       width: 920,
       height: 680,
@@ -217,7 +229,8 @@ function normalizeNcmApiPath(path: unknown): string | null {
   } catch {
     return null
   }
-  if (!normalized.startsWith('/') || normalized.startsWith('//') || normalized.includes('\\')) return null
+  if (!normalized.startsWith('/') || normalized.startsWith('//') || normalized.includes('\\'))
+    return null
   try {
     const parsed = new URL(`http://${NCM_API_HOST}:${NCM_API_PORT}${normalized}`)
     if (parsed.origin !== `http://${NCM_API_HOST}:${NCM_API_PORT}`) return null
@@ -245,21 +258,41 @@ function normalizeNcmSongId(songId: unknown): number {
 // S4：登录窗外部跳转仅放行 https:（http: 如需放行须显式传域名白名单）
 // 共享实现见 src/main/security/externalUrl.ts
 
-export async function setupNcmApi(): Promise<void> {
-  try {
-    const tokenPath = join(tmpdir(), 'anonymous_token')
-    if (!existsSync(tokenPath)) {
-      writeFileSync(tokenPath, '', 'utf-8')
+export function ensureNcmServer(): Promise<void> {
+  if (runtime.ncmServer) return Promise.resolve()
+  if (runtime.ncmServerPromise) return runtime.ncmServerPromise
+
+  const startup = startNcmServer()
+  runtime.ncmServerPromise = startup
+  void startup.then(
+    () => {
+      if (runtime.ncmServerPromise === startup) runtime.ncmServerPromise = null
+    },
+    () => {
+      if (runtime.ncmServerPromise === startup) runtime.ncmServerPromise = null
     }
-    const { serveNcmApi } = await import('@neteasecloudmusicapienhanced/api/server.js')
-    const app = await serveNcmApi({
-      port: NCM_API_PORT,
-      host: NCM_API_HOST,
-      checkVersion: false
-    })
-    runtime.ncmServer = app.server
-    console.log(`网易云音乐服务已启动：http://${NCM_API_HOST}:${NCM_API_PORT}`)
-  } catch (err) {
-    console.error('网易云音乐服务启动失败：', err)
+  )
+  return startup
+}
+
+async function startNcmServer(): Promise<void> {
+  const tokenPath = join(tmpdir(), 'anonymous_token')
+  if (!existsSync(tokenPath)) {
+    writeFileSync(tokenPath, '', 'utf-8')
   }
+  const { serveNcmApi } = await import('@neteasecloudmusicapienhanced/api/server.js')
+  const ncmApp = await serveNcmApi({
+    port: NCM_API_PORT,
+    host: NCM_API_HOST,
+    checkVersion: false
+  })
+  if (runtime.forceQuit) {
+    ncmApp.server.close()
+    throw new Error('NetEase API server startup was cancelled')
+  }
+  runtime.ncmServer = ncmApp.server
+  ncmApp.server.once('close', () => {
+    if (runtime.ncmServer === ncmApp.server) runtime.ncmServer = null
+  })
+  console.log(`网易云音乐服务已启动：http://${NCM_API_HOST}:${NCM_API_PORT}`)
 }

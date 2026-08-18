@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from 'vue'
 import type { Track } from '../types/music'
 import {
@@ -28,10 +28,16 @@ import StreamingDiscovery from './StreamingDiscovery.vue'
 import StreamingLibrary from './StreamingLibrary.vue'
 import NcmCloudPanel from './NcmCloudPanel.vue'
 import StreamingSearch from './StreamingSearch.vue'
-import AnimatedInput from './AnimatedInput.vue'
 import StreamingDetailStage from './streaming-page/StreamingDetailStage.vue'
+import StreamingContentHeader from './streaming-page/StreamingContentHeader.vue'
+import StreamingSearchControls from './streaming-page/StreamingSearchControls.vue'
+import StreamingPlaceholder from './streaming-page/StreamingPlaceholder.vue'
 import StreamingSocialStage from './streaming-page/StreamingSocialStage.vue'
 import StreamingLoadingStage from './streaming-page/StreamingLoadingStage.vue'
+import ProviderSidebar from './streaming-page/ProviderSidebar.vue'
+import NcmPlaylistDialogs from './streaming-page/NcmPlaylistDialogs.vue'
+import ProviderDownloadsPanel from './streaming-page/ProviderDownloadsPanel.vue'
+import StreamingContextMenu from './streaming-page/StreamingContextMenu.vue'
 import {
   buildStreamingSidebarItems,
   getFirstVisibleStreamingTab,
@@ -47,6 +53,7 @@ import {
   type StreamingArtistNavigationRequest
 } from '../utils/streamingArtistResolution'
 import { getRecentTracks, getTopTracks } from '../stores/useListeningStatsStore'
+import { shuffleArray } from '../utils/playerQueueUtils'
 import { resolveUnifiedRecentTracks } from '../utils/unifiedRecentTracks'
 import { summarizeUnifiedFavorites } from '../utils/unifiedFavoriteTracks'
 import {
@@ -55,10 +62,16 @@ import {
   searchLocalStreamingSongs
 } from './streaming-page/localStreamingSearch'
 import {
-  useStreamingSearch,
-  type SearchSource,
-  type SearchSourceOption
-} from './streaming-page/useStreamingSearch'
+  appendUniqueTracks,
+  getPersonalizedStreamKey,
+  getSharedLibraryProviderId,
+  getSidebarItemsSignature,
+  mergePlaylistSummaries,
+  resolveExternalProviderName as externalProviderName,
+  resolveStreamingTabIndex as getStreamingTabIndex,
+  timeGreeting as resolveTimeGreeting
+} from './streaming-page/streamingPageModel'
+import { useStreamingSearch, type SearchSourceOption } from './streaming-page/useStreamingSearch'
 import { useStreamingDiscovery } from './streaming-page/useStreamingDiscovery'
 import { useTrackMultiSelect } from './song-list/useTrackMultiSelect'
 import {
@@ -68,7 +81,7 @@ import {
 import { useAppNoticeStore } from '../stores/useAppNoticeStore'
 import { getTrackSource } from '../utils/logicalTrackModel'
 import { friendlyStreamingError } from './streaming-page/friendlyStreamingError.ts'
-import { useEscapeToClose, useFocusTrap } from '../app/useDismissLayer.ts'
+import { useEscapeToClose } from '../app/useDismissLayer.ts'
 import type { ProviderDownloadQuality, ProviderDownloadTaskSnapshot } from '../../../preload/types'
 
 interface RecSection {
@@ -204,7 +217,6 @@ const likedTracksLoadingMore = ref(false)
 const likedTracksLoadMoreError = ref('')
 const recsLoading = ref(false)
 const recsError = ref('')
-const avatarLoadFailed = ref(false)
 const providerStore = useProviderStore()
 const settingsStore = useSettingsStore()
 const musicStore = useMusicStore()
@@ -350,16 +362,6 @@ async function openRecSection(section: RecSection): Promise<void> {
   detailError.value = ''
 }
 
-function getPersonalizedStreamKey(section: RecSection | null): PersonalizedStreamKey | null {
-  if (section?.key === 'fm' || section?.key === 'radar') return section.key
-  return null
-}
-
-function appendUniqueTracks(current: readonly Track[], incoming: readonly Track[]): Track[] {
-  const seen = new Set(current.map((track) => track.id))
-  return incoming.filter((track) => track.id && !seen.has(track.id) && seen.add(track.id))
-}
-
 async function loadMorePersonalizedStream(
   key: PersonalizedStreamKey,
   session: PersonalizedStreamSession | null = null
@@ -415,11 +417,6 @@ const visibleTabs = computed(() =>
   )
 )
 const currentView = computed(() => visibleTabs.value.find((item) => item.tab === activeTab.value))
-
-function getStreamingTabIndex(key: StreamingTab): number {
-  const index = visibleTabs.value.findIndex((tab) => tab.tab === key)
-  return index === -1 ? 0 : index
-}
 
 const emit = defineEmits<{
   toggleMenu: []
@@ -675,7 +672,6 @@ const {
   searchOffset,
   searchLoading,
   searchError,
-  searchInputFocused,
   isSearching,
   availableSearchTypes,
   clearSearch,
@@ -702,26 +698,6 @@ const discovery = useStreamingDiscovery({
   fetchDiscoveryPlaylists,
   fetchHighQualityPlaylists
 })
-
-const sourceMenuOpen = ref(false)
-const activeSourceOption = computed(
-  () =>
-    searchSources.value.find((s) => s.id === searchSource.value) ?? searchSources.value[0] ?? null
-)
-function selectSearchSource(sourceId: SearchSource): void {
-  const source = searchSources.value.find((s) => s.id === sourceId)
-  if (!source || !source.available) return
-  searchSource.value = sourceId
-  sourceMenuOpen.value = false
-}
-
-// Close only when focus leaves the whole dropdown — a blur timeout would race
-// against keyboard activation of the (focusable) options.
-function onSourceMenuFocusOut(event: FocusEvent): void {
-  const next = event.relatedTarget as Node | null
-  const container = event.currentTarget as HTMLElement | null
-  if (!next || !container?.contains(next)) sourceMenuOpen.value = false
-}
 
 // Like button state
 const likingTracks = ref<Set<number>>(new Set())
@@ -802,15 +778,7 @@ const headerSubtitle = computed(() => {
   return timeGreeting.value
 })
 
-const timeGreeting = computed(() => {
-  const hour = new Date().getHours()
-  if (hour < 5) return '夜深了，放一首安静的歌'
-  if (hour < 11) return '早上好，开启美好的一天'
-  if (hour < 14) return '中午好，让音乐陪你休息'
-  if (hour < 18) return '下午好，继续享受音乐'
-  if (hour < 22) return '晚上好，放松一下'
-  return '夜深了，放一首安静的歌'
-})
+const timeGreeting = computed(() => resolveTimeGreeting(new Date().getHours()))
 const rootLoading = computed(() => {
   if (activeTab.value !== 'library' || currentDetail.value) return false
   return isExternalActive.value
@@ -1034,8 +1002,8 @@ const detailFollowButtonIcon = computed(() =>
 function selectTab(key: StreamingTab): void {
   if (isExternalActive.value && key !== 'library' && key !== 'recent') return
   if (activeTab.value !== key) {
-    const oldIndex = getStreamingTabIndex(activeTab.value)
-    const newIndex = getStreamingTabIndex(key)
+    const oldIndex = getStreamingTabIndex(visibleTabs.value, activeTab.value)
+    const newIndex = getStreamingTabIndex(visibleTabs.value, key)
     streamingTransitionName.value = newIndex > oldIndex ? 'stream-page-down' : 'stream-page-up'
     resetDetail({ animate: false })
   }
@@ -1070,13 +1038,6 @@ function isSidebarItemActive(item: SidebarItem): boolean {
   })
 }
 
-function getSharedLibraryProviderId(): string {
-  if (libraryProviders.value.some((provider) => provider.id === activeProvider.value)) {
-    return activeProvider.value
-  }
-  return libraryProviders.value[0]?.id ?? NCM_PROVIDER_ID
-}
-
 function selectSidebarItem(item: SidebarItem, options: { persistProvider?: boolean } = {}): void {
   const persistProvider = options.persistProvider !== false
   if (item.tab === 'recent') {
@@ -1085,7 +1046,11 @@ function selectSidebarItem(item: SidebarItem, options: { persistProvider?: boole
     return
   }
   if (item.tab === 'library') {
-    const provider = getSharedLibraryProviderId()
+    const provider = getSharedLibraryProviderId(
+      activeProvider.value,
+      libraryProviders.value.map((libraryProvider) => libraryProvider.id),
+      NCM_PROVIDER_ID
+    )
     if (activeProvider.value !== provider) {
       selectProvider(provider, persistProvider)
     }
@@ -1137,12 +1102,6 @@ function resetLikedTracksPaging(): void {
   likedTracksLoadMoreError.value = ''
 }
 
-function getSidebarItemsSignature(): string {
-  return sidebarItems.value
-    .map((item) => `${item.key}:${item.provider}:${item.tab ?? 'external'}`)
-    .join('|')
-}
-
 function ensureVisibleSidebarSelection(): void {
   if (!hasOnlineNavigationEntries.value) {
     fallbackProvider.value = null
@@ -1181,20 +1140,6 @@ function isActiveDetailLoad(token: number): boolean {
   return token === detailLoadToken
 }
 
-function mergePlaylistSummaries<T extends MediaProviderPlaylistSummary>(...groups: T[][]): T[] {
-  const seen = new Set<string>()
-  const merged: T[] = []
-  for (const group of groups) {
-    for (const playlist of group) {
-      const id = String(playlist.id)
-      if (seen.has(id)) continue
-      seen.add(id)
-      merged.push(playlist)
-    }
-  }
-  return merged
-}
-
 async function findArtistByUserName(user: NcmUserSummary): Promise<NcmArtistSummary | null> {
   const keyword = user.name.trim()
   if (!keyword) return null
@@ -1213,10 +1158,6 @@ async function ensureLibraryLoaded(force = false): Promise<void> {
   } catch {
     // error is already stored in libraryError
   }
-}
-
-function externalProviderName(id: string): string {
-  return providerStore.getProvider(id)?.name ?? id
 }
 
 async function refreshExternalProviderState(id: string): Promise<void> {
@@ -1248,7 +1189,7 @@ async function refreshExternalProviderState(id: string): Promise<void> {
     state.profile = null
     state.libraryError = friendlyStreamingError(
       error,
-      `${externalProviderName(id)} 登录状态检查失败`
+      `${externalProviderName(id, (providerId) => providerStore.getProvider(providerId)?.name)} 登录状态检查失败`
     )
   }
 }
@@ -1273,7 +1214,7 @@ async function ensureExternalLibraryLoaded(id: string, force = false): Promise<v
   } catch (error) {
     state.libraryError = friendlyStreamingError(
       error,
-      `加载 ${externalProviderName(id)} 音乐库失败`
+      `加载 ${externalProviderName(id, (providerId) => providerStore.getProvider(providerId)?.name)} 音乐库失败`
     )
   } finally {
     state.libraryLoading = false
@@ -1915,10 +1856,6 @@ const downloadTasks = ref<ProviderDownloadTaskSnapshot[]>([])
 const showDownloadPanel = ref(false)
 const downloadQualityMenuOpen = ref(false)
 let stopDownloadListener: (() => void) | null = null
-
-const activeDownloadTasks = computed(() =>
-  downloadTasks.value.filter((task) => task.status !== 'completed' && task.status !== 'cancelled')
-)
 const contextMenuDownloadProviderId = computed<string | null>(() => {
   const tracks = streamingContextActionTracks.value
   if (tracks.length === 0) return null
@@ -1988,27 +1925,6 @@ async function handleRetryDownload(taskId: string): Promise<void> {
     await window.api.providerDownloads.retry(taskId)
   } catch (error) {
     pushNotice({ kind: 'error', message: friendlyStreamingError(error, '重试下载失败') })
-  }
-}
-
-function formatProgress(value: number): string {
-  return `${Math.round(value * 100)}%`
-}
-
-function downloadStatusLabel(task: ProviderDownloadTaskSnapshot): string {
-  switch (task.status) {
-    case 'queued':
-      return task.queuePosition != null ? `排队中 #${task.queuePosition}` : '排队中'
-    case 'preparing':
-      return '准备中'
-    case 'downloading':
-      return `下载中 ${formatProgress(task.progress)}`
-    case 'completed':
-      return '已完成'
-    case 'failed':
-      return '失败'
-    case 'cancelled':
-      return '已取消'
   }
 }
 
@@ -2091,11 +2007,7 @@ async function playAllDetailTracks(): Promise<void> {
 async function shufflePlayDetailTracks(): Promise<void> {
   const tracks = await resolveDetailPlaybackQueue()
   if (tracks.length === 0) return
-  const shuffled = [...tracks]
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-  }
+  const shuffled = shuffleArray(tracks)
   playStreamingTrack(shuffled[0], shuffled)
 }
 
@@ -2297,8 +2209,6 @@ const addToNcmPlaylistBusy = ref(false)
 const addToNcmPlaylistError = ref('')
 const addToNcmPlaylistTracks = ref<Track[]>([])
 const deletingNcmPlaylistId = ref<string | number | null>(null)
-const createNcmPlaylistDialogRef = ref<HTMLElement | null>(null)
-const addToNcmPlaylistDialogRef = ref<HTMLElement | null>(null)
 
 const ownedUserPlaylists = computed(() =>
   userPlaylistEntries.value.filter((playlist) => playlist.owned === true)
@@ -2328,9 +2238,6 @@ function closeCreateNcmPlaylistDialog(): void {
   newNcmPlaylistName.value = ''
   createNcmPlaylistError.value = ''
 }
-
-useEscapeToClose(showCreateNcmPlaylistDialog, closeCreateNcmPlaylistDialog)
-useFocusTrap(createNcmPlaylistDialogRef, showCreateNcmPlaylistDialog)
 
 async function confirmCreateNcmPlaylist(): Promise<void> {
   const name = newNcmPlaylistName.value.trim()
@@ -2428,9 +2335,6 @@ function closeAddToNcmPlaylistDialog(): void {
   addToNcmPlaylistTracks.value = []
   addToNcmPlaylistError.value = ''
 }
-
-useEscapeToClose(showAddToNcmPlaylistDialog, closeAddToNcmPlaylistDialog)
-useFocusTrap(addToNcmPlaylistDialogRef, showAddToNcmPlaylistDialog)
 
 function convertAddToCreatePlaylist(): void {
   if (addToNcmPlaylistBusy.value) return
@@ -2715,7 +2619,7 @@ watch(
 )
 
 watch(
-  getSidebarItemsSignature,
+  () => getSidebarItemsSignature(sidebarItems.value),
   () => {
     ensureVisibleSidebarSelection()
   },
@@ -2850,247 +2754,45 @@ onMounted(async () => {
 
 <template>
   <div class="streaming-page" :class="{ 'has-player': hasPlayer }">
-    <div class="streaming-sidebar" :class="{ open: menuOpen }">
-      <div class="streaming-sidebar-inner">
-        <div class="streaming-sidebar-header">
-          <span class="streaming-sidebar-title">流媒体</span>
-        </div>
-        <nav class="streaming-nav">
-          <div
-            v-for="item in sidebarItems"
-            :key="item.key"
-            class="streaming-menu-item"
-            role="button"
-            tabindex="0"
-            data-te-interactive
-            :class="{ active: isSidebarItemActive(item) }"
-            @click="selectSidebarItem(item)"
-            @keydown.enter.prevent="selectSidebarItem(item)"
-            @keydown.space.prevent="selectSidebarItem(item)"
-          >
-            <i class="streaming-menu-icon" :class="item.icon"></i>
-            <span class="streaming-menu-label">{{ item.label }}</span>
-          </div>
-        </nav>
-        <div class="streaming-sidebar-bottom">
-          <div class="streaming-menu-separator"></div>
-          <div
-            class="streaming-menu-item streaming-local-btn"
-            role="button"
-            tabindex="0"
-            data-te-interactive
-            @click="emit('backToLocal')"
-            @keydown.enter.prevent="emit('backToLocal')"
-            @keydown.space.prevent="emit('backToLocal')"
-          >
-            <i class="streaming-menu-icon pi pi-desktop"></i>
-            <span class="streaming-menu-label">本地模式</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <ProviderSidebar
+      :menu-open="menuOpen"
+      :items="sidebarItems"
+      :is-active="isSidebarItemActive"
+      @select="selectSidebarItem"
+      @back-to-local="emit('backToLocal')"
+    />
 
     <div ref="streamingContentRef" class="streaming-content" @scroll="onStreamingContentScroll">
-      <header
-        class="streaming-content-header"
-        :class="{
-          'is-detail': !!currentDetail,
-          'is-searching': isSearching && !currentDetail
-        }"
-      >
-        <div class="streaming-header-left">
-          <button
-            v-if="currentDetail || isSearching"
-            type="button"
-            class="btn-back"
-            data-te-back-button="icon"
-            title="返回"
-            @click="currentDetail ? goBack() : clearSearch()"
-          >
-            <i class="pi pi-arrow-left"></i>
-          </button>
-          <div class="streaming-header-copy">
-            <div
-              v-if="currentDetail || isSearching"
-              class="streaming-header-kicker"
-              aria-hidden="true"
-            >
-              <span class="streaming-header-kicker-mark"></span>
-              <span class="streaming-header-kicker-text">
-                {{ currentDetail ? '详情' : '搜索' }}
-              </span>
-            </div>
-            <h2 class="streaming-content-title">{{ headerTitle }}</h2>
-            <p
-              v-if="activeTab === 'home' && !currentDetail && !isSearching"
-              class="streaming-content-subtitle"
-            >
-              {{ headerSubtitle }}
-            </p>
-            <p
-              v-else-if="isExternalActive && !currentDetail && !isSearching"
-              class="streaming-content-subtitle"
-            >
-              {{ headerSubtitle }}
-            </p>
-          </div>
-        </div>
-        <div class="streaming-header-right">
-          <div
-            v-if="showUnifiedSearch"
-            class="streaming-search-box"
-            :class="{ focused: searchInputFocused }"
-          >
-            <i class="pi pi-search streaming-search-icon"></i>
-            <AnimatedInput
-              v-model="searchQuery"
-              type="text"
-              class="streaming-search-input"
-              placeholder="搜索音乐、歌手、专辑"
-              @focus="searchInputFocused = true"
-              @blur="searchInputFocused = false"
-            />
-            <i v-if="searchLoading" class="pi pi-spin pi-spinner streaming-search-spinner"></i>
-            <button
-              v-else-if="searchQuery"
-              type="button"
-              class="streaming-search-clear"
-              @click="clearSearch"
-            >
-              <i class="pi pi-times"></i>
-            </button>
-          </div>
-          <button
-            v-if="activeLoggedIn"
-            type="button"
-            class="streaming-avatar-btn"
-            title="个人资料"
-            @click="emit('login', activeProvider)"
-          >
-            <img
-              v-if="activeProfile?.avatarUrl && !avatarLoadFailed"
-              :src="activeProfile.avatarUrl"
-              alt=""
-              @error="avatarLoadFailed = true"
-            />
-            <i v-else class="pi pi-user"></i>
-          </button>
-        </div>
-      </header>
+      <StreamingContentHeader
+        :is-detail="!!currentDetail"
+        :is-searching="isSearching && !currentDetail"
+        :show-subtitle="
+          (activeTab === 'home' && !currentDetail && !isSearching) ||
+          (isExternalActive && !currentDetail && !isSearching)
+        "
+        :title="headerTitle"
+        :subtitle="headerSubtitle"
+        :show-unified-search="showUnifiedSearch"
+        :search-query="searchQuery"
+        :search-loading="searchLoading"
+        :logged-in="activeLoggedIn"
+        :profile="activeProfile"
+        @update:search-query="searchQuery = $event"
+        @back="currentDetail ? goBack() : clearSearch()"
+        @clear-search="clearSearch"
+        @login="emit('login', activeProvider)"
+      />
 
       <!-- Search Type Tabs + Source Selector -->
-      <div v-if="showUnifiedSearch && isSearching && !currentDetail" class="streaming-search-tabs">
-        <div class="search-type-group">
-          <div
-            class="search-tab-pill"
-            data-te-interactive
-            role="button"
-            :tabindex="availableSearchTypes.includes('songs') ? 0 : -1"
-            :aria-pressed="searchType === 'songs'"
-            :aria-disabled="!availableSearchTypes.includes('songs')"
-            :class="{
-              active: searchType === 'songs',
-              disabled: !availableSearchTypes.includes('songs')
-            }"
-            @click="availableSearchTypes.includes('songs') && (searchType = 'songs')"
-            @keydown.enter.prevent="
-              availableSearchTypes.includes('songs') && (searchType = 'songs')
-            "
-            @keydown.space.prevent="
-              availableSearchTypes.includes('songs') && (searchType = 'songs')
-            "
-          >
-            单曲
-          </div>
-          <div
-            class="search-tab-pill"
-            data-te-interactive
-            role="button"
-            :tabindex="availableSearchTypes.includes('playlists') ? 0 : -1"
-            :aria-pressed="searchType === 'playlists'"
-            :aria-disabled="!availableSearchTypes.includes('playlists')"
-            :class="{
-              active: searchType === 'playlists',
-              disabled: !availableSearchTypes.includes('playlists')
-            }"
-            @click="availableSearchTypes.includes('playlists') && (searchType = 'playlists')"
-            @keydown.enter.prevent="
-              availableSearchTypes.includes('playlists') && (searchType = 'playlists')
-            "
-            @keydown.space.prevent="
-              availableSearchTypes.includes('playlists') && (searchType = 'playlists')
-            "
-          >
-            歌单
-          </div>
-          <div
-            class="search-tab-pill"
-            data-te-interactive
-            role="button"
-            :tabindex="availableSearchTypes.includes('artists') ? 0 : -1"
-            :aria-pressed="searchType === 'artists'"
-            :aria-disabled="!availableSearchTypes.includes('artists')"
-            :class="{
-              active: searchType === 'artists',
-              disabled: !availableSearchTypes.includes('artists')
-            }"
-            @click="availableSearchTypes.includes('artists') && (searchType = 'artists')"
-            @keydown.enter.prevent="
-              availableSearchTypes.includes('artists') && (searchType = 'artists')
-            "
-            @keydown.space.prevent="
-              availableSearchTypes.includes('artists') && (searchType = 'artists')
-            "
-          >
-            歌手
-          </div>
-        </div>
-        <div
-          class="search-source-dropdown"
-          :class="{ open: sourceMenuOpen }"
-          @focusout="onSourceMenuFocusOut"
-          @keydown.esc.prevent="sourceMenuOpen = false"
-        >
-          <button
-            class="search-source-trigger"
-            aria-haspopup="listbox"
-            :aria-expanded="sourceMenuOpen"
-            @click="sourceMenuOpen = !sourceMenuOpen"
-          >
-            <i
-              v-if="activeSourceOption?.icon"
-              class="pi"
-              :class="activeSourceOption.icon"
-              style="font-size: 13px"
-            ></i>
-            <span>{{ activeSourceOption?.label ?? '音源' }}</span>
-            <i class="pi pi-chevron-down" style="font-size: 10px"></i>
-          </button>
-          <div v-if="sourceMenuOpen" class="search-source-menu" role="listbox" aria-label="音源">
-            <div
-              v-for="source in searchSources"
-              :key="source.id"
-              class="search-source-option"
-              role="option"
-              :tabindex="source.available ? 0 : -1"
-              :aria-selected="searchSource === source.id"
-              :aria-disabled="!source.available"
-              :class="{ active: searchSource === source.id, disabled: !source.available }"
-              @mousedown.prevent="selectSearchSource(source.id)"
-              @keydown.enter.prevent="selectSearchSource(source.id)"
-              @keydown.space.prevent="selectSearchSource(source.id)"
-            >
-              <i v-if="source.icon" class="pi" :class="source.icon" style="font-size: 13px"></i>
-              <span>{{ source.label }}</span>
-              <i
-                v-if="searchSource === source.id"
-                class="pi pi-check"
-                style="font-size: 12px; margin-left: auto"
-              ></i>
-            </div>
-          </div>
-        </div>
-      </div>
+      <StreamingSearchControls
+        v-if="showUnifiedSearch && isSearching && !currentDetail"
+        :search-type="searchType"
+        :available-search-types="availableSearchTypes"
+        :search-sources="searchSources"
+        :search-source="searchSource"
+        @update:search-type="searchType = $event"
+        @select-source="searchSource = $event"
+      />
 
       <Transition
         :name="streamingTransitionName"
@@ -3136,11 +2838,12 @@ onMounted(async () => {
           />
         </div>
         <div v-else :key="streamingViewKey" class="streaming-content-body stream-view-panel">
-          <div v-if="!hasOnlineNavigationEntries && !currentDetail" class="streaming-placeholder">
-            <i class="pi pi-plug" style="font-size: 48px; color: #ccc"></i>
-            <p class="placeholder-title">未启用可用的在线音源</p>
-            <p class="placeholder-hint">请在设置的插件页启用网易云音乐或其它音源插件。</p>
-          </div>
+          <StreamingPlaceholder
+            v-if="!hasOnlineNavigationEntries && !currentDetail"
+            title="未启用可用的在线音源"
+            hint="请在设置的插件页启用网易云音乐或其它音源插件。"
+            icon="pi pi-plug"
+          />
 
           <StreamingHome
             v-else-if="activeTab === 'home' && !currentDetail && activeProviderAvailable"
@@ -3188,60 +2891,48 @@ onMounted(async () => {
             @retry="discovery.retry"
           />
 
-          <div
+          <StreamingPlaceholder
             v-else-if="(!activeProviderAvailable || activeProviderUnavailable) && !currentDetail"
-            class="streaming-placeholder"
-          >
-            <i class="pi pi-ban" style="font-size: 48px; color: #ccc"></i>
-            <p class="placeholder-title">
-              {{ isExternalActive ? `${activeProviderLabel} 插件已停用` : '网易云音乐插件已停用' }}
-            </p>
-            <p class="placeholder-hint">
-              {{
-                activeProviderError ||
-                (isExternalActive
-                  ? `请在设置的插件页重新启用 ${activeProviderLabel}。`
-                  : '请在设置的插件页重新启用 NetEase Cloud Music。')
-              }}
-            </p>
-          </div>
+            :title="isExternalActive ? `${activeProviderLabel} 插件已停用` : '网易云音乐插件已停用'"
+            :hint="
+              activeProviderError ||
+              (isExternalActive
+                ? `请在设置的插件页重新启用 ${activeProviderLabel}。`
+                : '请在设置的插件页重新启用 NetEase Cloud Music。')
+            "
+            icon="pi pi-ban"
+          />
 
-          <div v-else-if="!activeLoggedIn && !currentDetail" class="streaming-placeholder">
-            <i class="pi pi-user" style="font-size: 48px; color: #ccc"></i>
-            <p class="placeholder-title">
-              {{ isExternalActive ? `请先登录 ${activeProviderLabel}` : '请先登录网易云音乐' }}
-            </p>
-            <p class="placeholder-hint">
-              {{
-                isExternalActive
-                  ? '登录后即可加载全部音乐库'
-                  : activeTab === 'cloud'
-                    ? '登录后即可管理音乐云盘中的歌曲和传输任务'
-                    : '登录后即可加载我收藏的歌曲和在线歌单'
-              }}
-            </p>
-            <button type="button" class="stream-action-btn" @click="emit('login', activeProvider)">
-              <i class="pi pi-user"></i>
-              <span>账号登录</span>
-            </button>
-          </div>
+          <StreamingPlaceholder
+            v-else-if="!activeLoggedIn && !currentDetail"
+            :title="isExternalActive ? `请先登录 ${activeProviderLabel}` : '请先登录网易云音乐'"
+            :hint="
+              isExternalActive
+                ? '登录后即可加载全部音乐库'
+                : activeTab === 'cloud'
+                  ? '登录后即可管理音乐云盘中的歌曲和传输任务'
+                  : '登录后即可加载我收藏的歌曲和在线歌单'
+            "
+            icon="pi pi-user"
+            action-label="账号登录"
+            action-icon="pi pi-user"
+            @action="emit('login', activeProvider)"
+          />
 
           <StreamingLoadingStage
             v-else-if="rootLoading && !currentDetail"
             :provider-label="activeProviderLabel"
           />
 
-          <div
+          <StreamingPlaceholder
             v-else-if="activeTab === 'library' && !currentDetail && activeLibraryError"
-            class="streaming-placeholder"
-          >
-            <i class="pi pi-exclamation-triangle" style="font-size: 40px; color: #e74c3c"></i>
-            <p class="placeholder-title">加载失败</p>
-            <p class="placeholder-hint">{{ activeLibraryError }}</p>
-            <button type="button" class="stream-action-btn" @click="retryCurrentView">
-              <span>重试</span>
-            </button>
-          </div>
+            title="加载失败"
+            :hint="activeLibraryError"
+            icon="pi pi-exclamation-triangle"
+            danger
+            action-label="重试"
+            @action="retryCurrentView"
+          />
 
           <div v-else-if="currentDetail" class="detail-view">
             <div v-if="showDetailOverlayLoading" class="detail-loading-overlay" aria-live="polite">
@@ -3251,14 +2942,16 @@ onMounted(async () => {
 
             <!-- Track playlist / rec / liked / album / recent / ranking: editorial stage -->
             <template v-if="showTrackDetailStage">
-              <div v-if="detailError" class="streaming-placeholder detail-placeholder">
-                <i class="pi pi-exclamation-triangle" style="font-size: 40px; color: #e74c3c"></i>
-                <p class="placeholder-title">加载失败</p>
-                <p class="placeholder-hint">{{ detailError }}</p>
-                <button type="button" class="stream-action-btn" @click="retryCurrentView">
-                  <span>重试</span>
-                </button>
-              </div>
+              <StreamingPlaceholder
+                v-if="detailError"
+                title="加载失败"
+                :hint="detailError"
+                icon="pi pi-exclamation-triangle"
+                danger
+                detail
+                action-label="重试"
+                @action="retryCurrentView"
+              />
 
               <StreamingDetailStage
                 v-else-if="detailHeaderInfo"
@@ -3413,363 +3106,58 @@ onMounted(async () => {
       </Transition>
     </div>
 
-    <Teleport to="body">
-      <div
-        v-if="showStreamingContextMenu"
-        class="streaming-context-menu"
-        :style="{ top: `${streamingContextMenuY}px`, left: `${streamingContextMenuX}px` }"
-        @click.stop
-      >
-        <div
-          class="menu-item"
-          role="menuitem"
-          tabindex="0"
-          data-te-interactive
-          @click="handleContextPlayTrack"
-          @keydown.enter.prevent="handleContextPlayTrack"
-          @keydown.space.prevent="handleContextPlayTrack"
-        >
-          <i class="pi pi-play"></i>
-          <span>播放</span>
-        </div>
-        <div
-          v-if="!contextMenuCanLike"
-          class="menu-item"
-          role="menuitem"
-          tabindex="0"
-          data-te-interactive
-          @click="handleContextFavorite"
-          @keydown.enter.prevent="handleContextFavorite"
-          @keydown.space.prevent="handleContextFavorite"
-        >
-          <i :class="streamingContextAllFavorited ? 'pi pi-heart-fill' : 'pi pi-heart'"></i>
-          <span>
-            {{ streamingContextAllFavorited ? '取消收藏' : '加入收藏'
-            }}{{ streamingContextActionLabel }}
-          </span>
-        </div>
-        <div
-          v-if="contextMenuCanLike"
-          class="menu-item"
-          role="menuitem"
-          tabindex="0"
-          data-te-interactive
-          @click="handleContextLikeTrack"
-          @keydown.enter.prevent="handleContextLikeTrack"
-          @keydown.space.prevent="handleContextLikeTrack"
-        >
-          <i :class="contextMenuSingleLiked ? 'pi pi-heart-fill' : 'pi pi-heart'"></i>
-          <span>{{ contextMenuSingleLiked ? '取消喜欢' : '喜欢' }}</span>
-        </div>
-        <div
-          v-if="canManageNcmPlaylists"
-          class="menu-item"
-          @mouseenter="showStreamingPlaylistSubmenu = true"
-        >
-          <i class="pi pi-plus"></i>
-          <span>添加到歌单{{ streamingContextActionLabel }}</span>
-          <i class="pi pi-chevron-right submenu-icon"></i>
-          <div v-if="showStreamingPlaylistSubmenu" class="submenu">
-            <div
-              class="menu-item create-playlist-menu-item"
-              role="menuitem"
-              tabindex="0"
-              data-te-interactive
-              @click="handleContextCreatePlaylist"
-              @keydown.enter.prevent="handleContextCreatePlaylist"
-              @keydown.space.prevent="handleContextCreatePlaylist"
-            >
-              <i class="pi pi-plus"></i>
-              <span>创建新歌单</span>
-            </div>
-            <div v-if="ownedUserPlaylists.length === 0" class="menu-item disabled">
-              暂无自建歌单
-            </div>
-            <div
-              v-for="playlist in ownedUserPlaylists"
-              :key="playlist.id"
-              class="menu-item"
-              role="menuitem"
-              tabindex="0"
-              data-te-interactive
-              @click="handleContextAddToOwnedPlaylist(playlist)"
-              @keydown.enter.prevent="handleContextAddToOwnedPlaylist(playlist)"
-              @keydown.space.prevent="handleContextAddToOwnedPlaylist(playlist)"
-            >
-              {{ playlist.name }}
-            </div>
-            <div
-              class="menu-item"
-              role="menuitem"
-              tabindex="0"
-              data-te-interactive
-              @click="handleContextAddToPlaylist"
-              @keydown.enter.prevent="handleContextAddToPlaylist"
-              @keydown.space.prevent="handleContextAddToPlaylist"
-            >
-              <i class="pi pi-list"></i>
-              <span>选择歌单…</span>
-            </div>
-          </div>
-        </div>
-        <div
-          v-if="canMutateCurrentNcmPlaylist"
-          class="menu-item danger"
-          role="menuitem"
-          tabindex="0"
-          data-te-interactive
-          @click="handleContextRemoveFromPlaylist"
-          @keydown.enter.prevent="handleContextRemoveFromPlaylist"
-          @keydown.space.prevent="handleContextRemoveFromPlaylist"
-        >
-          <i class="pi pi-minus-circle"></i>
-          <span>从歌单移除{{ streamingContextActionLabel }}</span>
-        </div>
-        <div
-          v-if="contextMenuCanDownload"
-          class="menu-item"
-          role="menuitem"
-          tabindex="0"
-          data-te-interactive
-          @mouseenter="downloadQualityMenuOpen = true"
-        >
-          <i class="pi pi-download"></i>
-          <span>下载到本地{{ streamingContextActionLabel }}</span>
-          <i class="pi pi-chevron-right submenu-icon"></i>
-          <div v-if="downloadQualityMenuOpen" class="submenu">
-            <div
-              class="menu-item"
-              role="menuitem"
-              tabindex="0"
-              data-te-interactive
-              @click="handleContextDownload('hi-res')"
-              @keydown.enter.prevent="handleContextDownload('hi-res')"
-            >
-              <i class="pi pi-bolt"></i>
-              <span>Hi-Res</span>
-            </div>
-            <div
-              class="menu-item"
-              role="menuitem"
-              tabindex="0"
-              data-te-interactive
-              @click="handleContextDownload('lossless')"
-              @keydown.enter.prevent="handleContextDownload('lossless')"
-            >
-              <i class="pi pi-wave-pulse"></i>
-              <span>Lossless</span>
-            </div>
-            <div
-              class="menu-item"
-              role="menuitem"
-              tabindex="0"
-              data-te-interactive
-              @click="handleContextDownload('aac')"
-              @keydown.enter.prevent="handleContextDownload('aac')"
-            >
-              <i class="pi pi-volume-down"></i>
-              <span>AAC</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <StreamingContextMenu
+      :show="showStreamingContextMenu"
+      :x="streamingContextMenuX"
+      :y="streamingContextMenuY"
+      :all-favorited="streamingContextAllFavorited"
+      :action-label="streamingContextActionLabel"
+      :can-like="contextMenuCanLike"
+      :single-liked="contextMenuSingleLiked"
+      :can-manage-playlists="canManageNcmPlaylists"
+      :owned-user-playlists="ownedUserPlaylists"
+      :show-playlist-submenu="showStreamingPlaylistSubmenu"
+      :can-remove-from-playlist="canMutateCurrentNcmPlaylist"
+      :can-download="contextMenuCanDownload"
+      :show-download-quality-menu="downloadQualityMenuOpen"
+      @play="handleContextPlayTrack"
+      @favorite="handleContextFavorite"
+      @like="handleContextLikeTrack"
+      @create-playlist="handleContextCreatePlaylist"
+      @add-to-owned-playlist="handleContextAddToOwnedPlaylist"
+      @add-to-playlist="handleContextAddToPlaylist"
+      @remove-from-playlist="handleContextRemoveFromPlaylist"
+      @download="handleContextDownload"
+      @close="closeStreamingContextMenu"
+      @toggle-playlist-submenu="showStreamingPlaylistSubmenu = $event"
+      @toggle-download-quality-menu="downloadQualityMenuOpen = $event"
+    />
 
-    <Teleport to="body">
-      <Transition name="dialog-fade">
-        <div
-          v-if="showCreateNcmPlaylistDialog"
-          class="ncm-playlist-dialog-overlay"
-          @click.self="closeCreateNcmPlaylistDialog"
-        >
-          <div
-            ref="createNcmPlaylistDialogRef"
-            class="ncm-playlist-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="创建歌单"
-          >
-            <h3>创建网易云歌单</h3>
-            <AnimatedInput
-              v-model="newNcmPlaylistName"
-              type="text"
-              class="ncm-playlist-name-input"
-              maxlength="50"
-              placeholder="请输入歌单名称"
-              :disabled="createNcmPlaylistBusy"
-              autofocus
-              @keyup.enter="confirmCreateNcmPlaylist"
-            />
-            <p v-if="createNcmPlaylistError" class="ncm-playlist-dialog-error">
-              {{ createNcmPlaylistError }}
-            </p>
-            <div class="ncm-playlist-dialog-actions">
-              <button
-                type="button"
-                :disabled="createNcmPlaylistBusy"
-                @click="closeCreateNcmPlaylistDialog"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                class="primary"
-                :disabled="createNcmPlaylistBusy || !newNcmPlaylistName.trim()"
-                @click="confirmCreateNcmPlaylist"
-              >
-                {{ createNcmPlaylistBusy ? '创建中…' : '创建' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <NcmPlaylistDialogs
+      :show-create="showCreateNcmPlaylistDialog"
+      :show-add="showAddToNcmPlaylistDialog"
+      v-model:new-name="newNcmPlaylistName"
+      :create-busy="createNcmPlaylistBusy"
+      :create-error="createNcmPlaylistError"
+      :add-busy="addToNcmPlaylistBusy"
+      :add-error="addToNcmPlaylistError"
+      :add-tracks="addToNcmPlaylistTracks"
+      :owned-user-playlists="ownedUserPlaylists"
+      @close-create="closeCreateNcmPlaylistDialog"
+      @confirm-create="confirmCreateNcmPlaylist"
+      @close-add="closeAddToNcmPlaylistDialog"
+      @convert-add-to-create="convertAddToCreatePlaylist"
+      @confirm-add="confirmAddTracksToNcmPlaylist"
+    />
 
-    <Teleport to="body">
-      <Transition name="dialog-fade">
-        <div
-          v-if="showAddToNcmPlaylistDialog"
-          class="ncm-playlist-dialog-overlay"
-          @click.self="closeAddToNcmPlaylistDialog"
-        >
-          <div
-            ref="addToNcmPlaylistDialogRef"
-            class="ncm-playlist-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="添加到歌单"
-          >
-            <h3>添加到网易云歌单</h3>
-            <p class="ncm-playlist-dialog-hint">
-              已选 {{ addToNcmPlaylistTracks.length }} 首，选择目标歌单
-            </p>
-            <div class="ncm-playlist-picker">
-              <button
-                type="button"
-                class="ncm-playlist-picker-item create"
-                :disabled="addToNcmPlaylistBusy"
-                @click="convertAddToCreatePlaylist"
-              >
-                <i class="pi pi-plus"></i>
-                <span>新建歌单并添加</span>
-              </button>
-              <button
-                v-for="playlist in ownedUserPlaylists"
-                :key="playlist.id"
-                type="button"
-                class="ncm-playlist-picker-item"
-                :disabled="addToNcmPlaylistBusy"
-                @click="confirmAddTracksToNcmPlaylist(playlist)"
-              >
-                <img v-if="playlist.cover" :src="playlist.cover" alt="" />
-                <i v-else class="pi pi-list"></i>
-                <span>
-                  <strong>{{ playlist.name }}</strong>
-                  <small>{{ playlist.trackCount ?? 0 }} 首</small>
-                </span>
-              </button>
-              <p v-if="ownedUserPlaylists.length === 0" class="ncm-playlist-dialog-hint">
-                暂无自建歌单，可先新建一个
-              </p>
-            </div>
-            <p v-if="addToNcmPlaylistError" class="ncm-playlist-dialog-error">
-              {{ addToNcmPlaylistError }}
-            </p>
-            <div class="ncm-playlist-dialog-actions">
-              <button
-                type="button"
-                :disabled="addToNcmPlaylistBusy"
-                @click="closeAddToNcmPlaylistDialog"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="dialog-fade">
-        <div
-          v-if="showDownloadPanel"
-          class="provider-download-panel-overlay"
-          @click.self="showDownloadPanel = false"
-        >
-          <div
-            class="provider-download-panel"
-            role="dialog"
-            aria-modal="true"
-            aria-label="下载管理"
-          >
-            <div class="provider-download-panel-header">
-              <h3>下载管理</h3>
-              <button type="button" class="soft-button" @click="showDownloadPanel = false">
-                <i class="pi pi-times"></i>
-              </button>
-            </div>
-            <div v-if="downloadTasks.length === 0" class="provider-download-empty">
-              暂无下载任务。在流媒体曲目上右键选择「下载到本地」即可开始。
-            </div>
-            <div v-else class="provider-download-list">
-              <div
-                v-for="task in downloadTasks"
-                :key="task.id"
-                class="provider-download-item"
-                :class="{
-                  completed: task.status === 'completed',
-                  failed: task.status === 'failed'
-                }"
-              >
-                <div class="provider-download-item-info">
-                  <strong>{{ task.track.title }}</strong>
-                  <span>{{ task.track.artist }}</span>
-                  <small :class="{ error: task.status === 'failed' }">
-                    {{ downloadStatusLabel(task) }}
-                    <template v-if="task.actualQuality"> · {{ task.actualQuality }}</template>
-                    <template v-if="task.fileSize">
-                      · {{ (task.fileSize / 1048576).toFixed(1) }} MB</template
-                    >
-                  </small>
-                  <small v-if="task.error" class="error">{{ task.error }}</small>
-                  <small v-if="task.targetPath && task.status === 'completed'" class="path">
-                    {{ task.targetPath }}
-                  </small>
-                </div>
-                <div class="provider-download-item-actions">
-                  <button
-                    v-if="task.status === 'failed' || task.status === 'cancelled'"
-                    type="button"
-                    class="soft-button"
-                    @click="handleRetryDownload(task.id)"
-                  >
-                    重试
-                  </button>
-                  <button
-                    v-if="task.status !== 'completed' && task.status !== 'cancelled'"
-                    type="button"
-                    class="muted-button"
-                    @click="handleCancelDownload(task.id)"
-                  >
-                    取消
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <button
-      v-if="activeDownloadTasks.length > 0 && !showDownloadPanel"
-      type="button"
-      class="provider-download-fab"
-      @click="showDownloadPanel = true"
-    >
-      <i class="pi pi-download"></i>
-      <span class="fab-badge">{{ activeDownloadTasks.length }}</span>
-    </button>
+    <ProviderDownloadsPanel
+      :show="showDownloadPanel"
+      :tasks="downloadTasks"
+      @close="showDownloadPanel = false"
+      @open="showDownloadPanel = true"
+      @retry="handleRetryDownload"
+      @cancel="handleCancelDownload"
+    />
   </div>
 </template>
 

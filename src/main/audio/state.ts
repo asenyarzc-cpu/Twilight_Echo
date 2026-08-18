@@ -9,7 +9,7 @@ import {
   type PlaybackInfo,
   type DspSceneState
 } from '../audioEngineManager'
-import { buildEffectiveAudioProcessingSettings } from '../audioProcessingEffective'
+import { buildEffectiveAudioProcessingSettings } from './audioProcessingEffective'
 import {
   createLegacyDspGraph,
   extractStereoImageFromGraph,
@@ -22,6 +22,7 @@ import {
   applyMiniPlayerMotionPreferenceFromApp,
   applyMiniPlayerSettingsFromApp
 } from '../integrations/miniPlayer'
+import { syncDesktopLyricsSettings } from '../integrations/desktopLyrics'
 import { applyRuntimeSettings } from '../integrations/shortcutsTray'
 import { applyLibraryWatchers } from '../library/watcher'
 
@@ -248,22 +249,14 @@ export async function updateAppSettings(patch: Partial<AppSettings>): Promise<Se
     applyLibraryWatchers(runtime.appSettings.libraryFolders, runtime.appSettings.watchLibrary)
   }
 
-  // Forward desktop lyrics settings changes directly to the lyrics window
+  // Forward desktop lyrics settings and linked appearance changes to the lyrics window.
   if (
-    Object.prototype.hasOwnProperty.call(patch, 'desktopLyrics') &&
+    (Object.prototype.hasOwnProperty.call(patch, 'desktopLyrics') ||
+      Object.prototype.hasOwnProperty.call(patch, 'lyricsAppearance')) &&
     runtime.desktopLyricsWindow &&
     !runtime.desktopLyricsWindow.isDestroyed()
   ) {
-    const dl = runtime.appSettings.desktopLyrics
-    runtime.desktopLyricsWindow.setAlwaysOnTop(dl.alwaysOnTop, 'screen-saver')
-    runtime.desktopLyricsWindow.setIgnoreMouseEvents(dl.clickThrough, { forward: true })
-    if (
-      dl.windowWidth !== runtime.desktopLyricsWindow.getBounds().width ||
-      dl.windowHeight !== runtime.desktopLyricsWindow.getBounds().height
-    ) {
-      runtime.desktopLyricsWindow.setSize(dl.windowWidth, dl.windowHeight)
-    }
-    runtime.desktopLyricsWindow.webContents.send('desktopLyrics:initSettings', dl)
+    syncDesktopLyricsSettings()
   }
 
   if (Object.prototype.hasOwnProperty.call(patch, 'miniPlayer')) {

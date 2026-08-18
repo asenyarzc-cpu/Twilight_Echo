@@ -1,7 +1,12 @@
-import { type IpcMain } from 'electron'
+import { nativeTheme, type IpcMain } from 'electron'
 import { assertTrustedIpcSender } from '../security/electronSecurity.ts'
 import { relaunchApplication } from '../audio/state.ts'
 import { resolvePlaybackSessionSave } from '../app/window.ts'
+import { createSettingsSnapshot } from '../core/settings.ts'
+import { runtime } from '../core/runtime.ts'
+import { loadThemeLibrary } from '../themes/themeLibrary.ts'
+import { TWILIGHT_DEFAULT_THEME } from '../../shared/theme.ts'
+import type { AppStartupSnapshot } from '../../shared/appStartup.ts'
 import type { RendererClosePersistenceOutcome } from '../../shared/closePersistence.ts'
 import { normalizeIpcString } from '../security/ipcValidation.ts'
 import { consumePendingTrayNavigation } from '../integrations/trayPlayer.ts'
@@ -35,6 +40,19 @@ function normalizeRendererClosePersistenceOutcome(value: unknown): RendererClose
 }
 
 export function registerAppIpc(ipcMain: IpcMain): void {
+  ipcMain.handle('app:getStartupSnapshot', async (event): Promise<AppStartupSnapshot> => {
+    assertTrustedIpcSender(event, 'app startup IPC')
+    const [settings, themeBootstrap] = await Promise.all([
+      Promise.resolve(createSettingsSnapshot(runtime.appSettings, runtime.launchSettings)),
+      loadThemeLibrary().then((library) => ({ library, defaultTheme: TWILIGHT_DEFAULT_THEME }))
+    ])
+    return {
+      settings,
+      pendingNavigation: consumePendingTrayNavigation(),
+      systemTone: nativeTheme.shouldUseDarkColors ? 'dark' : 'pureWhite',
+      themeBootstrap
+    }
+  })
   ipcMain.handle('app:consumePendingNavigation', (event) => {
     assertTrustedIpcSender(event, 'app IPC')
     return consumePendingTrayNavigation()

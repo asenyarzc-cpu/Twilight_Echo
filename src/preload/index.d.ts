@@ -1,4 +1,32 @@
 import type {
+  AudioOutputId,
+  PlayMode,
+  VolumeNormalizationMode,
+  LoudnormStatus,
+  EqualizerBand,
+  AudioProcessingSettings,
+  AudioOutputOption,
+  OutputConfig,
+  OutputConfigApplyStatus,
+  AudioOutputState,
+  AudioEngineQueueItem,
+  PlaybackInfo,
+  AudioEnginePlayResult,
+  VisualizationOptions,
+  VisualizationData,
+  ConvolverInfo,
+  NativeAudioMetadata,
+  BpmAnalysisResult,
+  LoudnessAnalysisResult
+} from '../shared/audioEngineTypes.ts'
+import type {
+  PlaybackResumeMode,
+  DesktopLyricsSettings,
+  AudioEqPreset,
+  AppSettings
+} from '../shared/appSettings.ts'
+import type { TrackData } from '../shared/track.ts'
+import type {
   DspAsset,
   DspAssetKind,
   DspCorrectionImportResult,
@@ -12,11 +40,7 @@ import type {
   Vst3CatalogState
 } from '../shared/dspGraph.ts'
 import type { ImportedFrequencyResponse } from '../shared/frequencyResponse.ts'
-import type { SleepTimerSettings } from '../shared/sleepTimer.ts'
-import type { LyricsAppearanceSettings } from '../shared/lyricsAppearance.ts'
-import type { LyricsPresetConfig } from '../shared/lyricsPresets.ts'
-import type { LiquidGlassSettings, SurfaceMaterial } from '../shared/liquidGlass.ts'
-import type { PlayerBarSettings } from '../shared/playerBar.ts'
+import type { AppStartupSnapshot } from '../shared/appStartup.ts'
 import type {
   ThemeAssetReference,
   ThemeAssetType,
@@ -58,55 +82,11 @@ import type {
 
 export {}
 
-interface TrackData {
-  id: string
-  title: string
-  artist: string
-  album: string
-  filePath: string
-  fileName: string
-  dir?: string
-  subTrack?: string
-  cueRange?: import('../shared/cue.ts').CueRange
-  cueSheetPath?: string
-  cueEncoding?: import('../shared/cue.ts').ParsedCueSheet['encoding']
-  duration: number
-  size: number
-  cover: string | null
-  /** Durable remote cover origin for re-granting expired twilight-media handles. */
-  coverSource?: string | null
-  lyrics: string | null
-  translatedLyrics?: string | null
-  romanizedLyrics?: string | null
-  metadataMatch?: TrackMetadataMatch | null
-  source?: TrackSource
-  ncmSongId?: number
-  streamUrl?: string | null
-  streamQuality?: NcmPlaybackQuality
-  format?: string
-  sampleRate?: number
-  bitrate?: number
-  bitDepth?: number
-  bpm?: number
-  bpmAnalysis?: BpmAnalysisResult
-  discNumber?: number
-  trackNumber?: number
-  /** Library-scanned ReplayGain / R128 tags (dB). Loudnorm never uses these as measurements. */
-  replayGainTrackGainDb?: number
-  replayGainAlbumGainDb?: number
-  replayGainTrackPeak?: number
-  replayGainAlbumPeak?: number
-  r128TrackGainDb?: number
-  r128AlbumGainDb?: number
-}
-
 interface AudioEngineEvent {
   name: string
   data: unknown
 }
 
-type AudioOutputId = 'wasapi' | 'asio' | 'coreaudio' | 'alsa'
-type PlayMode = 'sequential' | 'listLoop' | 'repeat' | 'shuffle' | 'heart'
 type PlayerShortcutAction =
   | 'previous'
   | 'next'
@@ -124,51 +104,11 @@ interface PlayerShortcutStatus {
   registered: boolean
   error: string | null
 }
-interface GlobalShortcutSettings {
-  previous: string
-  next: string
-  playPause: string
-  toggleDesktopLyrics: string
-}
-type AppTheme = 'system' | 'pureWhite' | 'dark'
-type PlaybackResumeMode = 'off' | 'track' | 'trackAndPosition'
-type PreviousButtonAction = 'restart' | 'previous'
-type NcmPlaybackQuality = 'auto' | 'standard' | 'exhigh' | 'lossless' | 'hires'
-type StartupHomePage = 'local' | 'streaming'
-type TrackActivationMode = 'singleClick' | 'doubleClick'
-type UiDensity = 'compact' | 'standard' | 'comfortable'
-type NowPlayingBackground = 'blur' | 'fluid' | 'solid'
-type LyricAlign = 'center' | 'left'
+
 type LibraryChange =
   | { kind: 'add' | 'remove' | 'unknown'; path?: string }
   | { kind: 'scan'; update: LocalLibraryScanUpdate }
-type ProxyMode = 'auto' | 'custom' | 'off'
-type StreamingAudioCachePolicy = 'off' | 'provider'
-type BuiltInTrackSource = 'local' | 'ncm'
-type TrackSource = BuiltInTrackSource | (string & {})
-type MetadataMatchConfidence = 'high' | 'medium'
-interface TrackMetadataMatch {
-  providerId: string
-  trackId: string
-  confidence: MetadataMatchConfidence
-  score: number
-}
-interface BpmTempoSegment {
-  startMs: number
-  endMs: number
-  bpm: number
-  confidence: number
-}
-interface BpmAnalysisResult {
-  bpm: number
-  confidence: number
-  source: 'analyzed'
-  analyzedAt: string
-  algorithmVersion: number
-  variableTempo?: boolean
-  bpmRange?: [number, number]
-  tempoMap?: BpmTempoSegment[]
-}
+
 interface BpmAnalysisRequest {
   trackId: string
   filePath: string
@@ -184,17 +124,7 @@ interface BpmAnalysisCompletedEvent {
   filePath: string
   analysis: BpmAnalysisResult
 }
-interface LoudnessAnalysisResult {
-  integratedLufs: number
-  truePeakDb: number
-  source: 'analyzed'
-  analyzedAt: string
-  algorithmVersion: number
-  sampleRate?: number
-  channels?: number
-  analyzedFrames?: number
-  available?: boolean
-}
+
 interface LoudnessAnalysisRequest {
   trackId: string
   filePath: string
@@ -212,7 +142,7 @@ interface LoudnessAnalysisCompletedEvent {
   filePath: string
   analysis: LoudnessAnalysisResult
 }
-type LoudnormStatus = 'idle' | 'measuring' | 'cached' | 'fallback' | 'unavailable'
+
 interface LoudnormStatusEvent {
   status: LoudnormStatus
   source: string | null
@@ -352,185 +282,6 @@ interface ProviderDownloadTaskSnapshot {
   createdAt: string
   updatedAt: string
 }
-type EqMode = 'graphic' | 'parametric'
-type VolumeNormalizationMode = 'off' | 'track' | 'album' | 'loudnorm'
-type ChannelRoutingMode =
-  | 'auto'
-  | 'stereo'
-  | 'stereo-to-5.1'
-  | 'stereo-to-7.1'
-  | 'mono-to-stereo'
-  | 'mono-to-multichannel'
-type DsdOutputMode = 'auto' | 'pcm' | 'dop' | 'native'
-type SacdProgramMode = 'auto' | 'stereo' | 'multichannel'
-
-/** DSD 兼容层路由；与 dsdOutputMode 正交。 */
-interface DsdRouteSettings {
-  enabled: boolean
-  backend: string
-  device: string
-  applyToPcmToDsd: boolean
-  strictPassthrough: boolean
-}
-type EqualizerFilterType =
-  | 'peak'
-  | 'lowShelf'
-  | 'highShelf'
-  | 'bandPass'
-  | 'lowPass'
-  | 'highPass'
-  | 'allPass'
-  | 'notch'
-
-interface AudioEngineQueueItem {
-  id: string
-  source: string
-  title?: string
-  artist?: string
-  album?: string
-  duration?: number
-  codec?: string
-  sampleRate?: number
-  bitrate?: number
-  bitDepth?: number
-  measuredIntegratedLufs?: number
-  measuredTruePeakDb?: number
-  replayGainTrackGainDb?: number
-  replayGainAlbumGainDb?: number
-  replayGainTrackPeak?: number
-  replayGainAlbumPeak?: number
-  r128TrackGainDb?: number
-  r128AlbumGainDb?: number
-  cueRange?: import('../shared/cue.ts').CueRange
-}
-
-interface EqualizerBand {
-  frequency: number
-  gain: number
-  q: number
-  filterType: EqualizerFilterType
-  enabled?: boolean
-  channelMask?: number
-}
-
-interface AudioProcessingSettings {
-  dspEnabled: boolean
-  directMode: boolean
-  clipGuard: boolean
-  fftEnabled: boolean
-  fftResolution: number
-  highResolution: boolean
-  dsdToPcm: boolean
-  dsdOutputMode: DsdOutputMode
-  dsdRoute: DsdRouteSettings
-  sacdProgramMode: SacdProgramMode
-  eqEnabled: boolean
-  eqMode: EqMode
-  eqPreamp: number
-  eqBands: EqualizerBand[]
-  volumeNormalization: VolumeNormalizationMode
-  replayGainPreamp: number
-  replayGainFallback: number
-  replayGainClip: boolean
-  convolverEnabled: boolean
-  convolverIrPath: string
-  crossfeedEnabled: boolean
-  crossfeedStrength: number
-  crossfeedDelayMs: number
-  crossfeedCutoffHz: number
-  gapless: boolean
-  crossfadeSeconds: number
-}
-
-interface HeadphoneCompensationSettings {
-  enabled: boolean
-  productId: string
-  productName: string
-  vendorName: string
-  eqId: string
-  author: string
-  details: string
-  link: string
-  preampDb: number
-  bands: EqualizerBand[]
-}
-
-interface VisualizationOptions {
-  spectrumPoints?: number
-  waveformPoints?: number
-  spectrogramFrames?: number
-  oscilloscopePoints?: number
-  visualizerBarCount?: number
-}
-
-interface VisualizationData {
-  spectrum: number[]
-  visualizerBars?: number[]
-  waveform: number[]
-  oscilloscope: number[]
-  peakDb: number
-  rmsDb: number
-  lufsMomentary: number | null
-  spectrogram: number[][]
-  sampleRate: number
-  maxFrequency: number
-  active: boolean
-  tapStatus: VisualizationTapStatus
-  reason: string
-}
-
-type VisualizationTapStatus =
-  | 'active'
-  | 'stopped'
-  | 'disabled'
-  | 'no-samples'
-  | 'native-unavailable'
-  | 'synthetic-fallback'
-
-interface AudioEqPreset {
-  id: string
-  name: string
-  eqMode: EqMode
-  eqPreamp: number
-  eqBands: EqualizerBand[]
-}
-
-interface WindowTransparencyEffectSettings {
-  surfaceOpacity: number
-  surfaceBlur: number
-  cardOpacity: number
-  cardBlur: number
-}
-
-type DesktopLyricsLayout = 'multi' | 'bilingual'
-
-interface DesktopLyricsSettings {
-  enabled: boolean
-  fontSize: number
-  fontFamily: string
-  fontWeight: number
-  color: string
-  highlightColor: string
-  bgColor: string
-  bgOpacity: number
-  align: LyricAlign
-  showTranslation: boolean
-  /** multi = consecutive lines; bilingual = original + translation for the active line. */
-  layout: DesktopLyricsLayout
-  lineSpacing: number
-  shadow: boolean
-  shadowBlur: number
-  shadowColor: string
-  windowWidth: number
-  windowHeight: number
-  windowX: number
-  windowY: number
-  alwaysOnTop: boolean
-  clickThrough: boolean
-  maxLines: number
-  /** Horizontal stagger in px: even rows left (-), odd rows right (+). */
-  lineOffset: number
-}
 
 type MiniPlayerBackgroundKind = 'solid' | 'gradient' | 'cover' | 'image'
 type MiniPlayerImageFit = 'cover' | 'contain'
@@ -667,143 +418,6 @@ interface TrayPlayerBootstrap {
   state: MiniPlayerStateSnapshot
 }
 
-interface MusicCachePolicySettings {
-  cover: boolean
-  lyrics: boolean
-  metadata: boolean
-  streamingAudio: StreamingAudioCachePolicy
-}
-
-type AppBackgroundPage = 'local' | 'settings' | 'streaming' | 'player'
-type AppBackgroundKind = 'color' | 'image'
-
-interface AppBackgroundColorPair {
-  light: string
-  dark: string
-  kind: AppBackgroundKind
-  image: string
-}
-
-interface AppBackgroundPageOverride extends AppBackgroundColorPair {
-  inherit: boolean
-}
-
-interface AppBackgroundSettings {
-  global: AppBackgroundColorPair
-  pages: Record<AppBackgroundPage, AppBackgroundPageOverride>
-}
-
-type CardShadowStrength = 'none' | 'subtle' | 'medium' | 'strong'
-type CardHoverEffect = 'none' | 'lift' | 'zoom' | 'glow'
-
-interface CardAppearanceTheme {
-  blurRadius: number
-  blurSaturation: number
-  backgroundColor: string
-  backgroundOpacity: number
-  borderColor: string
-  borderOpacity: number
-  borderWidth: number
-  borderRadius: number
-  shadowStrength: CardShadowStrength
-  hoverEffect: CardHoverEffect
-  glassHighlight: boolean
-}
-
-interface BackgroundEffectTheme {
-  blur: number
-  brightness: number
-  dim: number
-}
-
-interface BackgroundEffectSettings {
-  enabled: boolean
-  light: BackgroundEffectTheme
-  dark: BackgroundEffectTheme
-}
-
-interface CardAppearanceSettings {
-  enabled: boolean
-  light: CardAppearanceTheme
-  dark: CardAppearanceTheme
-  background: BackgroundEffectSettings
-}
-
-interface AppSettings {
-  autoCheckLogin: boolean
-  autoLaunch: boolean
-  launchAtLogin: boolean
-  hardwareAcceleration: boolean
-  globalShortcuts: boolean
-  globalShortcutBindings: GlobalShortcutSettings
-  minimizeToTray: boolean
-  musicCachePath: string
-  cachePath: string
-  cachePolicy: MusicCachePolicySettings
-  autoAnalyzeBpm: boolean
-  closeToTray: boolean
-  /** First-run welcome wizard has been completed or skipped. */
-  onboardingCompleted: boolean
-  startupHomePage: StartupHomePage
-  trackActivationMode: TrackActivationMode
-  theme: AppTheme
-  pluginThemeId: string | null
-  activeTheme: ThemeSelection
-  themeWindowInheritance: ThemeWindowInheritance
-  motionPreference: MotionPreference
-  blurEffect: boolean
-  windowTransparency: boolean
-  windowTransparencyEffect: WindowTransparencyEffectSettings
-  useCoverTheme: boolean
-  lyricsAppearance: LyricsAppearanceSettings
-  lyricsPresets: LyricsPresetConfig
-  libraryFolders: string[]
-  genreSeparators: string
-  watchLibrary: boolean
-  /** When true, empty local/provider lyrics may fall back to LRCLIB online search. */
-  onlineLyricsFallback: boolean
-  smtcEnabled: boolean
-  discordRpcEnabled: boolean
-  accentColor: string
-  lightAccentColor: string
-  darkAccentColor: string
-  fontFamily: string
-  uiDensity: UiDensity
-  appBackground: AppBackgroundSettings
-  cardAppearance: CardAppearanceSettings
-  /** Switches cards and the playbar between the standard surface and liquid glass. */
-  surfaceMaterial: SurfaceMaterial
-  liquidGlass: LiquidGlassSettings
-  /** Standard vs mini playbar shape, plus now-playing auto-hide. */
-  playerBar: PlayerBarSettings
-  nowPlayingBackground: NowPlayingBackground
-  playbackResumeMode: PlaybackResumeMode
-  /** restart: previous button replays the current track first; previous: always jump to the previous track. */
-  previousButtonAction: PreviousButtonAction
-  sleepTimer: SleepTimerSettings
-  ncmPlaybackQuality: NcmPlaybackQuality
-  playMode: PlayMode
-  softwareVolume: number
-  audioOutput: AudioOutputId
-  audioDevice: string
-  audioExclusiveMode: boolean
-  audioOutputConfig: OutputConfig
-  audioProcessing: AudioProcessingSettings
-  dspScenes: DspScene[]
-  dspPinnedSceneId: string | null
-  headphoneCompensation: HeadphoneCompensationSettings
-  audioEqPresets: AudioEqPreset[]
-  desktopLyrics: DesktopLyricsSettings
-  miniPlayer: MiniPlayerSettings
-  proxyMode: ProxyMode
-  proxyHost: string
-  proxyPort: number
-  proxyAllowDirectFallback: boolean
-  streamingActiveProvider: string
-  remoteControlEnabled: boolean
-  remoteControlPort: number
-}
-
 interface OpraCatalogStatus {
   loaded: boolean
   loading: boolean
@@ -829,64 +443,6 @@ interface OpraProfile {
   bands: EqualizerBand[]
   applicable: boolean
   unsupportedBandTypes: string[]
-}
-
-interface ConvolverInfo {
-  loaded: boolean
-  active: boolean
-  bypassed: boolean
-  irResampled: boolean
-  path: string
-  sampleRate: number
-  channels: number
-  lengthFrames: number
-  lengthMs: number
-  partitionSize: number
-  latencyFrames: number
-  overrunCount: number
-  /** 实时线程因超预算而旁通卷积的累计次数 */
-  bypassCount: number
-  lastProcessMs: number
-  maxProcessMs: number
-  channelMappingMode: string
-  warning: string
-  lastError: string
-}
-
-interface NativeAudioMetadata {
-  source: string
-  title: string
-  artist: string
-  album: string
-  albumArtist: string
-  composer: string
-  year: string
-  genre: string
-  trackNumber: string
-  discNumber: string
-  comment: string
-  codec: string
-  container: string
-  channelLayout: string
-  sampleRate: number
-  channelCount: number
-  bitDepth: number
-  bitrate: number
-  duration: number
-  playable?: boolean
-  reasonCode?: string
-  isDsd: boolean
-  dsdMode: string
-  dsdRate: number
-  outputModes?: string[]
-  coverMime: string
-  coverDataBase64: string
-  replayGainTrackGain: number | null
-  replayGainAlbumGain: number | null
-  r128TrackGain: number | null
-  r128AlbumGain: number | null
-  error: string
-  isoTracks?: NativeAudioMetadata[]
 }
 
 interface PlaybackSession {
@@ -924,49 +480,6 @@ interface SettingsSnapshot extends AppSettings {
   restartRequired: boolean
   restartReasons: string[]
 }
-
-interface AudioOutputOption {
-  id: AudioOutputId
-  label: string
-  description: string
-  platform: NodeJS.Platform
-  supportsExclusive: boolean
-}
-
-interface AudioDeviceOption {
-  id: string
-  label: string
-  isDefault: boolean
-  backend?: string
-  name?: string
-  channels?: number
-  sampleRates?: number[]
-  driverName?: string
-  driverVersion?: number
-  bitDepths?: number[]
-  latencyFrames?: number
-  minBufferSize?: number
-  maxBufferSize?: number
-  granularity?: number
-  preferredBufferSize?: number
-  capabilityVersion?: number
-  supportsExclusive?: boolean
-  supportsHogMode?: boolean
-  supportsDirectHw?: boolean
-  supportsDop?: boolean
-  supportsNativeDsd?: boolean
-  dopSupportState?: AudioCapabilitySupportState
-  nativeDsdSupportState?: AudioCapabilitySupportState
-  supportedDsdRates?: number[]
-  nativeDsdSampleRates?: number[]
-  nativeDsdSampleFormats?: string[]
-  dopCarrierSampleRates?: number[]
-  dopCarrierFormats?: string[]
-  pathKind?: string
-  capabilityReason?: string
-}
-
-type AudioCapabilitySupportState = 'verified' | 'runtime-probed' | 'unsupported' | 'unknown'
 
 interface TwilightPluginDescriptor {
   id: string
@@ -1172,220 +685,6 @@ interface TwilightPluginExtensionContribution {
   themes: TwilightThemeContribution[]
 }
 
-type PcmToDsdMode = 'off' | 'dsd64' | 'dsd128' | 'dsd256'
-
-interface OutputConfig {
-  preferredBufferSize: number
-  routingMode: ChannelRoutingMode
-  wasapiExclusivePushMode?: boolean
-  pcmToDsdMode?: PcmToDsdMode
-  upmixCenterGain?: number
-  upmixLfeGain?: number
-  upmixLfeLowpassHz?: number
-  upmixSurroundGain?: number
-  upmixSideGain?: number
-  upmixSurroundDelayMs?: number
-}
-
-interface OutputConfigApplyStatus {
-  requestedRevision: number
-  appliedRevision: number
-  failedRevision: number
-  state: 'idle' | 'pending' | 'applied' | 'failed'
-  error: string
-  generation: number
-}
-
-interface LatencyInfo {
-  bufferLatencyMs: number
-  outputLatencyMs: number
-  totalLatencyMs: number
-}
-
-interface OutputDiagnostics {
-  sessionUnderrunCount: number
-  sessionBufferDropCount: number
-  sessionRecoveryCount: number
-  lifetimeUnderrunCount: number
-  lifetimeBufferDropCount: number
-  lifetimeRecoveryCount: number
-  driverRestartCount: number
-  deviceLostCount: number
-  driverXrunCount?: number
-  dsdRouteOverrideActive?: boolean
-  dsdRouteBackend?: string
-  dsdRouteDevice?: string
-  dsdRouteFallbackReason?: string
-  lastError: string
-}
-
-interface AudioOutputState {
-  output: AudioOutputId
-  device: string
-  exclusiveMode: boolean
-  exclusiveAvailable: boolean
-  outputOptions: AudioOutputOption[]
-  deviceOptions: AudioDeviceOption[]
-}
-
-interface OutputInfo {
-  exclusive: boolean
-  supportsOutputPerfect: boolean
-  sourceExact: boolean
-  outputPerfect: boolean
-  pcmPassthrough: boolean
-  resampled: boolean
-  perfectReason: string
-  outputSampleRate: number
-  outputBitDepth: number
-  backend: string
-  actualBackend: string
-  deviceName: string
-  actualDeviceName: string
-  driverName: string
-  actualDriverName: string
-  driverVersion: number
-  actualDriverVersion: number
-  actualOutputFormat: string
-  actualSampleRate: number
-  actualBitDepth: number
-  actualChannels: number
-  accessMode: string
-  devicePathKind: string
-  perfectReasonCode: string
-  capabilityReason: string
-  driverDopCapable: boolean
-  driverNativeDsdCapable: boolean
-  driverDopCarrierSampleRates: number[]
-  driverDopCarrierFormats: string[]
-  driverNativeDsdSampleRates: number[]
-  nativeDsdRuntimeState: string
-  nativeDsdRequestedRate: number
-  nativeDsdActualRate: number
-  nativeDsdChannels: number
-  nativeDsdExplicitlyCapable: boolean
-  nativeDsdAdvertisedSampleRates: number[]
-  nativeDsdRuntimeReason: string
-  bufferSizeFrames: number
-  latencyFrames: number
-  latencyMs: number
-  latencyInfo: LatencyInfo
-  channelRoutingMode: string
-  diagnostics: OutputDiagnostics
-  deviceRecovered: boolean
-  recoveryCount: number
-  nativeDsp?: { plugins: unknown[]; graph?: DspGraphStatus }
-  isDsd: boolean
-  dsdMode: string
-  dsdRate: number
-}
-
-type PlaybackOutputInfoMirror = Pick<
-  OutputInfo,
-  | 'actualBackend'
-  | 'actualOutputFormat'
-  | 'actualSampleRate'
-  | 'actualBitDepth'
-  | 'actualChannels'
-  | 'bufferSizeFrames'
-  | 'latencyFrames'
-  | 'latencyMs'
-  | 'latencyInfo'
-  | 'channelRoutingMode'
-  | 'supportsOutputPerfect'
-  | 'sourceExact'
-  | 'diagnostics'
-  | 'deviceRecovered'
-  | 'recoveryCount'
-  | 'outputSampleRate'
-  | 'outputBitDepth'
-  | 'outputPerfect'
-  | 'pcmPassthrough'
-  | 'perfectReason'
-  | 'perfectReasonCode'
-  | 'isDsd'
-  | 'dsdMode'
-  | 'dsdRate'
-> &
-  Partial<Pick<OutputInfo, 'accessMode' | 'devicePathKind' | 'capabilityReason'>>
-
-interface PlaybackInfo extends PlaybackOutputInfoMirror {
-  state: 'stopped' | 'playing' | 'paused'
-  position: number
-  duration: number
-  volume: number
-  /** Application-layer playback rate; 1 = realtime. */
-  playbackRate?: number
-  requestedConfigRevision: number
-  appliedConfigRevision: number
-  queueIndex: number
-  playMode: PlayMode
-  source: string
-  codec: string
-  nativePlaybackActive: boolean
-  bitrate: number
-  sourceSampleRate: number
-  sourceBitDepth: number
-  decodedSampleRate: number
-  decodedBitDepth: number
-  decodedChannels: number
-  decodedSampleFormat: string
-  outputBackend: string
-  outputDevice: string
-  outputInfo: OutputInfo
-  actualBackend: string
-  driverName: string
-  driverVersion: number
-  actualOutputFormat: string
-  actualSampleRate: number
-  actualBitDepth: number
-  actualChannels: number
-  bufferSizeFrames: number
-  latencyFrames: number
-  latencyMs: number
-  latencyInfo: LatencyInfo
-  channelRoutingMode: string
-  supportsOutputPerfect: boolean
-  sourceExact: boolean
-  diagnostics: OutputDiagnostics
-  deviceRecovered: boolean
-  recoveryCount: number
-  outputSampleRate: number
-  outputBitDepth: number
-  channelCount: number
-  outputPerfect: boolean
-  pcmPassthrough: boolean
-  dspActive: boolean
-  replayGainActive: boolean
-  eqActive: boolean
-  convolverActive: boolean
-  crossfeedActive: boolean
-  crossfadeActive: boolean
-  fftActive: boolean
-  irResampled: boolean
-  replayGainDb: number
-  crossfeedStrength: number
-  crossfadeSeconds: number
-  convolverLatencyFrames: number
-  partitionSize: number
-  channelMappingMode: string
-  perfectReason: string
-  perfectReasonCode: string
-  isDsd: boolean
-  dsdMode: string
-  dsdRate: number
-  gaplessActive: boolean
-  preloadReady: boolean
-  /** Empty when unblocked; else disabled | dsd_path | typed_passthrough | crossfade | format_mismatch */
-  gaplessBlockedReason: string
-  upcomingTrack: AudioEngineQueueItem | null
-}
-
-interface AudioEnginePlayResult {
-  nativeStarted: boolean
-  fallbackReason: string
-}
-
 interface AudioEngineConfigAppliedEvent {
   requestedConfigRevision: number
   appliedConfigRevision: number
@@ -1579,6 +878,7 @@ interface WindowAPI {
   }
   opra: OpraAPI
   app: {
+    getStartupSnapshot: () => Promise<AppStartupSnapshot>
     consumePendingNavigation: () => Promise<TrayNavigationTarget | null>
     relaunch: () => Promise<void>
     checkForUpdates: () => Promise<import('../shared/appUpdate').AppUpdateCheckResult>

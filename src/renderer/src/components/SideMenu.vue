@@ -8,6 +8,7 @@ import { useMusicStore } from '../stores/useMusicStore'
 
 const props = defineProps<{
   open: boolean
+  liquidMaterial?: boolean
   activeKey: string
   pluginPages?: UiContribution[]
   localItems?: UiContribution[]
@@ -53,6 +54,15 @@ const scanningLabel = computed(() => {
 })
 const showImportDialog = ref(false)
 
+function setPressOrigin(event: PointerEvent): void {
+  const button =
+    event.target instanceof Element ? event.target.closest<HTMLElement>('button') : null
+  if (!button) return
+  const rect = button.getBoundingClientRect()
+  button.style.setProperty('--te-lg-press-x', `${event.clientX - rect.left}px`)
+  button.style.setProperty('--te-lg-press-y', `${event.clientY - rect.top}px`)
+}
+
 function selectItem(key: string): void {
   emit('selectView', key, null)
 }
@@ -67,7 +77,11 @@ function handleImportClick(): void {
 </script>
 
 <template>
-  <div class="side-menu" :class="{ open }">
+  <div
+    class="side-menu"
+    :class="{ open, 'side-menu-liquid': props.liquidMaterial }"
+    @pointerdown="setPressOrigin"
+  >
     <div class="navigation-brand" aria-hidden="true">
       <img src="/icon.png" alt="" />
       <span>Twilight Echo</span>
@@ -183,8 +197,8 @@ function handleImportClick(): void {
   z-index: 1000;
   overflow: hidden;
   box-shadow: var(--te-navigation-shadow);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   transform: translate3d(-100%, 0, 0);
   transform-origin: left center;
   will-change: transform;
@@ -451,6 +465,101 @@ function handleImportClick(): void {
   color: var(--te-navigation-icon);
   font-size: 12px;
   font-weight: 500;
+}
+
+.side-menu-liquid {
+  isolation: isolate;
+  border-right-color: color-mix(in srgb, var(--te-lg-context-label) 13%, transparent);
+  box-shadow: 5px 0 22px var(--te-lg-context-shadow);
+}
+
+.side-menu-liquid::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      112deg,
+      color-mix(in srgb, var(--te-lg-context-rim) 18%, transparent),
+      transparent 56%
+    ),
+    color-mix(in srgb, var(--te-lg-context-surface) 68%, transparent);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--te-lg-context-rim) 32%, transparent);
+  content: '';
+  pointer-events: none;
+  backdrop-filter: blur(20px) saturate(128%);
+  -webkit-backdrop-filter: blur(20px) saturate(128%);
+}
+
+:global(html[data-te-liquid-glass-source='solid'] .side-menu-liquid::before) {
+  background:
+    linear-gradient(
+      112deg,
+      color-mix(in srgb, var(--te-lg-context-rim) 22%, transparent),
+      transparent 56%
+    ),
+    var(--te-lg-context-material);
+}
+
+.side-menu-liquid :is(.navigation-brand, .menu-item, .scanning-text) {
+  color: var(--te-lg-context-label);
+}
+
+.side-menu-liquid .menu-item:hover {
+  background: color-mix(in srgb, var(--te-lg-context-rim) 28%, transparent);
+}
+
+.side-menu-liquid .menu-item.active {
+  background: color-mix(in srgb, var(--te-lg-context-rim) 40%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--te-lg-context-rim) 30%, transparent);
+}
+
+.side-menu-liquid .menu-item {
+  overflow: hidden;
+}
+
+.side-menu-liquid .menu-item::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle at var(--te-lg-press-x, 50%) var(--te-lg-press-y, 50%),
+    color-mix(in srgb, var(--te-lg-context-rim) 58%, transparent),
+    transparent 62%
+  );
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease-out;
+}
+
+.side-menu-liquid .menu-item:active {
+  transform: scale(0.97);
+  transition-duration: 90ms;
+}
+
+.side-menu-liquid .menu-item:active::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .side-menu-liquid::before {
+    background: var(--te-lg-context-surface-solid);
+    border-right: 1px solid var(--te-lg-context-label);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .side-menu-liquid::before {
+    background: Canvas;
+    border-right: 1px solid CanvasText;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 @keyframes spin {

@@ -414,6 +414,31 @@ export interface TwilightMediaProviderRegistration {
   ): Promise<{ loggedIn: boolean; profile: ProviderProfile | null }>
   getProfile?(context?: TwilightProviderRequestContext): Promise<ProviderProfile | null>
   logout?(context?: TwilightProviderRequestContext): Promise<void>
+  openOfficialLogin?(
+    context?: TwilightProviderRequestContext
+  ): Promise<{ loggedIn: boolean; profile: ProviderProfile | null }>
+  sendCaptcha?(
+    phone: string,
+    countrycode?: string,
+    context?: TwilightProviderRequestContext
+  ): Promise<{ code: number; message: string }>
+  loginByPhonePassword?(
+    phone: string,
+    password: string,
+    countrycode?: string,
+    context?: TwilightProviderRequestContext
+  ): Promise<{ loggedIn: boolean; profile: ProviderProfile | null }>
+  loginByPhoneCaptcha?(
+    phone: string,
+    captcha: string,
+    countrycode?: string,
+    context?: TwilightProviderRequestContext
+  ): Promise<{ loggedIn: boolean; profile: ProviderProfile | null }>
+  loginByEmailPassword?(
+    email: string,
+    password: string,
+    context?: TwilightProviderRequestContext
+  ): Promise<{ loggedIn: boolean; profile: ProviderProfile | null }>
   getQrLogin?(context?: TwilightProviderRequestContext): Promise<QrLoginRequest | null>
   getQrKey?(context?: TwilightProviderRequestContext): Promise<string | null>
   getQrImage?(key: string, context?: TwilightProviderRequestContext): Promise<string | null>
@@ -458,6 +483,29 @@ export interface TwilightMediaProviderRegistration {
   ): Promise<string>
   fetchRecommendSongs?(context?: TwilightProviderRequestContext): Promise<Track[]>
   fetchRecommendPlaylists?(context?: TwilightProviderRequestContext): Promise<PlaylistSummary[]>
+  fetchPlaylistCategories?(context?: TwilightProviderRequestContext): Promise<{
+    hotTags: string[]
+    groups: Array<{ id: number; name: string; tags: Array<{ name: string; hot: boolean }> }>
+  }>
+  fetchDiscoveryPlaylists?(
+    cat?: string,
+    order?: 'hot' | 'new',
+    limit?: number,
+    offset?: number,
+    context?: TwilightProviderRequestContext
+  ): Promise<{
+    items: PlaylistSummary[]
+    total: number
+    hasMore: boolean
+    offset: number
+    limit: number
+  }>
+  fetchHighQualityPlaylists?(
+    cat?: string,
+    limit?: number,
+    before?: number,
+    context?: TwilightProviderRequestContext
+  ): Promise<{ items: PlaylistSummary[]; total: number; hasMore: boolean; lasttime: number }>
   fetchPersonalFm?(context?: TwilightProviderRequestContext): Promise<Track[]>
   fetchPrivateContent?(context?: TwilightProviderRequestContext): Promise<Track[]>
   fetchArtistTopSongs?(
@@ -501,6 +549,17 @@ export interface TwilightMediaProviderRegistration {
     offset?: number,
     context?: TwilightProviderRequestContext
   ): Promise<UserSummary[]>
+  fetchPlayRecords?(type?: number, context?: TwilightProviderRequestContext): Promise<Track[]>
+  fetchRecentSongs?(limit?: number, context?: TwilightProviderRequestContext): Promise<Track[]>
+  fetchIntelligenceList?(
+    options: {
+      songId: string | number
+      playlistId: string | number
+      startSongId?: string | number
+      count?: number
+    },
+    context?: TwilightProviderRequestContext
+  ): Promise<Track[]>
   followArtist?(
     artistId: string | number,
     follow: boolean,

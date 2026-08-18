@@ -1,6 +1,6 @@
 import { readAppSettings } from './settings'
 import type { AppSettings } from './types'
-import type { DesktopLyricsTrackPayload } from '../../preload/types'
+import type { DesktopLyricsTrackPayload } from '../../shared/lyricsManagement.ts'
 import type { BrowserWindow, Tray } from 'electron'
 import type { AudioEngineManager, PlaybackInfo } from '../audioEngineManager'
 import type { AudioAnalysisServiceClient } from '../audioAnalysisServiceClient.ts'
@@ -51,6 +51,7 @@ export const runtime = {
   latestDesktopLyricsTrack: null as DesktopLyricsTrackPayload | null,
   latestDesktopLyricsTime: 0,
   ncmServer: null as import('http').Server | null,
+  ncmServerPromise: null as Promise<void> | null,
   tray: null as Tray | null,
   refreshTrayMenu: null as (() => void) | null,
   forceQuit: false,
