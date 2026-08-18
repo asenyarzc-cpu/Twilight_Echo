@@ -167,3 +167,14 @@ resources/sponsor/wechat.png
 
 # Optional full MiSans faces (multi-MB; keep local)
 resources/font/misans/full/*.woff2
+
+# Android signing keystore and properties (local only)
+android/android/signing/*.jks
+android/android/signing/*.properties
+
+# Flutter build artifacts
+android/.dart_tool/
+android/.flutter-plugins-dependencies
+android/build/
+android/app/build/
+android/**/build/

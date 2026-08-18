@@ -375,28 +375,6 @@ class SettingsPage extends ConsumerWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 30),
-                        SettingsCard(
-                          title: '调试',
-                          children: [
-                            DebugModeRow(
-                              value: settings.debugMode,
-                              onChanged: (value) => ref
-                                  .read(settingsProvider.notifier)
-                                  .setDebugMode(value),
-                            ),
-                            if (settings.debugMode) ...[
-                              const SizedBox(height: 12),
-                              SettingsAction(
-                                icon: Icons.terminal_rounded,
-                                title: '日志控制台',
-                                subtitle: '实时查看搜索、下载和网络错误',
-                                trailing: Symbols.chevron_right,
-                                onTap: () => context.go('/debug'),
-                              ),
-                            ],
-                          ],
-                        ),
                         const SizedBox(height: 72),
                         Text(
                           versionLabel,

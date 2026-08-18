@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'features/debug/debug_log_page.dart';
 import 'features/discovery/online_playlist_detail_page.dart';
 import 'features/downloads/download_history_page.dart';
 import 'core/models/enums.dart';
@@ -144,12 +143,6 @@ GoRouter createAppRouter({
               child: ShellPageStorage(child: MusicSourcePage()),
             ),
           ),
-          GoRoute(
-            path: '/debug',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: DebugLogPage()),
-            ),
-          ),
         ],
       ),
     ],
@@ -172,8 +165,7 @@ bool _isPlayerReturnLocation(String location) {
     '/songs' ||
     '/songs/search' ||
     '/settings' ||
-    '/settings/sources' ||
-    '/debug' => true,
+    '/settings/sources' => true,
     _ => false,
   };
 }

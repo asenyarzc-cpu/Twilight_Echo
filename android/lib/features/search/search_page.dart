@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/music_api.dart';
-import '../../core/debug/debug_paint_guard.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/music_info.dart';
 import '../../core/storage/settings_store.dart';
@@ -115,7 +114,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     int page = 1,
     bool scrollToTopOnSuccess = false,
   }) async {
-    DebugPaintGuard.disableNow();
     final query = (keyword ?? _controller.text).trim();
     if (query.isEmpty) {
       showAppToast(context, '请输入歌名、歌手或专辑', type: AppToastType.warning);

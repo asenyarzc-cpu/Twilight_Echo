@@ -24,7 +24,6 @@ const String _kShowMiniLyricsKey = 'show_mini_lyrics';
 const String _kBluetoothLyricEnabledKey = 'bluetooth_lyric_enabled';
 const String _kBluetoothFullLyricEnabledKey = 'bluetooth_full_lyric_enabled';
 const String _kBluetoothLyricNoticeSeenKey = 'bluetooth_lyric_notice_seen';
-const String _kDebugModeKey = 'debug_mode';
 const String _kLegacyBaseUrlKey = 'base_url';
 
 @immutable
@@ -43,7 +42,6 @@ class AppSettings {
     required this.bluetoothLyricEnabled,
     required this.bluetoothFullLyricEnabled,
     required this.bluetoothLyricNoticeSeen,
-    required this.debugMode,
   });
 
   final String downloadDir;
@@ -59,7 +57,6 @@ class AppSettings {
   final bool bluetoothLyricEnabled;
   final bool bluetoothFullLyricEnabled;
   final bool bluetoothLyricNoticeSeen;
-  final bool debugMode;
 
   AppSettings copyWith({
     String? downloadDir,
@@ -75,7 +72,6 @@ class AppSettings {
     bool? bluetoothLyricEnabled,
     bool? bluetoothFullLyricEnabled,
     bool? bluetoothLyricNoticeSeen,
-    bool? debugMode,
   }) => AppSettings(
     downloadDir: downloadDir ?? this.downloadDir,
     localMusicDir: localMusicDir ?? this.localMusicDir,
@@ -92,7 +88,6 @@ class AppSettings {
         bluetoothFullLyricEnabled ?? this.bluetoothFullLyricEnabled,
     bluetoothLyricNoticeSeen:
         bluetoothLyricNoticeSeen ?? this.bluetoothLyricNoticeSeen,
-    debugMode: debugMode ?? this.debugMode,
   );
 
   static const AppSettings fallback = AppSettings(
@@ -109,7 +104,6 @@ class AppSettings {
     bluetoothLyricEnabled: false,
     bluetoothFullLyricEnabled: false,
     bluetoothLyricNoticeSeen: false,
-    debugMode: false,
   );
 }
 
@@ -154,7 +148,6 @@ class SettingsNotifier extends Notifier<AppSettings> {
           _prefs.getBool(_kBluetoothFullLyricEnabledKey) ?? false,
       bluetoothLyricNoticeSeen:
           _prefs.getBool(_kBluetoothLyricNoticeSeenKey) ?? false,
-      debugMode: _prefs.getBool(_kDebugModeKey) ?? false,
     );
   }
 
@@ -246,11 +239,6 @@ class SettingsNotifier extends Notifier<AppSettings> {
     if (state.bluetoothLyricNoticeSeen) return;
     await _prefs.setBool(_kBluetoothLyricNoticeSeenKey, true);
     state = state.copyWith(bluetoothLyricNoticeSeen: true);
-  }
-
-  Future<void> setDebugMode(bool value) async {
-    await _prefs.setBool(_kDebugModeKey, value);
-    state = state.copyWith(debugMode: value);
   }
 }
 

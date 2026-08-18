@@ -1,7 +1,7 @@
 name: twilight_echo
 description: "Twilight Echo - Android music client with custom source support."
 publish_to: 'none'
-version: 1.0.3+4
+version: 1.0.5+5
 
 environment:
   sdk: ^3.11.4

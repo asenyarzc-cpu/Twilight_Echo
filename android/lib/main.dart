@@ -6,19 +6,17 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
-import 'core/debug/debug_paint_guard.dart';
 import 'core/storage/settings_store.dart';
 import 'features/player/player_audio_handler.dart';
 
 /// 应用入口。
 ///
-/// 初始化顺序：Flutter 绑定 → 调试 Paint 保护 → Android 全屏 →
+/// 初始化顺序：Flutter 绑定 → Android 全屏 →
 /// SharedPreferences 加载 → 网络适配器偏好 → 音频 Handler → ProviderScope。
 ///
 /// 音频 Handler 是最耗时的异步步骤，在启动页显示时完成后才解除 Gate。
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  DebugPaintGuard.install();
   if (Platform.isAndroid) {
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(

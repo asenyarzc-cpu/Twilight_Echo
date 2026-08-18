@@ -85,7 +85,7 @@ int toolbarIndexFor(String location) {
       isPlaylistLocation(location)) {
     return 1;
   }
-  if (location.startsWith('/settings') || location == '/debug') return 3;
+  if (location.startsWith('/settings')) return 3;
   return switch (location) {
     '/player' => 2,
     _ => 0,

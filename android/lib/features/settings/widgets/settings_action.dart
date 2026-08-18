@@ -234,21 +234,3 @@ class SettingsSwitchAction extends StatelessWidget {
     );
   }
 }
-
-class DebugModeRow extends StatelessWidget {
-  const DebugModeRow({super.key, required this.value, required this.onChanged});
-
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SettingsSwitchAction(
-      icon: Icons.bug_report_outlined,
-      title: '调试模式',
-      subtitle: value ? '已开启，可进入日志控制台' : '开启后显示终端式实时日志',
-      value: value,
-      onChanged: onChanged,
-    );
-  }
-}

@@ -104,8 +104,6 @@ class ShellHeader extends ConsumerWidget {
         return '播放';
       case '/settings':
         return '设置';
-      case '/debug':
-        return '调试日志';
       default:
         return 'Twilight Echo';
     }

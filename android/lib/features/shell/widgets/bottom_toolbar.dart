@@ -545,7 +545,7 @@ class _MainToolbar extends ConsumerWidget {
                 label: '设置',
                 icon: Icons.tune_rounded,
                 selected:
-                    location.startsWith('/settings') || location == '/debug',
+                    location.startsWith('/settings'),
                 width: actionWidth,
                 height: actionHeight,
                 onPressed: () =>

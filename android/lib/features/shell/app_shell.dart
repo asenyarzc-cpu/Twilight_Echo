@@ -395,8 +395,7 @@ class _AppShellState extends ConsumerState<AppShell>
     } else if (widget.location == '/downloads' ||
         widget.location == '/songs/search') {
       context.go('/songs');
-    } else if (widget.location == '/settings/sources' ||
-        widget.location == '/debug') {
+    } else if (widget.location == '/settings/sources') {
       context.go('/settings');
     } else if (context.canPop()) {
       context.pop();
@@ -864,7 +863,6 @@ int _routeOrder(String location) {
     '/songs/search' => 2,
     '/downloads' => 2,
     '/player' => 3,
-    '/debug' => 4,
     _ => 0,
   };
 }
