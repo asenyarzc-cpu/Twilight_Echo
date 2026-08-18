@@ -370,10 +370,61 @@
     return result;
   }
 
+  function scriptLetterStats(text) {
+    var han = 0;
+    var latin = 0;
+    for (var ci = 0; ci < text.length; ci++) {
+      var code = text.charCodeAt(ci);
+      // CJK unified ideographs (incl. ext A) plus the iteration mark 々
+      if ((code >= 0x3400 && code <= 0x4dbf) || (code >= 0x4e00 && code <= 0x9fff) || code === 0x3005) han++;
+      else if (/[A-Za-z]/.test(text[ci])) latin++;
+    }
+    return { han: han, latin: latin };
+  }
+
+  function isInterleavedOriginal(text) {
+    var s = scriptLetterStats(text);
+    return s.latin > 0 && (s.han === 0 || s.latin > s.han);
+  }
+
+  function isInterleavedTranslation(text) {
+    var s = scriptLetterStats(text);
+    return s.han > 0 && s.latin === 0;
+  }
+
+  function sameInterleavedTimestamp(left, right) {
+    return left != null && right != null && Math.abs(left - right) * 1000 <= 20;
+  }
+
+  // NetEase-style merged LRC: the translation sits on its own row below the
+  // original at the same timestamp. Without a companion tlyric payload it would
+  // render as a second full-size row; fold it into the original's translation.
+  function foldInterleavedRows(rows) {
+    var result = [];
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var next = rows[i + 1];
+      if (row && next && sameInterleavedTimestamp(row.time, next.time) &&
+          isInterleavedOriginal(row.text) && isInterleavedTranslation(next.text)) {
+        var merged = { time: row.time, text: row.text, translation: next.text, words: row.words || null };
+        result.push(merged);
+        i++;
+        continue;
+      }
+      if (row) result.push({ time: row.time, text: row.text, translation: null, words: row.words || null });
+    }
+    return result;
+  }
+
   function buildMergedLyrics(lyrics, translatedLyrics) {
     var original = looksLikeYrc(lyrics) ? parseYrc(lyrics) : parseLrc(lyrics);
     var translated = looksLikeYrc(translatedLyrics) ? parseYrc(translatedLyrics) : parseLrc(translatedLyrics);
-    if (original.length > 0 || translated.length > 0) return mergeLyrics(original, translated);
+    if (original.length > 0 || translated.length > 0) {
+      // A companion translation payload is authoritative; only when none exists
+      // do we fold interleaved same-timestamp rows from the original payload.
+      if (translated.length === 0) return foldInterleavedRows(original);
+      return mergeLyrics(original, translated);
+    }
 
     var plain = parsePlainLyrics(lyrics);
     var plainTranslated = parsePlainLyrics(translatedLyrics);

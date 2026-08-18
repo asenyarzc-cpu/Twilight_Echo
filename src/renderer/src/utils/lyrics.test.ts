@@ -336,3 +336,69 @@ test('hasLyricContent accepts only non-empty trimmed strings', () => {
   assert.equal(hasLyricContent(null), false)
   assert.equal(hasLyricContent(undefined), false)
 })
+
+test('buildLyricLines folds interleaved bilingual LRC lines into original + translation', () => {
+  // Real-world shape from a NetEase-style merged LRC: the translation sits on
+  // its own row directly below the original at the SAME timestamp. It must be
+  // attached as `translation` (so the smaller translation style applies) rather
+  // than rendering as a second full-size row.
+  const lyrics = [
+    '[00:00.41]Don\'t Call (feat. Free Nationals) (Explicit) - 蔡徐坤',
+    '[00:02.07]词曲：蔡徐坤 KUN/Andrew Neely/Ariana Wong/Dan Farber',
+    '[00:11.23]House of cards',
+    '[00:11.23]纸牌屋',
+    '[00:16.07]Coming down',
+    '[00:16.07]正一寸寸倾塌',
+    '[01:57.63]But',
+    '[01:57.63]然……',
+    '[01:58.45]Don\'t call my phone',
+    '[01:58.45]勿扰，别再拨通这号码',
+    '[02:07.96]Don\'t call my phone',
+    '[02:07.96]勿扰，别再拨通这号码'
+  ].join('\n')
+
+  const lines = buildLyricLines(lyrics, null)
+
+  const withTranslation = lines.filter((line) => line.translation != null)
+  assert.equal(withTranslation.length, 5, 'expected the five bilingual pairs to carry translations')
+
+  const house = lines.find((line) => line.text === 'House of cards')
+  assert.equal(house?.translation, '纸牌屋')
+  const comingDown = lines.find((line) => line.text === 'Coming down')
+  assert.equal(comingDown?.translation, '正一寸寸倾塌')
+  const but = lines.find((line) => line.text === 'But')
+  assert.equal(but?.translation, '然……')
+
+  // Credit / title lines stay ordinary rows and must not absorb a neighbor.
+  const credit = lines.find((line) => line.text.startsWith('词曲'))
+  assert.equal(credit?.translation, null)
+  const title = lines.find((line) => line.text.includes('Explicit'))
+  assert.equal(title?.translation, null)
+  // The folded rows collapse the pair: no separate full-size CJK row remains.
+  assert.equal(lines.some((line) => line.text === '纸牌屋'), false)
+  assert.equal(lines.some((line) => line.text === '正一寸寸倾塌'), false)
+})
+
+test('buildLyricLines does not fold same-script or voice-tagged lines', () => {
+  const echo = buildLyricLines('[00:01.00]Hello\n[00:01.00]Hello again', null)
+  assert.equal(echo.length, 2)
+  assert.ok(echo.every((line) => line.translation === null))
+
+  const bothCjk = buildLyricLines('[00:01.00]我爱你\n[00:01.00]我恨你', null)
+  assert.equal(bothCjk.length, 2)
+  assert.ok(bothCjk.every((line) => line.translation === null))
+
+  const voiced = buildLyricLines(
+    '[00:01.00][te:voice role=lead lane=start]Hello\n' +
+      '[00:01.00][te:voice role=lead lane=end]你好',
+    null
+  )
+  assert.equal(voiced.length, 2)
+  assert.ok(voiced.every((line) => line.translation === null))
+})
+
+test('explicit translation payload takes precedence over interleaved folding', () => {
+  const lines = buildLyricLines('[00:11.23]House of cards\n[00:11.23]纸牌屋', '[00:11.23]官方翻译')
+  const row = lines.find((line) => line.text === 'House of cards')
+  assert.equal(row?.translation, '官方翻译')
+})

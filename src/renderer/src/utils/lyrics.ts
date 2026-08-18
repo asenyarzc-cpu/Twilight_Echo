@@ -437,6 +437,87 @@ export function parsePlainLyrics(lyrics: string | null | undefined): string[] {
 
 const LAYER_MATCH_TOLERANCE_MS = 1500
 
+/** Same-file interleaved pairs (original row + translation row) never drift. */
+const INTERLEAVED_TS_TOLERANCE_MS = 20
+
+/**
+ * Convenience seam for the interleave-fold: rows produced by
+ * `groupTimedLyricLines` for the timed branch of `buildLyricLines`.
+ */
+interface GroupedTimedRow {
+  rowKey?: string
+  time: number
+  text: string
+  words?: LyricWord[]
+  voices?: LyricVoiceLayer[]
+}
+
+/** CJK unified ideographs (incl. extension A) plus the iteration mark 々. */
+const HAN_SCRIPT_RE = /[\u3400-\u4dbf\u4e00-\u9fff\u3005]/
+
+function scriptLetterStats(text: string): { han: number; latin: number } {
+  let han = 0
+  let latin = 0
+  for (const character of text) {
+    if (HAN_SCRIPT_RE.test(character)) han += 1
+    else if (/[A-Za-z]/.test(character)) latin += 1
+  }
+  return { han, latin }
+}
+
+/** A row that looks like the *original* side of an interleaved bilingual pair. */
+function isInterleavedOriginal(text: string): boolean {
+  const { han, latin } = scriptLetterStats(text)
+  return latin > 0 && (han === 0 || latin > han)
+}
+
+/** A row that looks like the *translation* side: CJK with no Latin letters. */
+function isInterleavedTranslation(text: string): boolean {
+  const { han, latin } = scriptLetterStats(text)
+  return han > 0 && latin === 0
+}
+
+function sameInterleavedTimestamp(left: number, right: number): boolean {
+  return Math.abs(left - right) * 1000 <= INTERLEAVED_TS_TOLERANCE_MS
+}
+
+/**
+ * NetEase-style merged LRC files interleave the translation on its own row
+ * directly below the original at the same timestamp:
+ *
+ *   [00:11.23]House of cards
+ *   [00:11.23]纸牌屋
+ *
+ * Without a companion tlyric payload the parser would emit two full-size rows —
+ * the translation would render at the original size instead of the smaller
+ * translation style. Fold such pairs into the original row's `translation`.
+ * Voice-tagged rows and same-script lines are left untouched.
+ */
+function foldInterleavedBilingualRows<T extends GroupedTimedRow>(
+  rows: readonly T[]
+): Array<T & { translation: string | null }> {
+  const result: Array<T & { translation: string | null }> = []
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]
+    const next = rows[index + 1]
+    if (
+      row &&
+      next &&
+      row.rowKey == null &&
+      next.rowKey == null &&
+      sameInterleavedTimestamp(row.time, next.time) &&
+      isInterleavedOriginal(row.text) &&
+      isInterleavedTranslation(next.text)
+    ) {
+      result.push({ ...row, translation: next.text })
+      index += 1
+      continue
+    }
+    result.push({ ...row, translation: null })
+  }
+  return result
+}
+
 /**
  * Pair translation / romanization lines to the original timed lines.
  *
@@ -610,16 +691,26 @@ export function buildLyricLines(
     const translatedMap = matchTimedLayer(originalLines, translatedLines)
     const romanizedMap = matchTimedLayer(originalLines, romanizedLines)
 
-    return originalLines.map((line) => ({
-      time: line.time,
-      text: line.text,
-      translation: translatedMap.get(Math.round(line.time * 1000)) ?? null,
-      romanization: romanizedMap.get(Math.round(line.time * 1000)) ?? null,
-      timed: true,
-      words: line.words,
-      ...(line.rowKey ? { rowKey: line.rowKey } : {}),
-      ...(line.voices ? { voices: line.voices } : {})
-    }))
+    // A companion translation payload is authoritative. Only when none exists do
+    // we fold same-timestamp interleaved rows (NetEase-style merged LRC) so the
+    // inline translation gets the translation styling instead of a second row.
+    const rows: Array<GroupedTimedRow & { translation: string | null }> =
+      translatedLines.length > 0
+        ? originalLines.map((line) => ({ ...line, translation: null }))
+        : foldInterleavedBilingualRows(originalLines)
+
+    return rows.map((row) => {
+      return {
+        time: row.time,
+        text: row.text,
+        translation: translatedMap.get(Math.round(row.time * 1000)) ?? row.translation ?? null,
+        romanization: romanizedMap.get(Math.round(row.time * 1000)) ?? null,
+        timed: true,
+        words: row.words,
+        ...(row.rowKey ? { rowKey: row.rowKey } : {}),
+        ...(row.voices ? { voices: row.voices } : {})
+      }
+    })
   }
 
   if (translatedLines.length > 0) {
