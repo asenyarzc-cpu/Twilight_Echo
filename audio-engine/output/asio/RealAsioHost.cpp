@@ -246,6 +246,14 @@ bool RealAsioHost::outputReady() {
 #endif
 }
 
+long RealAsioHost::activeBufferSize() const {
+#if defined(_WIN32) && defined(_WIN64) && defined(TAE_ENABLE_ASIO)
+  return impl_->session ? impl_->session->activeBufferSize() : 0;
+#else
+  return 0;
+#endif
+}
+
 std::unique_ptr<IAsioHost> createRealAsioHost() {
   return std::make_unique<RealAsioHost>();
 }

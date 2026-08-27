@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../core/Utf8Path.h"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -267,7 +269,7 @@ inline SacdIsoEntryProbe probeSacdIsoEntry(const std::string& source) {
     cleanSource = cleanSource.substr(0, qm);
   }
 
-  std::ifstream file(cleanSource, std::ios::binary);
+  std::ifstream file(utf8Path(cleanSource), std::ios::binary);
   if (!file) {
     probe.reasonCode = kSacdIsoOpenFailedReasonCode;
     probe.reason = "Unable to open ISO image";

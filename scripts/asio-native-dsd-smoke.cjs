@@ -70,7 +70,8 @@ function parseArgs(argv) {
     else throw new Error(`Unknown option: ${arg}`)
   }
 
-  if (!Number.isFinite(options.buffer) || options.buffer < 0) throw new Error('--buffer must be non-negative')
+  if (!Number.isFinite(options.buffer) || options.buffer < 0)
+    throw new Error('--buffer must be non-negative')
   if (!Number.isFinite(options.durationMs) || options.durationMs < 250) {
     throw new Error('--duration-ms must be at least 250')
   }
@@ -86,7 +87,8 @@ function loadNative(modulePath) {
     path.join(root, 'out', 'renderer', 'audio-engine', 'twilight_audio_node.node')
   ].filter(Boolean)
   const selected = candidates.find((candidate) => fs.existsSync(candidate))
-  if (!selected) throw new Error('Cannot find twilight_audio_node.node. Build the native engine first.')
+  if (!selected)
+    throw new Error('Cannot find twilight_audio_node.node. Build the native engine first.')
   process.env.PATH = `${path.dirname(selected)}${path.delimiter}${process.env.PATH || ''}`
   return { audio: require(selected), modulePath: selected }
 }
@@ -100,23 +102,39 @@ function parseJson(raw, context) {
 }
 
 function normalize(value) {
-  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim()
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function resolveDevice(devices, query) {
-  const asioDevices = devices.filter((device) => device.backend === 'asio' || String(device.id || '').startsWith('asio:'))
-  const exact = asioDevices.filter((device) => device.id === query || device.label === query || device.name === query)
+  const asioDevices = devices.filter(
+    (device) => device.backend === 'asio' || String(device.id || '').startsWith('asio:')
+  )
+  const exact = asioDevices.filter(
+    (device) => device.id === query || device.label === query || device.name === query
+  )
   if (exact.length === 1) return exact[0]
   const q = normalize(query)
-  const fuzzy = asioDevices.filter((device) => normalize(device.id).includes(q) || normalize(device.label || device.name).includes(q))
+  const fuzzy = asioDevices.filter(
+    (device) =>
+      normalize(device.id).includes(q) || normalize(device.label || device.name).includes(q)
+  )
   if (fuzzy.length === 1) return fuzzy[0]
-  const list = asioDevices.map((device) => `  - ${device.label || device.name} | id=${device.id}`).join('\n')
-  if (fuzzy.length === 0) throw new Error(`No ASIO device matched "${query}". Available ASIO devices:\n${list}`)
+  const list = asioDevices
+    .map((device) => `  - ${device.label || device.name} | id=${device.id}`)
+    .join('\n')
+  if (fuzzy.length === 0)
+    throw new Error(`No ASIO device matched "${query}". Available ASIO devices:\n${list}`)
   throw new Error(`Device selector "${query}" matched multiple ASIO devices:\n${list}`)
 }
 
 function inferDsdRate(filePath) {
-  const name = path.basename(filePath).toLowerCase().replace(/[\s_-]+/g, '')
+  const name = path
+    .basename(filePath)
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '')
   for (const [token, rate] of dsdRateByName) {
     if (name.includes(token)) return rate
   }
@@ -185,18 +203,39 @@ function compactInfo(info) {
 }
 
 function assertNativeDsd(label, info, rate) {
-  expect(info.actualBackend === 'asio', `${label}: expected ASIO backend, got ${info.actualBackend}`)
+  expect(
+    info.actualBackend === 'asio',
+    `${label}: expected ASIO backend, got ${info.actualBackend}`
+  )
   expect(info.dsdMode === 'native', `${label}: expected dsdMode=native, got ${info.dsdMode}`)
-  expect(info.nativeDsdRuntimeState === 'proven', `${label}: expected nativeDsdRuntimeState=proven, got ${info.nativeDsdRuntimeState}`)
+  expect(
+    info.nativeDsdRuntimeState === 'proven',
+    `${label}: expected nativeDsdRuntimeState=proven, got ${info.nativeDsdRuntimeState}`
+  )
   expect(info.nativeDsdRequestedRate === rate, `${label}: requested Native DSD rate mismatch`)
   expect(info.nativeDsdActualRate === rate, `${label}: actual Native DSD rate mismatch`)
-  expect(info.outputPerfect === true, `${label}: expected outputPerfect=true, got ${info.outputPerfect}`)
+  expect(
+    info.outputPerfect === true,
+    `${label}: expected outputPerfect=true, got ${info.outputPerfect}`
+  )
   expect(info.sourceExact === true, `${label}: expected sourceExact=true, got ${info.sourceExact}`)
-  expect(!info.perfectReasonCode, `${label}: expected empty perfectReasonCode, got ${info.perfectReasonCode}`)
+  expect(
+    !info.perfectReasonCode,
+    `${label}: expected empty perfectReasonCode, got ${info.perfectReasonCode}`
+  )
   const diagnostics = info.diagnostics || {}
-  expect((diagnostics.sessionUnderrunCount || 0) === 0, `${label}: underruns=${diagnostics.sessionUnderrunCount}`)
-  expect((diagnostics.sessionBufferDropCount || 0) === 0, `${label}: bufferDrops=${diagnostics.sessionBufferDropCount}`)
-  expect((diagnostics.deviceLostCount || 0) === 0, `${label}: deviceLost=${diagnostics.deviceLostCount}`)
+  expect(
+    (diagnostics.sessionUnderrunCount || 0) === 0,
+    `${label}: underruns=${diagnostics.sessionUnderrunCount}`
+  )
+  expect(
+    (diagnostics.sessionBufferDropCount || 0) === 0,
+    `${label}: bufferDrops=${diagnostics.sessionBufferDropCount}`
+  )
+  expect(
+    (diagnostics.deviceLostCount || 0) === 0,
+    `${label}: deviceLost=${diagnostics.deviceLostCount}`
+  )
   expect(!diagnostics.lastError, `${label}: lastError=${diagnostics.lastError}`)
 }
 
@@ -207,7 +246,9 @@ async function runRate({ audio, device, rate, fixture, buffer, durationMs }) {
   audio.SetReplayGainMode('off', 0, 0, true)
   audio.SetEqBands(JSON.stringify({ enabled: false, bands: [] }))
   audio.SetCrossfeedStrength(0)
-  audio.SetDspConfig(JSON.stringify({ enabled: false, dsdOutputMode: 'native', crossfadeSeconds: 0 }))
+  audio.SetDspConfig(
+    JSON.stringify({ enabled: false, dsdOutputMode: 'native', crossfadeSeconds: 0 })
+  )
   audio.SetOutputBackend('asio')
   audio.SetOutputDevice(device.id)
   audio.SetOutputConfig(JSON.stringify({ preferredBufferSize: buffer, routingMode: 'auto' }))
@@ -231,7 +272,8 @@ function printSummary(summary) {
       console.log(
         `  format=${result.info.actualOutputFormat}/${result.info.actualSampleRate}Hz/${result.info.actualChannels}ch state=${result.info.nativeDsdRuntimeState} outputPerfect=${result.info.outputPerfect}`
       )
-      if (result.info.nativeDsdRuntimeReason) console.log(`  reason=${result.info.nativeDsdRuntimeReason}`)
+      if (result.info.nativeDsdRuntimeReason)
+        console.log(`  reason=${result.info.nativeDsdRuntimeReason}`)
     }
     if (result.error) console.log(`  error=${result.error}`)
   }
@@ -301,32 +343,62 @@ async function main() {
   const { audio, modulePath } = loadNative(options.modulePath)
   const devices = parseJson(audio.EnumerateDevices(), 'EnumerateDevices')
   const device = resolveDevice(devices, options.device)
-  const nativeDsdSampleRates = [...new Set(device.nativeDsdSampleRates || device.supportedDsdRates || [])].sort((a, b) => a - b)
+  const nativeDsdSampleRates = [
+    ...new Set(device.nativeDsdSampleRates || device.supportedDsdRates || [])
+  ].sort((a, b) => a - b)
 
   const fixtures = collectFixtures(options)
   const fixtureRates = [...fixtures.keys()].sort((a, b) => a - b)
   const testRates = nativeDsdSampleRates.length > 0 ? nativeDsdSampleRates : fixtureRates
-  expect(testRates.length > 0, 'No Native DSD rates to test. Provide DSF/DFF fixtures named with dsd64/dsd128/dsd256/dsd512.')
+  expect(
+    testRates.length > 0,
+    'No Native DSD rates to test. Provide DSF/DFF fixtures named with dsd64/dsd128/dsd256/dsd512.'
+  )
   const missing = testRates.filter((rate) => !fixtures.has(rate))
   if (missing.length > 0) {
-    throw new Error(`Missing DSF/DFF fixtures for advertised Native DSD rates: ${missing.join(', ')}`)
+    throw new Error(
+      `Missing DSF/DFF fixtures for advertised Native DSD rates: ${missing.join(', ')}`
+    )
   }
 
   const results = []
   for (const rate of testRates) {
     try {
-      results.push(await runRate({ audio, device, rate, fixture: fixtures.get(rate), buffer: options.buffer, durationMs: options.durationMs }))
+      results.push(
+        await runRate({
+          audio,
+          device,
+          rate,
+          fixture: fixtures.get(rate),
+          buffer: options.buffer,
+          durationMs: options.durationMs
+        })
+      )
     } catch (error) {
       safeStop(audio)
       let info = null
       try {
         info = compactInfo(parseJson(audio.GetPlaybackInfo(), 'GetPlaybackInfo'))
       } catch (_) {}
-      results.push({ ok: false, label: `ASIO Native DSD ${rate}Hz`, rate, fixture: fixtures.get(rate), error: error && error.message, info })
+      results.push({
+        ok: false,
+        label: `ASIO Native DSD ${rate}Hz`,
+        rate,
+        fixture: fixtures.get(rate),
+        error: error && error.message,
+        info
+      })
     }
   }
 
-  const summary = { modulePath, deviceSelector: options.device, device, nativeDsdSampleRates, testRates, results }
+  const summary = {
+    modulePath,
+    deviceSelector: options.device,
+    device,
+    nativeDsdSampleRates,
+    testRates,
+    results
+  }
   if (typeof process.send === 'function') process.send({ type: 'summary', summary })
   else if (options.json) console.log(JSON.stringify(summary, null, 2))
   else printSummary(summary)

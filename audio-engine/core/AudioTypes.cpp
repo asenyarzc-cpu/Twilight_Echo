@@ -86,6 +86,11 @@ std::string dsdPcmFallbackReasonCode(const std::string& backendReason) {
   const std::string reason = lowerText(backendReason);
   if (reason.find("output mode forced pcm") != std::string::npos) return "dsd_output_mode_pcm";
   if (reason.find("dop carrier mismatch") != std::string::npos) return "dop_carrier_mismatch";
+  // A failed probe means neither DSD route was attempted; reporting it as an
+  // unproven DoP passthrough points the user at the transport instead of the
+  // unreadable source.
+  if (reason.find("dsd probe failed") != std::string::npos) return "dsd_probe_failed";
+  if (reason.find("cannot carry dsd") != std::string::npos) return "dsd_backend_cannot_carry";
   if (reason.find("passthrough") != std::string::npos || reason.find("prove") != std::string::npos) {
     return "dop_passthrough_unproven";
   }
@@ -103,8 +108,9 @@ bool dopCarrierMatchesExpected(const PerfectEvaluation& evaluation) {
       dopCarrierFormatForDsd(evaluation.dsdRate, evaluation.sourceFormat.sampleRate, evaluation.sourceFormat.channelCount);
   if (!expected.has_value()) return false;
   if (evaluation.dopCarrierMatched) return true;
-  return hasConcreteFormat(evaluation.dopCarrierFormat) && pcmFormatsExactMatch(evaluation.dopCarrierFormat, *expected) &&
-         pcmFormatsExactMatch(evaluation.outputFormat, evaluation.dopCarrierFormat);
+  return hasConcreteFormat(evaluation.dopCarrierFormat) &&
+         pcmFormatsSemanticallyMatch(evaluation.dopCarrierFormat, *expected) &&
+         pcmFormatsSemanticallyMatch(evaluation.outputFormat, evaluation.dopCarrierFormat);
 }
 
 std::string dsdPerfectReason(const PerfectEvaluation& evaluation) {
@@ -403,7 +409,11 @@ PerfectResult evaluatePerfect(const PerfectEvaluation& evaluation) {
                                 nativeDsdFormatsSemanticallyMatch(decodedFormat, evaluation.outputFormat);
   const bool dopCarrierMatched = evaluation.sourceDsd && evaluation.dsdMode == DsdMode::Dop &&
                                  dopCarrierMatchesExpected(evaluation);
-  result.formatMatched = dsdFormatMatched || pcmFormatsExactMatch(decodedFormat, evaluation.outputFormat);
+  // DoP arrives as an Int24 carrier while the wire often runs a 24-in-32
+  // container; both hold the same payload, so DSD paths match semantically.
+  result.formatMatched =
+      dsdFormatMatched || (evaluation.sourceDsd ? pcmFormatsSemanticallyMatch(decodedFormat, evaluation.outputFormat)
+                                                : pcmFormatsExactMatch(decodedFormat, evaluation.outputFormat));
   result.sourceFormatMatched = pcmFormatsSemanticallyMatch(evaluation.sourceFormat, evaluation.outputFormat);
   result.resampled = evaluation.backendResampled || !result.formatMatched;
   result.processingActive =

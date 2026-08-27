@@ -17,7 +17,13 @@ import {
 } from '../../shared/audio/reasonCodes.ts'
 import type { AppLocale } from '../../shared/i18n/locale.ts'
 import { translate, type MessageParams } from '../../shared/i18n/translate.ts'
-import type { AudioDiagnosticBlocker, AudioDiagnosticReport } from './audioDiagnostics.ts'
+import type {
+  AudioDiagnosticBlocker,
+  AudioDiagnosticEvent,
+  AudioDiagnosticReport
+} from './audioDiagnostics.ts'
+
+const TIMELINE_EVENT_LIMIT = 40
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -96,6 +102,50 @@ export function collectReportReasons(locale: AppLocale, diagnosis: unknown): Res
   for (const blocker of readBlockers(diagnosis)) push(blocker.code, blocker.value)
 
   return sortReasonsBySeverity(reasons)
+}
+
+/**
+ * The events array carries both app-side records and drained engine ring
+ * entries (source: "engine"). A raw dump is noise; the timeline keeps the
+ * entries that explain a non-perfect state — every warning/error plus the
+ * engine's DSD route decisions — capped to the newest ones.
+ */
+export function selectTimelineEvents(events: AudioDiagnosticEvent[]): AudioDiagnosticEvent[] {
+  const selected = events.filter(
+    (event) =>
+      event.level !== 'info' ||
+      (typeof event.event === 'string' && event.event.startsWith('dsd_route'))
+  )
+  return selected.slice(-TIMELINE_EVENT_LIMIT)
+}
+
+/** "2026-08-27T12:34:56.789Z" -> "08-27 12:34:56.789"; non-ISO strings pass through. */
+function timelineClock(timestamp: string): string {
+  const match = /^(\d{4})-(\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?)/.exec(timestamp)
+  return match ? `${match[2]} ${match[3]}` : timestamp
+}
+
+function renderTimelineSection(
+  locale: AppLocale,
+  events: AudioDiagnosticEvent[],
+  lines: string[]
+): void {
+  const t = (key: string, params?: MessageParams): string => translate(locale, key, params)
+  const timeline = selectTimelineEvents(events)
+  lines.push(`## ${t('diagnostics.export.timelineHeading')}`, '')
+  if (timeline.length === 0) {
+    lines.push(t('diagnostics.export.timelineEmpty'), '')
+    return
+  }
+  for (const event of timeline) {
+    const details = isRecord(event.details) ? event.details : {}
+    const message = typeof details.message === 'string' ? details.message.trim() : ''
+    const origin = details.source === 'engine' ? 'engine' : 'app'
+    const clock = timelineClock(event.timestamp)
+    const suffix = message && message !== event.event ? `：${message}` : ''
+    lines.push(`- \`${clock}\` [${event.level}] (${origin}) \`${event.event}\`${suffix}`)
+  }
+  lines.push('')
 }
 
 function renderPlaybackSection(locale: AppLocale, playback: unknown, lines: string[]): void {
@@ -207,6 +257,8 @@ export function renderAudioDiagnosticMarkdown(
   lines.push(`- Locale: ${environment.locale}`)
   lines.push(`- Packaged: ${environment.packaged ? 'yes' : 'no'}`)
   lines.push('')
+
+  renderTimelineSection(locale, report.events, lines)
 
   lines.push(`## ${t('diagnostics.export.privacyHeading')}`, '')
   lines.push(t('diagnostics.export.privacyNote'), '')

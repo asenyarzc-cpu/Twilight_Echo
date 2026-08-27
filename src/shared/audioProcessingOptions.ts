@@ -189,17 +189,11 @@ export const GAPLESS_BLOCKED_REASONS = [
 export type GaplessBlockedReason = (typeof GAPLESS_BLOCKED_REASONS)[number]
 
 export function isVolumeNormalizationMode(value: unknown): value is VolumeNormalizationMode {
-  return (
-    value === 'off' || value === 'track' || value === 'album' || value === 'loudnorm'
-  )
+  return value === 'off' || value === 'track' || value === 'album' || value === 'loudnorm'
 }
 
 export function isDsdOutputMode(value: unknown): value is DsdOutputMode {
-  return (
-    value === 'auto' ||
-    value === 'pcm' ||
-    value === 'dop' || value === 'native'
-  )
+  return value === 'auto' || value === 'pcm' || value === 'dop' || value === 'native'
 }
 
 export function labelForVolumeNormalization(mode: VolumeNormalizationMode): string {
@@ -262,7 +256,9 @@ export function gaplessBlockedReasonCopy(reason: string | null | undefined): str
     case 'format_mismatch':
       return HIFI_STATUS_COPY.gaplessBlockedFormat
     default:
-      return reason && reason.trim().length > 0 ? `${HIFI_STATUS_COPY.gaplessBlocked}：${reason}` : ''
+      return reason && reason.trim().length > 0
+        ? `${HIFI_STATUS_COPY.gaplessBlocked}：${reason}`
+        : ''
   }
 }
 

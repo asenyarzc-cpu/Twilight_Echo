@@ -129,10 +129,7 @@ test('DSD route normalization trims ids and coerces missing fields', () => {
 test('DSD route only diverges from the main output when a target is named', () => {
   assert.equal(dsdRouteTargetsDistinctRoute(DEFAULT_DSD_ROUTE), false)
   // Enabled but with no backend/device named is a no-op, not a broken route.
-  assert.equal(
-    dsdRouteTargetsDistinctRoute({ ...DEFAULT_DSD_ROUTE, enabled: true }),
-    false
-  )
+  assert.equal(dsdRouteTargetsDistinctRoute({ ...DEFAULT_DSD_ROUTE, enabled: true }), false)
   assert.equal(
     dsdRouteTargetsDistinctRoute({ ...DEFAULT_DSD_ROUTE, enabled: true, device: 'foo_dsd_asio' }),
     true

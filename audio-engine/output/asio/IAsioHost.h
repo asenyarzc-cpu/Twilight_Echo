@@ -151,6 +151,9 @@ class IAsioHost {
   virtual AudioSampleFormat outputSampleFormat(long channel) const = 0;
   virtual AsioChannelFormat outputChannelFormat(long channel) const = 0;
   virtual bool outputReady() = 0;
+  // The buffer size the driver actually accepted; can differ from the open
+  // result when createBuffers fell back to the driver's preferred size.
+  virtual long activeBufferSize() const = 0;
 };
 
 std::unique_ptr<IAsioHost> createRealAsioHost();

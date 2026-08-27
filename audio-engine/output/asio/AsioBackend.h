@@ -132,12 +132,20 @@ class AsioBackend final : public IOutputBackend {
   std::vector<uint8_t> typedRenderScratch_;
   std::chrono::high_resolution_clock::time_point lastRenderTime_{};
   uint32_t renderCallbacksSeen_ = 0;
+  // Consecutive render callbacks whose measured interval matches the 1-bit
+  // sample cadence instead of the packed byte-frame cadence this backend
+  // writes with. Callback thread only, like renderCallbacksSeen_.
+  uint32_t dsdBitUnitCallbackStreak_ = 0;
   std::atomic<uint64_t> pendingRenderUnderruns_{0};
   std::atomic<uint64_t> pendingRenderBufferDrops_{0};
   std::atomic<uint64_t> pendingDsdShortReads_{0};
   std::atomic<uint64_t> pendingDsdIdleFrames_{0};
   std::atomic<bool> outputReadyEnabled_{true};
   std::atomic<bool> pendingNativeDsdTypedCallbackMissing_{false};
+  // Set once the callback cadence proves the driver counts DSD buffers in
+  // 1-bit samples, meaning the byte-frame writes are 8x too large. Surfaced
+  // as an honest passthrough failure instead of continuing the overflow.
+  std::atomic<bool> pendingDsdBufferUnitMismatch_{false};
 };
 
 bool asioBackendAvailable();

@@ -73,8 +73,10 @@ function parseArgs(argv) {
     else throw new Error(`Unknown option: ${arg}`)
   }
 
-  if (!Number.isFinite(options.buffer) || options.buffer < 0) throw new Error('--buffer must be non-negative')
-  if (!Number.isFinite(options.durationMs) || options.durationMs < 100) throw new Error('--duration-ms must be at least 100')
+  if (!Number.isFinite(options.buffer) || options.buffer < 0)
+    throw new Error('--buffer must be non-negative')
+  if (!Number.isFinite(options.durationMs) || options.durationMs < 100)
+    throw new Error('--duration-ms must be at least 100')
   return options
 }
 
@@ -110,12 +112,18 @@ function parseJson(raw, context) {
 }
 
 function normalizeText(value) {
-  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim()
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function resolveDevice(devices, selector) {
-  if (!selector || selector === 'auto') return devices.find((device) => device.id === 'auto') || { id: 'auto', label: 'auto' }
-  const exact = devices.filter((device) => device.id === selector || device.label === selector || device.name === selector)
+  if (!selector || selector === 'auto')
+    return devices.find((device) => device.id === 'auto') || { id: 'auto', label: 'auto' }
+  const exact = devices.filter(
+    (device) => device.id === selector || device.label === selector || device.name === selector
+  )
   if (exact.length === 1) return exact[0]
   const query = normalizeText(selector)
   const fuzzy = devices.filter(
@@ -125,8 +133,11 @@ function resolveDevice(devices, selector) {
       normalizeText(device.name).includes(query)
   )
   if (fuzzy.length === 1) return fuzzy[0]
-  const list = devices.map((device) => `  - ${device.label || device.name || device.id} | id=${device.id}`).join('\n')
-  if (fuzzy.length === 0) throw new Error(`No device matched "${selector}". Available devices:\n${list}`)
+  const list = devices
+    .map((device) => `  - ${device.label || device.name || device.id} | id=${device.id}`)
+    .join('\n')
+  if (fuzzy.length === 0)
+    throw new Error(`No device matched "${selector}". Available devices:\n${list}`)
   throw new Error(`Device selector "${selector}" matched multiple devices:\n${list}`)
 }
 
@@ -137,7 +148,8 @@ function sourceWithSacdQuery(source, fixture) {
   const separator = source.includes('?') ? '&' : '?'
   const parts = []
   if (area) parts.push(`area=${encodeURIComponent(area)}`)
-  if (track !== undefined && track !== null) parts.push(`track=${encodeURIComponent(String(track))}`)
+  if (track !== undefined && track !== null)
+    parts.push(`track=${encodeURIComponent(String(track))}`)
   return `${source}${separator}${parts.join('&')}`
 }
 
@@ -160,7 +172,10 @@ function normalizeFixture(raw, index, baseDir) {
     dsdRate: Number(candidate.dsdRate || 0),
     area: candidate.area || candidate.sacdArea || '',
     track: candidate.track ?? candidate.sacdTrack ?? null,
-    isDst: candidate.isDst === true || candidate.dst === true || normalizeText(candidate.codec) === 'dst',
+    isDst:
+      candidate.isDst === true ||
+      candidate.dst === true ||
+      normalizeText(candidate.codec) === 'dst',
     expectPlayable: candidate.playable,
     expectedOutputMode: candidate.expectedOutputMode || candidate.outputMode || '',
     expectedReasonCode: candidate.expectedReasonCode || candidate.reasonCode || '',
@@ -171,8 +186,11 @@ function normalizeFixture(raw, index, baseDir) {
 function loadManifest(manifestPath) {
   const resolved = path.resolve(manifestPath)
   const document = JSON.parse(fs.readFileSync(resolved, 'utf8'))
-  const list = Array.isArray(document) ? document : document.fixtures || document.matrix || document.samples
-  if (!Array.isArray(list)) throw new Error('Fixture manifest must be an array or contain fixtures/matrix/samples array')
+  const list = Array.isArray(document)
+    ? document
+    : document.fixtures || document.matrix || document.samples
+  if (!Array.isArray(list))
+    throw new Error('Fixture manifest must be an array or contain fixtures/matrix/samples array')
   return list.map((fixture, index) => normalizeFixture(fixture, index, path.dirname(resolved)))
 }
 
@@ -183,7 +201,8 @@ function scanFixtureDir(fixtureDir) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name)
       if (entry.isDirectory()) walk(full)
-      else if (entry.isFile() && AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) fixtures.push(full)
+      else if (entry.isFile() && AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
+        fixtures.push(full)
       if (fixtures.length >= 256) return
     }
   }
@@ -212,7 +231,9 @@ function pickSacdTrack(metadata, fixture) {
 
 function runMetadataProbe(audio, fixture) {
   const metadata = parseJson(audio.GetMetadata(fixture.path), `GetMetadata(${fixture.label})`)
-  const selected = /\.iso$/i.test(fixture.path) ? pickSacdTrack(metadata, fixture) || metadata : metadata
+  const selected = /\.iso$/i.test(fixture.path)
+    ? pickSacdTrack(metadata, fixture) || metadata
+    : metadata
   const errors = []
   if (!fs.existsSync(fixture.path)) errors.push(`missing file: ${fixture.path}`)
   assertEqual(errors, selected.sampleRate, fixture.sampleRate, 'sampleRate')
@@ -229,12 +250,25 @@ function runMetadataProbe(audio, fixture) {
     errors.push(`reasonCode: expected ${fixture.expectedReasonCode}, got ${selected.reasonCode}`)
   }
   if (fixture.isDst) {
-    if (selected.codec !== 'dst') errors.push(`DST fixture expected codec=dst, got ${selected.codec}`)
-    if (selected.reasonCode !== 'dst_dsd_provider_unavailable' && fixture.expectedReasonCode !== 'dst_dsd_provider_failed') {
-      errors.push(`DST fixture must report DSD-preserving provider state, got ${selected.reasonCode || '(empty)'}`)
+    if (selected.codec !== 'dst')
+      errors.push(`DST fixture expected codec=dst, got ${selected.codec}`)
+    if (
+      selected.reasonCode !== 'dst_dsd_provider_unavailable' &&
+      fixture.expectedReasonCode !== 'dst_dsd_provider_failed'
+    ) {
+      errors.push(
+        `DST fixture must report DSD-preserving provider state, got ${selected.reasonCode || '(empty)'}`
+      )
     }
   }
-  return { ok: errors.length === 0, fixture: fixture.label, source: fixture.source, selected, metadata, errors }
+  return {
+    ok: errors.length === 0,
+    fixture: fixture.label,
+    source: fixture.source,
+    selected,
+    metadata,
+    errors
+  }
 }
 
 function compactPlaybackInfo(info) {
@@ -288,17 +322,28 @@ async function runPlaybackProbe(audio, fixture, options, device) {
     audio.SetReplayGainMode('off', 0, 0, true)
     audio.SetEqBands(JSON.stringify({ enabled: false, bands: [] }))
     audio.SetCrossfeedStrength(0)
-    audio.SetDspConfig(JSON.stringify({ enabled: false, dsdOutputMode: dsdModeForFixture(fixture), crossfadeSeconds: 0 }))
+    audio.SetDspConfig(
+      JSON.stringify({
+        enabled: false,
+        dsdOutputMode: dsdModeForFixture(fixture),
+        crossfadeSeconds: 0
+      })
+    )
     audio.SetOutputBackend(options.backend)
     audio.SetOutputDevice(device.id)
-    audio.SetOutputConfig(JSON.stringify({ preferredBufferSize: options.buffer, routingMode: 'auto' }))
+    audio.SetOutputConfig(
+      JSON.stringify({ preferredBufferSize: options.buffer, routingMode: 'auto' })
+    )
     audio.Play(fixture.source, 0)
     await sleep(options.durationMs)
     info = compactPlaybackInfo(parseJson(audio.GetPlaybackInfo(), 'GetPlaybackInfo'))
 
-    if (fixture.expectedOutputMode) assertEqual(errors, info.dsdMode, fixture.expectedOutputMode, 'dsdMode')
-    if (fixture.expectedReasonCode) assertEqual(errors, info.perfectReasonCode, fixture.expectedReasonCode, 'perfectReasonCode')
-    if (fixture.sampleRate && !fixture.isDst && info.actualSampleRate <= 0) errors.push('actualSampleRate missing')
+    if (fixture.expectedOutputMode)
+      assertEqual(errors, info.dsdMode, fixture.expectedOutputMode, 'dsdMode')
+    if (fixture.expectedReasonCode)
+      assertEqual(errors, info.perfectReasonCode, fixture.expectedReasonCode, 'perfectReasonCode')
+    if (fixture.sampleRate && !fixture.isDst && info.actualSampleRate <= 0)
+      errors.push('actualSampleRate missing')
     if (!info.actualBackend) errors.push('actualBackend missing')
     const diagnostics = info.diagnostics || {}
     if (diagnostics.lastError) errors.push(`diagnostics.lastError=${diagnostics.lastError}`)
@@ -313,14 +358,25 @@ async function runPlaybackProbe(audio, fixture, options, device) {
   } finally {
     safeStop(audio)
   }
-  return { ok: errors.length === 0, fixture: fixture.label, source: fixture.source, backend: options.backend, device, info, lastError, errors }
+  return {
+    ok: errors.length === 0,
+    fixture: fixture.label,
+    source: fixture.source,
+    backend: options.backend,
+    device,
+    info,
+    lastError,
+    errors
+  }
 }
 
 function printHumanSummary(summary) {
   console.log(`Native module: ${summary.modulePath}`)
   console.log(`Fixtures: ${summary.fixtures.length}`)
   if (summary.playback) {
-    console.log(`Playback: backend=${summary.options.backend} device=${summary.device.label || summary.device.id}`)
+    console.log(
+      `Playback: backend=${summary.options.backend} device=${summary.device.label || summary.device.id}`
+    )
   }
   for (const result of summary.results) {
     console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.fixture}`)
@@ -421,7 +477,13 @@ async function main() {
     const metadataResult = runMetadataProbe(audio, fixture)
     if (options.playback && metadataResult.ok && metadataResult.selected?.playable !== false) {
       const playbackResult = await runPlaybackProbe(audio, fixture, options, device)
-      results.push({ ...metadataResult, playback: playbackResult, info: playbackResult.info, errors: [...metadataResult.errors, ...playbackResult.errors], ok: playbackResult.ok })
+      results.push({
+        ...metadataResult,
+        playback: playbackResult,
+        info: playbackResult.info,
+        errors: [...metadataResult.errors, ...playbackResult.errors],
+        ok: playbackResult.ok
+      })
     } else {
       results.push(metadataResult)
     }
@@ -442,7 +504,8 @@ async function main() {
     results
   }
 
-  if (options.worker && typeof process.send === 'function') process.send({ type: 'summary', summary })
+  if (options.worker && typeof process.send === 'function')
+    process.send({ type: 'summary', summary })
   else if (options.json) console.log(JSON.stringify(summary, null, 2))
   else printHumanSummary(summary)
   if (results.some((result) => !result.ok)) process.exitCode = 1

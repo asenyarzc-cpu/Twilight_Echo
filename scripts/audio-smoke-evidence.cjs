@@ -2,13 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 // Hardware surfaces must pass with artifacts for coverage.complete.
-const REQUIRED_SURFACES = [
-  'WASAPI Exclusive',
-  'ASIO',
-  'DoP DAC',
-  'Native DSD',
-  'SACD ISO'
-]
+const REQUIRED_SURFACES = ['WASAPI Exclusive', 'ASIO', 'DoP DAC', 'Native DSD', 'SACD ISO']
 
 // Product honesty surfaces: always listed; default not-run until maintainer records evidence.
 // They do NOT gate coverage.complete (still 5/5 hardware surfaces).
@@ -79,13 +73,22 @@ function inferSurface(entry) {
   const explicit = entry && entry.surface ? String(entry.surface) : ''
   if (ALL_REPORTED_SURFACES.includes(explicit)) return explicit
 
-  const text = [entry && entry.id, entry && entry.label, entry && entry.command, entry && entry.notes]
+  const text = [
+    entry && entry.id,
+    entry && entry.label,
+    entry && entry.command,
+    entry && entry.notes
+  ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
   if (text.includes('loudnorm') || text.includes('r128') || text.includes('lufs')) return 'Loudnorm'
   if (text.includes('gapless')) return 'Gapless Album'
-  if (text.includes('unity') || text.includes('volume_not_unity') || text.includes('volume-not-unity')) {
+  if (
+    text.includes('unity') ||
+    text.includes('volume_not_unity') ||
+    text.includes('volume-not-unity')
+  ) {
     return 'Unity Volume'
   }
   if (text.includes('sacd') || text.includes('iso')) return 'SACD ISO'
@@ -101,9 +104,10 @@ function normalizeEntry(entry) {
     surface: inferSurface(entry),
     id: String(entry && entry.id ? entry.id : 'unknown'),
     label: String(entry && entry.label ? entry.label : 'Unknown smoke surface'),
-    status: entry && ['pass', 'fail', 'not-run', 'skip'].includes(entry.status)
-      ? entry.status
-      : 'not-run',
+    status:
+      entry && ['pass', 'fail', 'not-run', 'skip'].includes(entry.status)
+        ? entry.status
+        : 'not-run',
     command: String(entry && entry.command ? entry.command : ''),
     artifact: String(entry && entry.artifact ? entry.artifact : ''),
     notes: String(entry && entry.notes ? entry.notes : '')
@@ -120,7 +124,9 @@ function withFallbackArtifact(entry, artifact) {
 }
 
 function markdownEscape(value) {
-  return String(value || '').replaceAll('|', '\\|').replace(/\r?\n/g, '<br>')
+  return String(value || '')
+    .replaceAll('|', '\\|')
+    .replace(/\r?\n/g, '<br>')
 }
 
 function isRemoteArtifact(artifact) {
@@ -259,7 +265,11 @@ function compactSmokeInfo(info) {
   const parts = []
   if (info.actualOutputFormat || info.actualSampleRate || info.actualChannels) {
     parts.push(
-      [info.actualOutputFormat, info.actualSampleRate ? `${info.actualSampleRate}Hz` : '', info.actualChannels ? `${info.actualChannels}ch` : '']
+      [
+        info.actualOutputFormat,
+        info.actualSampleRate ? `${info.actualSampleRate}Hz` : '',
+        info.actualChannels ? `${info.actualChannels}ch` : ''
+      ]
         .filter(Boolean)
         .join('/')
     )
@@ -282,7 +292,11 @@ function buildEntriesFromSmokeSummary(summary, artifact = '', command = '') {
       status: result.ok === true ? 'pass' : result.ok === false ? 'fail' : 'not-run',
       command,
       artifact,
-      notes: [deviceLabel ? `device=${deviceLabel}` : '', infoNotes, result.error || result.notes || '']
+      notes: [
+        deviceLabel ? `device=${deviceLabel}` : '',
+        infoNotes,
+        result.error || result.notes || ''
+      ]
         .filter(Boolean)
         .join('; ')
     })
@@ -337,7 +351,9 @@ function buildAudioSmokeEvidenceReport(options = {}) {
       `| ${markdownEscape(entry.surface)} | ${markdownEscape(entry.status)} | ${markdownEscape(
         entry.command
       )} | ${markdownEscape(entry.artifact)} | ${markdownEscape(
-        entry.label === entry.surface ? entry.notes : `${entry.label}; ${entry.notes}`.replace(/; $/, '')
+        entry.label === entry.surface
+          ? entry.notes
+          : `${entry.label}; ${entry.notes}`.replace(/; $/, '')
       )} |`
     )
   }
@@ -372,11 +388,17 @@ function buildAudioSmokeEvidenceReport(options = {}) {
 function readJsonText(filePath) {
   const bytes = fs.readFileSync(filePath)
   if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
-    return bytes.subarray(2).toString('utf16le').replace(/^\uFEFF/, '')
+    return bytes
+      .subarray(2)
+      .toString('utf16le')
+      .replace(/^\uFEFF/, '')
   }
   if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
     const payload = Buffer.from(bytes.subarray(2))
-    return payload.swap16().toString('utf16le').replace(/^\uFEFF/, '')
+    return payload
+      .swap16()
+      .toString('utf16le')
+      .replace(/^\uFEFF/, '')
   }
   return bytes.toString('utf8').replace(/^\uFEFF/, '')
 }
@@ -438,10 +460,9 @@ function main() {
   const args = process.argv.slice(2)
   const inputFiles = collectInputFiles(args)
   const requireComplete = args.includes('--require-complete')
-  const outputDir =
-    args.includes('--output-dir')
-      ? argValue(args, '--output-dir')
-      : path.join(process.cwd(), 'output', 'audio-smoke-evidence')
+  const outputDir = args.includes('--output-dir')
+    ? argValue(args, '--output-dir')
+    : path.join(process.cwd(), 'output', 'audio-smoke-evidence')
   const report = buildAudioSmokeEvidenceReport({
     entries: readEntriesFromInputs(inputFiles),
     verifyArtifacts: true,

@@ -90,6 +90,20 @@ TAE_API TAE_Result TAE_EnumerateDevices(TAE_EngineHandle engine, char* buffer, s
 TAE_API TAE_Result TAE_EnumerateBackends(TAE_EngineHandle engine, char* buffer, size_t buffer_size, size_t* required_size);
 TAE_API TAE_Result TAE_GetEngineCapabilities(TAE_EngineHandle engine, char* buffer, size_t buffer_size, size_t* required_size);
 TAE_API TAE_Result TAE_GetLastError(TAE_EngineHandle engine, char* buffer, size_t buffer_size, size_t* required_size);
+/**
+ * Engine diagnostic event log (bounded process-wide ring). Returns a JSON
+ * array of events with sequence > since_sequence, oldest first, capped at
+ * max_entries (0 uses the engine default). next_sequence receives the cursor
+ * to pass on the next call so repeated polls only ever see new events.
+ */
+TAE_API TAE_Result TAE_GetDiagnosticLog(
+    TAE_EngineHandle engine,
+    uint64_t since_sequence,
+    size_t max_entries,
+    char* buffer,
+    size_t buffer_size,
+    size_t* required_size,
+    uint64_t* next_sequence);
 
 TAE_API TAE_Result TAE_GetPlaybackInfo(TAE_EngineHandle engine, char* buffer, size_t buffer_size, size_t* required_size);
 TAE_API TAE_Result TAE_GetSpectrumData(TAE_EngineHandle engine, float* buffer, size_t point_count, size_t* written_count);

@@ -26,10 +26,7 @@ test('does not mistake ordinary hardware ASIO drivers for proxies', () => {
 test('identity join tolerates missing device fields', () => {
   assert.equal(dsdProxyIdentityOf({ id: 'asio:foo_dsd_asio' }), 'asio:foo_dsd_asio')
   assert.equal(dsdProxyIdentityOf({}), '')
-  assert.equal(
-    dsdProxyIdentityOf({ id: 'a', label: 'b', name: 'c', driverName: 'd' }),
-    'a b c d'
-  )
+  assert.equal(dsdProxyIdentityOf({ id: 'a', label: 'b', name: 'c', driverName: 'd' }), 'a b c d')
 })
 
 test('detects a proxy from any single identity field', () => {

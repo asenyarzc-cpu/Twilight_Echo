@@ -305,6 +305,54 @@ int main() {
     passed &= expect(liveDriverCount() == 0, "get-format-unsupported fixture was not released");
   }
 
+  // Some drivers change their valid buffer-size range once the DSD I/O format
+  // is active; a PCM-mode size then fails createBuffers with
+  // ASE_InvalidParameter. The session must re-read the range after the DSD
+  // switch instead of trusting the PCM-mode values.
+  AsioDriver* dsdRangeDriver = createWithIoFormatMode(5);
+  passed &= expect(dsdRangeDriver != nullptr, "dsd-buffer-range fixture did not create a driver");
+  if (dsdRangeDriver) {
+    AsioIoFormat dsdFormat{};
+    dsdFormat.formatType = kAsioIoFormatDsd;
+    AsioIoFormat pcmFormat{};
+    pcmFormat.formatType = kAsioIoFormatPcm;
+    passed &= expect(dsdRangeDriver->init(&failureSystemReference) == kAsioTrue, "dsd-buffer-range fixture init failed");
+    passed &= expect(
+        dsdRangeDriver->getBufferSize(&minimum, &maximum, &preferred, &granularity) == kAsioOk &&
+            minimum == 64 && maximum == 256,
+        "dsd-buffer-range fixture PCM buffer range differs");
+    passed &= expect(
+        dsdRangeDriver->future(kFutureCanDoIoFormat, &dsdFormat) == kAsioOk &&
+            dsdRangeDriver->future(kFutureSetIoFormat, &dsdFormat) == kAsioOk,
+        "dsd-buffer-range fixture rejected the DSD switch");
+    passed &= expect(
+        dsdRangeDriver->getBufferSize(&minimum, &maximum, &preferred, &granularity) == kAsioOk &&
+            minimum == 256 && maximum == 2048 && preferred == 1024 && granularity == 0,
+        "dsd-buffer-range fixture did not report the DSD-mode buffer range");
+    passed &= expect(dsdRangeDriver->setSampleRate(2822400.0) == kAsioOk, "dsd-buffer-range fixture rejected the DSD64 rate");
+    std::array<AsioBufferInfo, 2> dsdRangeBuffers{};
+    for (int32_t channelIndex = 0; channelIndex < static_cast<int32_t>(dsdRangeBuffers.size()); ++channelIndex) {
+      dsdRangeBuffers[static_cast<size_t>(channelIndex)].isInput = kAsioFalse;
+      dsdRangeBuffers[static_cast<size_t>(channelIndex)].channelNum = channelIndex;
+    }
+    passed &= expect(
+        dsdRangeDriver->createBuffers(
+            dsdRangeBuffers.data(), static_cast<int32_t>(dsdRangeBuffers.size()), 128, &callbacks) != kAsioOk,
+        "dsd-buffer-range fixture accepted a PCM-mode buffer size in DSD mode");
+    passed &= expect(
+        dsdRangeDriver->createBuffers(
+            dsdRangeBuffers.data(), static_cast<int32_t>(dsdRangeBuffers.size()), 1024, &callbacks) == kAsioOk,
+        "dsd-buffer-range fixture rejected the DSD-mode buffer size");
+    passed &= expect(dsdRangeDriver->disposeBuffers() == kAsioOk, "dsd-buffer-range fixture dispose failed");
+    passed &= expect(
+        dsdRangeDriver->future(kFutureSetIoFormat, &pcmFormat) == kAsioOk &&
+            dsdRangeDriver->getBufferSize(&minimum, &maximum, &preferred, &granularity) == kAsioOk &&
+            minimum == 64 && maximum == 256,
+        "dsd-buffer-range fixture did not restore the PCM buffer range");
+    dsdRangeDriver->Release();
+    passed &= expect(liveDriverCount() == 0, "dsd-buffer-range fixture was not released");
+  }
+
   FreeLibrary(module);
   return passed ? 0 : 1;
 }

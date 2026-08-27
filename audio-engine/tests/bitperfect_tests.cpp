@@ -775,6 +775,55 @@ void testUnsupportedDsdRateRejectsDopPerfect() {
   assert(result.perfectReason == "DSD source unsupported");
 }
 
+void testDopPerfectThroughInt24In32WireContainer() {
+  auto dop = baseEvaluation();
+  dop.sourceFormat = pcm(2822400, 1, 2, AudioSampleFormat::Float32Interleaved);
+  dop.sourceDsd = true;
+  dop.sourceLossless = true;
+  dop.dsdMode = DsdMode::Dop;
+  dop.dsdRate = 64;
+  const AudioFormat carrier = dopCarrierFormatForDsd(64, 2822400, 2).value();
+  AudioFormat wire = carrier;
+  wire.sampleFormat = AudioSampleFormat::Int24In32Interleaved;
+  wire.bitDepth = 24;
+  dop.dopCarrierFormat = carrier;
+  dop.decodedFormat = carrier;
+  dop.outputFormat = wire;
+  dop.dopCarrierMatched = true;
+  dop.dopPassthroughProven = true;
+  dop.pcmPassthrough = true;
+
+  const PerfectResult result = evaluatePerfect(dop);
+  assert(result.formatMatched);
+  assert(!result.resampled);
+  assert(result.sourceExact);
+  assert(result.outputPerfect);
+  assert(result.perfectReasonCode.empty());
+  assert(result.perfectReason.empty());
+}
+
+void testDopCarrierMatchRescuesContainerWidening() {
+  auto dop = baseEvaluation();
+  dop.sourceFormat = pcm(2822400, 1, 2, AudioSampleFormat::DsdInt8Lsb1);
+  dop.sourceDsd = true;
+  dop.dsdMode = DsdMode::Dop;
+  dop.dsdRate = 64;
+  const AudioFormat carrier = dopCarrierFormatForDsd(64, 2822400, 2).value();
+  dop.dopCarrierFormat = carrier;
+  dop.outputFormat = carrier;
+  dop.outputFormat.sampleFormat = AudioSampleFormat::Int24In32Interleaved;
+  // The pipeline originally reported Int24 vs Int24In32 as an exact-match
+  // failure; semantically both carry the same 24-bit DoP payload, so the
+  // carrier check must rescue the claim instead of reporting a mismatch.
+  dop.dopCarrierMatched = false;
+  dop.dopPassthroughProven = true;
+
+  const PerfectResult result = evaluatePerfect(dop);
+  assert(result.outputPerfect);
+  assert(result.sourceExact);
+  assert(result.perfectReasonCode.empty());
+}
+
 }  // namespace
 
 int main() {
@@ -815,5 +864,7 @@ int main() {
   testDsdHighRateFallbackReason();
   testDsd512ForcedPcmPreservesExplicitFallbackReason();
   testUnsupportedDsdRateRejectsDopPerfect();
+  testDopPerfectThroughInt24In32WireContainer();
+  testDopCarrierMatchRescuesContainerWidening();
   return 0;
 }

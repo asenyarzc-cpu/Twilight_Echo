@@ -270,8 +270,7 @@ std::filesystem::path writeMalformedDsfFixture(
   return path;
 }
 
-std::filesystem::path writeDffFixture(const std::string& name) {
-  const auto path = std::filesystem::temp_directory_path() / name;
+std::filesystem::path writeDffFixtureAt(const std::filesystem::path& path) {
   const uint64_t propPayload = 4 + (12 + 4) + (12 + 2);
   const uint64_t dsdPayload = 16;
   const uint64_t formSize = 4 + (12 + propPayload) + (12 + dsdPayload);
@@ -292,6 +291,57 @@ std::filesystem::path writeDffFixture(const std::string& name) {
   out.write("DSD ", 4);
   writeBe64(out, dsdPayload);
   for (int i = 0; i < 16; ++i) out.put(static_cast<char>(0x80 + i));
+  return path;
+}
+
+std::filesystem::path writeDffFixture(const std::string& name) {
+  return writeDffFixtureAt(std::filesystem::temp_directory_path() / name);
+}
+
+// DST-compressed DFF (FRM8 form type 'DST ' + CMPR "DST"): two 8-byte DSTF
+// frames whose first byte identifies them, so an echo provider's decoded
+// output stays traceable to its source frame. FRTE declares 2 frames @ 75Hz.
+std::filesystem::path writeDstDffFixture(const std::string& name) {
+  const auto path = std::filesystem::temp_directory_path() / name;
+  const std::vector<std::vector<uint8_t>> frames = {
+      {0xA0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77},
+      {0xB0, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE}};
+  const uint64_t propPayload = 4 + (12 + 4) + (12 + 2) + (12 + 6);
+  const uint64_t dstPayload = (12 + 6) + frames.size() * (12 + 8);
+  const uint64_t formSize = 4 + (12 + 4) + (12 + propPayload) + (12 + dstPayload);
+
+  std::ofstream out(path, std::ios::binary);
+  out.write("FRM8", 4);
+  writeBe64(out, formSize);
+  out.write("DST ", 4);
+  out.write("FVER", 4);
+  writeBe64(out, 4);
+  writeBe32(out, 0x01050000);
+  out.write("PROP", 4);
+  writeBe64(out, propPayload);
+  out.write("SND ", 4);
+  out.write("FS  ", 4);
+  writeBe64(out, 4);
+  writeBe32(out, 2822400);
+  out.write("CHNL", 4);
+  writeBe64(out, 2);
+  writeBe16(out, 2);
+  out.write("CMPR", 4);
+  writeBe64(out, 6);
+  out.write("DST ", 4);
+  out.put(static_cast<char>(1));
+  out.put('\0');
+  out.write("DST ", 4);
+  writeBe64(out, dstPayload);
+  out.write("FRTE", 4);
+  writeBe64(out, 6);
+  writeBe32(out, static_cast<uint32_t>(frames.size()));
+  writeBe16(out, 75);
+  for (const auto& frame : frames) {
+    out.write("DSTF", 4);
+    writeBe64(out, frame.size());
+    out.write(reinterpret_cast<const char*>(frame.data()), static_cast<std::streamsize>(frame.size()));
+  }
   return path;
 }
 
@@ -685,6 +735,27 @@ void testDffReader() {
   assert(info.packing == DsdPacking::DffInterleaved);
   reader.close();
   std::filesystem::remove(path);
+}
+
+void testDffReaderOpensNonAsciiUtf8Path() {
+  // A DFF named in Chinese must still reach the native-DSD/DoP routes: the
+  // pipeline's DSD probe passes Node's UTF-8 path through, and narrow ifstream
+  // opens reinterpret those bytes in the Windows ANSI codepage (GBK on zh-CN),
+  // silently downgrading playback to resampled PCM.
+  const std::u8string name = u8"测试-你的眼神.dff";
+  const auto path = writeDffFixtureAt(std::filesystem::temp_directory_path() / name);
+  const std::u8string utf8Path = path.u8string();
+  const std::string source(reinterpret_cast<const char*>(utf8Path.data()), utf8Path.size());
+  DsdReader reader;
+  std::string error;
+  assert(reader.open(source, &error));
+  const auto info = reader.streamInfo();
+  assert(info.container == "DFF");
+  assert(info.channelCount == 2);
+  assert(info.dsdRate == 128);
+  reader.close();
+  std::error_code ignored;
+  std::filesystem::remove(path, ignored);
 }
 
 void testDsdInterleaveHelperConvertsPlanarBlocks() {
@@ -1154,6 +1225,130 @@ class ExactSizeDstDecoderProvider final : public SacdDstDecoderProvider {
   std::vector<size_t> expectedFrameSizes_;
 };
 
+void testDffDstReaderDecodesThroughProvider() {
+  const auto path = writeDstDffFixture("twilight-dst-dff.dff");
+  EchoDstDecoderProvider provider;
+  DsdReader reader;
+  reader.setDstDecoderProvider(&provider);
+  std::string error;
+  assert(reader.open(path.string(), &error));
+  const auto info = reader.streamInfo();
+  assert(info.container == "DFF");
+  assert(info.dsdSampleRate == 2822400);
+  assert(info.dsdRate == 64);
+  assert(info.channelCount == 2);
+  assert(info.bitOrder == DsdBitOrder::MsbFirst);
+  assert(info.packing == DsdPacking::DffInterleaved);
+  // dataSize reports decoded bytes: 2 frames x 8 bytes per decoded frame.
+  assert(info.dataSize == 16);
+  assert(std::abs(info.durationSeconds - (2.0 / 75.0)) < 1e-9);
+
+  uint8_t buffer[8];
+  assert(reader.readBytes(buffer, sizeof(buffer)) == 8);
+  assert(buffer[0] == 0xA0 && buffer[7] == 0xA7);
+  assert(reader.readBytes(buffer, sizeof(buffer)) == 8);
+  assert(buffer[0] == 0xB0 && buffer[7] == 0xB7);
+  uint8_t extra[4];
+  assert(reader.readBytes(extra, sizeof(extra)) == 0);
+  assert(reader.eof());
+
+  // Frame-indexed seek restarts at the requested frame boundary.
+  assert(reader.seek(1.0 / 75.0, &error));
+  assert(reader.readBytes(buffer, sizeof(buffer)) == 8);
+  assert(buffer[0] == 0xB0);
+  reader.close();
+  std::filesystem::remove(path);
+}
+
+void testDffDstReaderRequiresProvider() {
+  const auto path = writeDstDffFixture("twilight-dst-dff-noprovider.dff");
+  DsdReader reader;
+  std::string error;
+  assert(!reader.open(path.string(), &error));
+  assert(error.find("DST decoder provider") != std::string::npos);
+  std::error_code ignored;
+  std::filesystem::remove(path, ignored);
+}
+
+// Uncompressed DST frames (first bit 0) are exactly one header byte plus the
+// raw interleaved DSD bytes, so the real vendored dstdec passes them through.
+// This proves the DFF-DST path against the production decoder, not a stub.
+std::filesystem::path writeUncompressedDstDffFixture(const std::string& name, int frameCount) {
+  const auto path = std::filesystem::temp_directory_path() / name;
+  constexpr size_t kFrameBytesPerChannel = 4704;  // 2822400 / 8 / 75
+  constexpr size_t kDecodedFrameBytes = kFrameBytesPerChannel * 2;
+  const size_t frameSize = 1 + kDecodedFrameBytes;
+  const size_t frameChunkSize = frameSize + (frameSize & 1);
+  const uint64_t dstPayload = (12 + 6) + static_cast<uint64_t>(frameCount) * (12 + frameChunkSize);
+  const uint64_t propPayload = 4 + (12 + 4) + (12 + 2) + (12 + 6);
+  const uint64_t formSize = 4 + (12 + 4) + (12 + propPayload) + (12 + dstPayload);
+
+  std::ofstream out(path, std::ios::binary);
+  out.write("FRM8", 4);
+  writeBe64(out, formSize);
+  out.write("DST ", 4);
+  out.write("FVER", 4);
+  writeBe64(out, 4);
+  writeBe32(out, 0x01050000);
+  out.write("PROP", 4);
+  writeBe64(out, propPayload);
+  out.write("SND ", 4);
+  out.write("FS  ", 4);
+  writeBe64(out, 4);
+  writeBe32(out, 2822400);
+  out.write("CHNL", 4);
+  writeBe64(out, 2);
+  writeBe16(out, 2);
+  out.write("CMPR", 4);
+  writeBe64(out, 6);
+  out.write("DST ", 4);
+  out.put(static_cast<char>(1));
+  out.put('\0');
+  out.write("DST ", 4);
+  writeBe64(out, dstPayload);
+  out.write("FRTE", 4);
+  writeBe64(out, 6);
+  writeBe32(out, static_cast<uint32_t>(frameCount));
+  writeBe16(out, 75);
+  for (int frame = 0; frame < frameCount; ++frame) {
+    out.write("DSTF", 4);
+    writeBe64(out, frameSize);
+    out.put('\0');
+    for (size_t index = 0; index < kDecodedFrameBytes; ++index) {
+      out.put(static_cast<char>((frame * 3 + index) & 0xFF));
+    }
+    // DSDIFF pads odd-sized chunk payloads; 1 + 2*4704 is odd.
+    if ((frameSize & 1) != 0) out.put('\0');
+  }
+  return path;
+}
+
+void testDffDstUncompressedFramesDecodeWithRealProvider() {
+  const auto path = writeUncompressedDstDffFixture("twilight-dst-dff-real.dff", 3);
+  auto provider = createDefaultSacdDstDecoderProvider();
+  DsdReader reader;
+  reader.setDstDecoderProvider(provider.get());
+  std::string error;
+  assert(reader.open(path.string(), &error));
+  const auto info = reader.streamInfo();
+  assert(info.dsdRate == 64);
+  assert(info.dataSize == 3 * 4704 * 2);
+
+  constexpr size_t kDecodedFrameBytes = 4704 * 2;
+  std::vector<uint8_t> buffer(kDecodedFrameBytes);
+  for (int frame = 0; frame < 3; ++frame) {
+    assert(reader.readBytes(buffer.data(), buffer.size()) == buffer.size());
+    for (size_t index = 0; index < buffer.size(); ++index) {
+      assert(buffer[index] == ((frame * 3 + index) & 0xFF));
+    }
+  }
+  uint8_t extra[8];
+  assert(reader.readBytes(extra, sizeof(extra)) == 0);
+  assert(reader.eof());
+  reader.close();
+  std::filesystem::remove(path);
+}
+
 class PcmOnlyDstProvider final : public SacdDstProvider {
  public:
   const char* name() const override {
@@ -1574,6 +1769,10 @@ int main() {
   testDsfSeekAlignsToPlanarBlockBoundary();
   testDsfReaderRejectsBlockSizeLargerThanDataChunk();
   testDffReader();
+  testDffReaderOpensNonAsciiUtf8Path();
+  testDffDstReaderDecodesThroughProvider();
+  testDffDstReaderRequiresProvider();
+  testDffDstUncompressedFramesDecodeWithRealProvider();
   testDsdInterleaveHelperConvertsPlanarBlocks();
   testDsdInterleaveHelperConvertsBitOrderWithoutPreclearSentinel();
   testDsdInterleaveHelperCanCopyDffWhenBitOrderMatches();

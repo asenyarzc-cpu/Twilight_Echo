@@ -47,6 +47,7 @@ set(TAE_ENGINE_SOURCES
   core/AudioBuffer.cpp
   core/AudioPipeline.cpp
   core/AudioTypes.cpp
+  core/DiagnosticLog.cpp
   core/TwilightAudioEngine.cpp
   analysis/BpmAnalyzer.cpp
   analysis/LoudnessAnalyzer.cpp
@@ -301,6 +302,13 @@ if(TAE_BUILD_TESTS)
   target_include_directories(twilight_audio_buffer_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   add_test(NAME twilight_audio_buffer_unit COMMAND twilight_audio_buffer_tests)
 
+  add_executable(twilight_diagnostic_log_tests
+    tests/diagnostic_log_tests.cpp
+    core/DiagnosticLog.cpp
+  )
+  target_include_directories(twilight_diagnostic_log_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_test(NAME twilight_diagnostic_log_unit COMMAND twilight_diagnostic_log_tests)
+
   add_library(twilight_test_gain_dsp_plugin SHARED tests/test_gain_dsp_plugin.cpp)
   target_include_directories(twilight_test_gain_dsp_plugin PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   add_library(twilight_test_fault_dsp_plugin SHARED tests/test_fault_dsp_plugin.cpp)
@@ -546,6 +554,7 @@ if(TAE_BUILD_TESTS)
     core/AudioBuffer.cpp
     core/AudioPipeline.cpp
     core/AudioTypes.cpp
+    core/DiagnosticLog.cpp
     core/TwilightAudioEngine.cpp
     analysis/BpmAnalyzer.cpp
     analysis/LoudnessAnalyzer.cpp
@@ -614,6 +623,7 @@ if(TAE_BUILD_TESTS)
     core/AudioBuffer.cpp
     core/AudioPipeline.cpp
     core/AudioTypes.cpp
+    core/DiagnosticLog.cpp
     analysis/BpmAnalyzer.cpp
     analysis/LoudnessAnalyzer.cpp
     decoder/DopPacker.cpp

@@ -1,6 +1,7 @@
 #include "AudioPipeline.h"
 #include "AudioPipelineDsdUtils.h"
 #include "AudioPipelineRenderUtils.h"
+#include "DiagnosticLog.h"
 #include "../dsp/ChannelRouter.h"
 #include "../decoder/DopPackerUtils.h"
 #include "../decoder/SacdIsoProbe.h"
@@ -369,7 +370,12 @@ bool dopRuntimeFactsRejectBeforeStart(const DopRuntimeFacts& facts) {
 }
 
 std::string dopPcmFallbackReason(const DopRuntimeFacts& facts) {
-  return facts.state == DopRuntimeFactState::Mismatch ? "DoP carrier mismatch" : "DoP backend could not prove passthrough";
+  const std::string base =
+      facts.state == DopRuntimeFactState::Mismatch ? "DoP carrier mismatch" : "DoP backend could not prove passthrough";
+  // The base prefix must stay first: dsdPcmFallbackReasonCode matches on it.
+  // Appending the backend's own reason keeps shared-mixer or format-negotiation
+  // detail visible instead of a generic unproven message.
+  return facts.reason.empty() || facts.reason == base ? base : base + " (" + facts.reason + ")";
 }
 
 bool nativeDsdRuntimeFactsRequirePcmFallback(const NativeDsdRuntimeFacts& facts) {
@@ -1570,12 +1576,23 @@ TAE_Result AudioPipeline::playInternal(
   crossfadeTotalFrames_ = 0;
 
   std::optional<DsdStreamInfo> dsdProbe;
+  std::string dsdProbeError;
   if (sourceLooksDsfOrDff(item.source) || sourceLooksSacdIso(item.source)) {
+    // DST-compressed sources (SACD ISO areas, DSDIFF 'DST ' form) only open
+    // through the DSD-preserving provider; the probe needs the same decoder
+    // the playback paths get, or those tracks never reach the DSD routes.
+    auto probeDstProvider = createDefaultSacdDstDecoderProvider();
     DsdReader probe;
-    std::string probeError;
-    if (probe.open(item.source, &probeError)) {
+    probe.setDstDecoderProvider(probeDstProvider.get());
+    if (probe.open(item.source, &dsdProbeError)) {
       dsdProbe = probe.streamInfo();
     }
+  }
+  if (!dsdProbe.has_value() && !dsdProbeError.empty()) {
+    // Without the probe neither DSD route is attempted; this event is the only
+    // durable record of why (e.g. an unreadable source path).
+    DiagnosticLog::instance().append(DiagLevel::Error, "dsd_probe_failed", dsdProbeError,
+                                     "{\"source\":\"" + json_utils::escape(item.source) + "\"}");
   }
 
   // DSD compatibility route. When enabled, DSD (and optionally PCM->DSD
@@ -1626,6 +1643,49 @@ TAE_Result AudioPipeline::playInternal(
                             dsdProbe,
                             requestedPlaybackVolume,
                             dsdBackendId);
+  if (const char* tracePath = std::getenv("TAE_ASIO_TRACE_PATH");
+      tracePath != nullptr && tracePath[0] != '\0') {
+    if (std::ofstream trace(tracePath, std::ios::app); trace) {
+      const double tracePlaybackRate = loadAtomicDouble(requestedPlaybackRateBits_);
+      trace << "DSD route decision"
+            << " backend=" << backendId << " dsdBackend=" << dsdBackendId
+            << " mode=" << static_cast<int>(requestedDspConfig.dsdOutputMode)
+            << " volume=" << requestedPlaybackVolume << " rate=" << tracePlaybackRate
+            << " routingMode=" << static_cast<int>(outputConfig.routingMode)
+            << " processingRequiresPcm="
+            << dspConfigProcessingRequiresPcm(
+                   requestedDspConfig, outputConfig, requestedPlaybackVolume, tracePlaybackRate)
+            << " allowNativeDsd=" << allowNativeDsd << " canTryNativeDsd=" << canTryNativeDsd
+            << " allowDop=" << allowDop << " canTryDop=" << canTryDop
+            << " dsdRate=" << (dsdProbe.has_value() ? dsdProbe->dsdRate : 0)
+            << " probeError=" << dsdProbeError << '\n';
+    }
+  }
+  if (sourceLooksDsfOrDff(item.source) || sourceLooksSacdIso(item.source)) {
+    const bool routeAllowed = canTryNativeDsd || canTryDop;
+    const int dsdRate = dsdProbe.has_value() ? dsdProbe->dsdRate : 0;
+    const double decisionRate = loadAtomicDouble(requestedPlaybackRateBits_);
+    const std::string summary =
+        "backend=" + backendId + " dsdBackend=" + dsdBackendId +
+        " mode=" + std::to_string(static_cast<int>(requestedDspConfig.dsdOutputMode)) +
+        " rate=" + std::to_string(decisionRate) + " canTryNativeDsd=" +
+        (canTryNativeDsd ? "1" : "0") + " canTryDop=" + (canTryDop ? "1" : "0") +
+        " dsdRate=" + std::to_string(dsdRate);
+    DiagnosticLog::instance().append(
+        routeAllowed ? DiagLevel::Info : DiagLevel::Warning, "dsd_route_decision",
+        dsdProbeError.empty() ? summary : summary + " probeError=" + dsdProbeError,
+        "{\"backend\":\"" + json_utils::escape(backendId) + "\",\"dsdBackend\":\"" +
+            json_utils::escape(dsdBackendId) + "\",\"mode\":" +
+            std::to_string(static_cast<int>(requestedDspConfig.dsdOutputMode)) +
+            ",\"volume\":" + std::to_string(requestedPlaybackVolume) +
+            ",\"playbackRate\":" + std::to_string(decisionRate) +
+            ",\"allowNativeDsd\":" + (allowNativeDsd ? "true" : "false") +
+            ",\"canTryNativeDsd\":" + (canTryNativeDsd ? "true" : "false") +
+            ",\"allowDop\":" + (allowDop ? "true" : "false") +
+            ",\"canTryDop\":" + (canTryDop ? "true" : "false") +
+            ",\"dsdRate\":" + std::to_string(dsdRate) + ",\"probeError\":\"" +
+            json_utils::escape(dsdProbeError) + "\"}");
+  }
 
   std::shared_ptr<DecodeStream> active;
   std::unique_ptr<IOutputBackend> output;
@@ -1714,6 +1774,20 @@ TAE_Result AudioPipeline::playInternal(
             active = dopActive;
             dopPath = true;
           } else {
+            if (!formatCanCarryDop(outputFormat, dsdProbe->dsdRate, dsdProbe->dsdSampleRate, dsdProbe->channelCount)) {
+              // The driver answered, but not with a DoP carrier. Record the
+              // negotiated format so the fallback report names the concrete
+              // blocker instead of a bare "could not prove passthrough".
+              // Keep the "DoP carrier mismatch" prefix for the reason-code map.
+              dopAttemptError = "DoP carrier mismatch: backend negotiated " +
+                                sampleFormatToString(outputFormat.sampleFormat) + " " +
+                                std::to_string(outputFormat.sampleRate) + " Hz x" +
+                                std::to_string(outputFormat.channelCount) + " instead of int24 " +
+                                std::to_string(requested.sampleRate) + " Hz x" +
+                                std::to_string(requested.channelCount);
+            } else if (dopAttemptError.empty()) {
+              dopAttemptError = "DoP carrier negotiated but decoder configure failed";
+            }
             output->close();
             output.reset();
           }
@@ -1945,9 +2019,21 @@ TAE_Result AudioPipeline::playInternal(
           requestedPlaybackVolume,
           backendId,
           forcedDsdFallbackReason.empty()
-              ? (!nativeAttemptError.empty() ? nativeAttemptError : dopAttemptError)
+              // DoP is the last route tried; its error names the actionable
+              // blocker, while a stale native-DSD error would mislead the
+              // report when DoP failed too.
+              ? (!dopAttemptError.empty() ? dopAttemptError : nativeAttemptError)
               : forcedDsdFallbackReason,
           dsdOutputModeRequestsDop(requestedDspConfig.dsdOutputMode));
+      if (!dsdProbe.has_value() && !dsdProbeError.empty()) {
+        // Without the probe both DSD routes were skipped before any backend was
+        // asked, so this is the only record of why passthrough never happened.
+        dopAttemptError += " (DSD probe failed: " + dsdProbeError + ")";
+      }
+      DiagnosticLog::instance().append(DiagLevel::Warning, "dsd_pcm_fallback", dopAttemptError,
+                                       "{\"backend\":\"" + json_utils::escape(backendId) +
+                                           "\",\"dsdRate\":" +
+                                           std::to_string(active->stream.dsdRate) + "}");
     }
   }
 
@@ -2212,7 +2298,19 @@ TAE_Result AudioPipeline::playInternal(
   }
 
   if (dopPath) {
-    const DopRuntimeFacts dopFacts = output_->dopRuntimeFacts();
+    DopRuntimeFacts dopFacts = output_->dopRuntimeFacts();
+    if (dopFacts.state == DopRuntimeFactState::Candidate) {
+      // Drivers that do not expose their negotiated runtime format (so the
+      // backend could only report a Candidate) prove the carrier through the
+      // DoP marker check, which happens in the first typed buffers on the
+      // render thread. Give that check a short window before condemning the
+      // path to PCM, otherwise every such driver falls back instantly.
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+      while (dopFacts.state == DopRuntimeFactState::Candidate && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        dopFacts = output_->dopRuntimeFacts();
+      }
+    }
     if (dopRuntimeFactsRequirePcmFallback(dopFacts)) {
       const std::string fallbackReason = dopPcmFallbackReason(dopFacts);
       stop();
@@ -2276,6 +2374,17 @@ TAE_Result AudioPipeline::playInternal(
     updatePerfectLocked();
   }
 
+  if (nativeDsdPath || dopPath || pcmToDsdPath) {
+    const char* mode = nativeDsdPath ? "native" : (dopPath ? "dop" : "pcm-to-dsd");
+    DiagnosticLog::instance().append(
+        DiagLevel::Info, "dsd_route_engaged",
+        "mode=" + std::string(mode) + " backend=" + backendId_ + " device=" + deviceName_ +
+            " rate=" + std::to_string(outputFormat_.sampleRate),
+        "{\"mode\":\"" + std::string(mode) + "\",\"backend\":\"" + json_utils::escape(backendId_) +
+            "\",\"sampleRate\":" + std::to_string(outputFormat_.sampleRate) +
+            ",\"channels\":" + std::to_string(outputFormat_.channelCount) + "}");
+  }
+
   return TAE_RESULT_OK;
 }
 
@@ -2324,6 +2433,12 @@ std::string AudioPipeline::determineDsdPcmFallbackReason(
   if (!attemptedDopReason.empty()) return attemptedDopReason;
   if (dsdRouteOverrideTargetsDistinctRoute(dspConfig.dsdRoute)) {
     return "DSD 兼容层路由未能建立直通输出，已回退 PCM";
+  }
+  // Neither route was attempted because the backend itself cannot carry DSD
+  // (e.g. WASAPI shared mode); an "unproven DoP" message would point at the
+  // transport instead of the output mode.
+  if (dopModeRequested && !backendCanAttemptDop(backendId) && !backendCanAttemptNativeDsd(backendId)) {
+    return "Current output backend cannot carry DSD or DoP";
   }
   if (dspConfig.dsdOutputMode == DsdOutputMode::Native) return "ASIO Native DSD could not prove raw DSD output";
   if (stream.dsdRate >= 256) {
@@ -3649,7 +3764,7 @@ bool AudioPipeline::needsPcmFallback(std::string* reason) const {
     }
     if (dopFacts.state == DopRuntimeFactState::Candidate || dopFacts.state == DopRuntimeFactState::Unproven ||
         dopFacts.state == DopRuntimeFactState::Unsupported) {
-      if (reason) *reason = "DoP backend could not prove passthrough";
+      if (reason) *reason = dopPcmFallbackReason(dopFacts);
       return true;
     }
   }
@@ -3752,10 +3867,10 @@ bool AudioPipeline::updatePerfectLocked() {
     evaluation.dsdRate = stream_.dsdRate;
     if (stream_.dsdMode == DsdMode::Dop) {
       evaluation.dopCarrierFormat = stream_.decodedFormat;
-      evaluation.dopCarrierMatched = pcmFormatsExactMatch(stream_.decodedFormat, semanticOutputFormat);
+      evaluation.dopCarrierMatched = pcmFormatsSemanticallyMatch(stream_.decodedFormat, semanticOutputFormat);
       if (dopFacts.state == DopRuntimeFactState::Mismatch && hasConcreteAudioFormat(dopFacts.actualFormat)) {
         evaluation.dopCarrierFormat = dopFacts.actualFormat;
-        evaluation.dopCarrierMatched = pcmFormatsExactMatch(dopFacts.actualFormat, semanticOutputFormat);
+        evaluation.dopCarrierMatched = pcmFormatsSemanticallyMatch(dopFacts.actualFormat, semanticOutputFormat);
       }
       evaluation.dopPassthroughProven =
           dopFacts.state == DopRuntimeFactState::Proven && evaluation.dopCarrierMatched && !backendResampled;

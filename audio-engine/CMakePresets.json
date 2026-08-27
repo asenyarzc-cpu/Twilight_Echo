@@ -53,12 +53,12 @@
       }
     },
     {
-        "name": "windows-mingw-static",
-        "displayName": "Windows MinGW Static FFmpeg",
-        "generator": "Ninja",
-        "binaryDir": "${sourceDir}/build/mingw-static",
-        "cacheVariables": {
-            "CMAKE_BUILD_TYPE": "Release",
+      "name": "windows-mingw-static",
+      "displayName": "Windows MinGW Static FFmpeg",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/mingw-static",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_C_COMPILER": "$env{W64DEVKIT_ROOT}/bin/gcc.exe",
         "CMAKE_CXX_COMPILER": "$env{W64DEVKIT_ROOT}/bin/g++.exe",
         "CMAKE_MAKE_PROGRAM": "$env{W64DEVKIT_ROOT}/bin/ninja.exe",

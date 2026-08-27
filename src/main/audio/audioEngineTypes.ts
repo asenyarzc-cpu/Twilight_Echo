@@ -58,6 +58,8 @@ export interface NativeAudioBinding {
   ScanVst3Module?: (modulePath: string) => string | Vst3ScanDescriptor
   GetMetadata?: (source: string) => string | NativeAudioMetadata
   GetPlaybackInfo?: () => string | PlaybackInfo
+  /** 引擎诊断事件环形日志：返回 sequence 大于 sinceSequence 的新条目（JSON 数组字符串）。 */
+  GetDiagnosticLog?: (sinceSequence?: number, maxEntries?: number) => string
   GetUpcomingTrack?: () =>
     | string
     | import('../../shared/audioEngineTypes.ts').AudioEngineQueueItem

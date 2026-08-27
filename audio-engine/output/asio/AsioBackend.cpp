@@ -208,6 +208,11 @@ std::string nativeDsdRuntimeStateName(NativeDsdRuntimeFactState state) {
   }
 }
 
+std::string dsdBufferUnitMismatchReason() {
+  return "ASIO callback cadence implies the driver counts DSD buffers in 1-bit samples; packed "
+         "byte-frame writes are 8x too large";
+}
+
 void applyNativeDsdFactsToOutputInfo(OutputInfo* info, const NativeDsdRuntimeFacts& facts) {
   if (!info) return;
   info->nativeDsdRuntimeState = nativeDsdRuntimeStateName(facts.state);
@@ -452,6 +457,7 @@ bool AsioBackend::open(const std::string& deviceId, const AudioFormat& requested
     pendingDsdShortReads_.store(0, std::memory_order_relaxed);
     pendingDsdIdleFrames_.store(0, std::memory_order_relaxed);
     pendingNativeDsdTypedCallbackMissing_.store(false, std::memory_order_relaxed);
+    pendingDsdBufferUnitMismatch_.store(false, std::memory_order_relaxed);
     firstNativeDsdBufferClaimed_.store(false, std::memory_order_relaxed);
     firstNativeDsdBufferObserved_.store(false, std::memory_order_relaxed);
     firstNativeDsdInspectedBytes_.store(0, std::memory_order_relaxed);
@@ -717,7 +723,9 @@ bool AsioBackend::start(RenderCallback callback, OutputEventCallback eventCallba
     eventCallback_ = std::move(eventCallback);
     lastRenderTime_ = {};
     renderCallbacksSeen_ = 0;
+    dsdBitUnitCallbackStreak_ = 0;
     nativeDsdTypedCallbackMissing_ = false;
+    pendingDsdBufferUnitMismatch_.store(false, std::memory_order_relaxed);
   }
   return createAndStartHost(error);
 }
@@ -739,7 +747,9 @@ bool AsioBackend::startTyped(
     eventCallback_ = std::move(eventCallback);
     lastRenderTime_ = {};
     renderCallbacksSeen_ = 0;
+    dsdBitUnitCallbackStreak_ = 0;
     nativeDsdTypedCallbackMissing_ = false;
+    pendingDsdBufferUnitMismatch_.store(false, std::memory_order_relaxed);
   }
   return createAndStartHost(error);
 }
@@ -800,6 +810,7 @@ void AsioBackend::close() {
   typedRenderScratch_.clear();
   lastRenderTime_ = {};
   renderCallbacksSeen_ = 0;
+  dsdBitUnitCallbackStreak_ = 0;
   recoveryInProgress_ = false;
   dopRuntimeFacts_ = {};
   nativeDsdRuntimeFacts_ = unsupportedNativeDsdRuntimeFacts("No Native DSD stream was requested");
@@ -811,6 +822,7 @@ void AsioBackend::close() {
   pendingDsdShortReads_.store(0, std::memory_order_relaxed);
   pendingDsdIdleFrames_.store(0, std::memory_order_relaxed);
   pendingNativeDsdTypedCallbackMissing_.store(false, std::memory_order_relaxed);
+  pendingDsdBufferUnitMismatch_.store(false, std::memory_order_relaxed);
   firstNativeDsdBufferObserved_.store(false, std::memory_order_relaxed);
   firstNativeDsdInspectedBytes_.store(0, std::memory_order_relaxed);
   firstNativeDsdIdleByte_.store(0, std::memory_order_relaxed);
@@ -867,17 +879,51 @@ OutputInfo AsioBackend::outputInfo() const {
     info.capabilityReason = reason;
     if (info.diagnostics.lastError.empty()) info.diagnostics.lastError = reason;
   }
+  if (isNativeDsdRequest(openConfig_.format) &&
+      pendingDsdBufferUnitMismatch_.load(std::memory_order_acquire)) {
+    const std::string reason = dsdBufferUnitMismatchReason();
+    info.perfectReasonCode = "native_dsd_buffer_unit_mismatch";
+    info.perfectReason = reason;
+    info.capabilityReason = reason;
+    if (info.diagnostics.lastError.empty()) info.diagnostics.lastError = reason;
+  }
   return info;
 }
 
 DopRuntimeFacts AsioBackend::dopRuntimeFacts() const {
   std::lock_guard lock(mutex_);
-  return dopRuntimeFacts_;
+  DopRuntimeFacts facts = dopRuntimeFacts_;
+  if (facts.state == DopRuntimeFactState::Candidate || facts.state == DopRuntimeFactState::Proven) {
+    // The render thread verifies the 0x05/0xFA marker alternation in the first
+    // typed DoP buffer. Fold that observation into the reported facts so the
+    // pipeline can settle a Candidate instead of falling back to PCM, and a
+    // broken marker stream demotes an earlier Proven claim.
+    const int markerState = dopMarkerState_.load(std::memory_order_acquire);
+    if (markerState == 2) {
+      facts.state = DopRuntimeFactState::Mismatch;
+      facts.reason = "ASIO DoP marker sequence was invalid in the first typed buffer";
+    } else if (markerState == 1 && facts.state == DopRuntimeFactState::Candidate) {
+      facts.state = DopRuntimeFactState::Proven;
+      facts.reason = facts.explicitlyCapable
+                         ? "ASIO DoP carrier matched and the marker sequence was confirmed in the first typed buffer"
+                         : "ASIO DoP marker sequence confirmed in the first typed buffer";
+    }
+  }
+  return facts;
 }
 
 NativeDsdRuntimeFacts AsioBackend::nativeDsdRuntimeFacts() const {
   std::lock_guard lock(mutex_);
-  return nativeDsdRuntimeFacts_;
+  NativeDsdRuntimeFacts facts = nativeDsdRuntimeFacts_;
+  // The render thread watches the callback cadence while the stream runs. A
+  // driver that counts DSD buffers in 1-bit samples makes every byte-frame
+  // write 8x too large, so the observation demotes an earlier Proven claim
+  // instead of letting the pipeline trust a corrupting configuration.
+  if (pendingDsdBufferUnitMismatch_.load(std::memory_order_acquire)) {
+    facts.state = NativeDsdRuntimeFactState::Mismatch;
+    facts.reason = dsdBufferUnitMismatchReason();
+  }
+  return facts;
 }
 
 std::string AsioBackend::deviceName() const {
@@ -974,6 +1020,16 @@ bool AsioBackend::chooseFormat(const AsioDeviceInfo& device, const AudioFormat& 
   // branch above and passed through untouched.
   if (isNativeDsdRequest(requestedFormat) &&
       !containsSampleRate(device.nativeDsdSampleRates, requestedFormat.sampleRate)) {
+    *selected = requestedFormat;
+    return true;
+  }
+
+  // DoP carriers get the same treatment: the probed PCM rate list routinely
+  // omits 176.4/352.8kHz-style carrier rates even when the driver accepts
+  // them. Picking "nearest supported rate" here opened the device at the
+  // wrong rate and silently killed passthrough, so pass the carrier through
+  // verbatim and let the driver's own open() verdict decide.
+  if (isDopCarrierFormat(requestedFormat)) {
     *selected = requestedFormat;
     return true;
   }
@@ -1171,6 +1227,11 @@ bool AsioBackend::createAndStartHost(std::string* error) {
     return false;
   }
   {
+    // createBuffers may have fallen back to the driver's preferred size; the
+    // render scratch and callback pacing must run at the size the driver
+    // actually accepted, not the one open() chose.
+    const long activeSize = host_->activeBufferSize();
+    if (activeSize > 0) bufferSizeFrames_ = activeSize;
     const int outputChannels = std::max(1, openConfig_.format.channelCount);
     std::vector<AsioChannelFormat> channelFormats;
     channelFormats.reserve(static_cast<size_t>(outputChannels));
@@ -1180,6 +1241,7 @@ bool AsioBackend::createAndStartHost(std::string* error) {
     }
     const AsioChannelFormat firstChannelFormat = channelFormats.front();
     std::lock_guard lock(mutex_);
+    outputInfo_.bufferSizeFrames = static_cast<int>(bufferSizeFrames_);
     if (!asio::isSupportedChannelFormat(firstChannelFormat)) {
       if (error) *error = "unsupported_asio_sample_type";
       ++diagnostics_.sessionBufferDropCount;
@@ -1259,6 +1321,30 @@ bool AsioBackend::createAndStartHost(std::string* error) {
     applyNativeDsdFactsToOutputInfo(&outputInfo_, nativeDsdRuntimeFacts_);
     outputInfo_.diagnostics = diagnostics_;
   }
+  // Pre-fill both driver buffer sets with silence (PCM zeros / the DSD idle
+  // pattern) before start, so the very first callbacks can never hand the DAC
+  // uninitialized memory when the render thread is a tick late. Same guard
+  // foo_out_asio+dsd ships as "delay playback until buffers are primed" and
+  // JUCE applies by zeroing whenever no callback is registered.
+  {
+    const int fillChannels = std::max(1, openConfig_.format.channelCount);
+    for (int channel = 0; channel < fillChannels; ++channel) {
+      const AsioChannelFormat& channelFormat = renderChannelFormatsSession_[static_cast<size_t>(channel)];
+      const size_t bytesPerFrame = asio::bytesPerSample(channelFormat);
+      if (bytesPerFrame == 0) continue;
+      const size_t fillBytes =
+          static_cast<size_t>(std::max<long>(1, bufferSizeFrames_)) * bytesPerFrame;
+      const uint8_t fillByte =
+          isDsdSampleFormat(channelFormat.logicalFormat)
+              ? nativeDsdIdleByte(channelFormat.logicalFormat)
+              : 0;
+      for (long bufferIndex = 0; bufferIndex < 2; ++bufferIndex) {
+        if (uint8_t* buffer = static_cast<uint8_t*>(host_->outputBuffer(channel, bufferIndex))) {
+          std::memset(buffer, fillByte, fillBytes);
+        }
+      }
+    }
+  }
   running_ = true;
   if (!host_->start(error)) {
     running_ = false;
@@ -1329,11 +1415,21 @@ void AsioBackend::renderBuffer(long bufferIndex) {
   const auto now = std::chrono::high_resolution_clock::now();
   const uint32_t callbacksSeen = renderCallbacksSeen_++;
   static constexpr uint32_t kUnderrunWarmupCallbacks = 2;
+  static constexpr uint32_t kDsdBufferUnitMismatchCallbacks = 4;
   bool callbackDeadlineMissed = false;
   if (callbacksSeen >= kUnderrunWarmupCallbacks && lastRenderTime_.time_since_epoch().count() > 0) {
     const double elapsedMs = std::chrono::duration<double, std::milli>(now - lastRenderTime_).count();
     const double expectedMs = static_cast<double>(frames) * 1000.0 / asioCallbackFrameRate(outputFormat);
     callbackDeadlineMissed = expectedMs > 0 && elapsedMs > expectedMs * 1.5;
+    if (nativeDsdOutput && expectedMs > 0) {
+      if (asio::classifyDsdCallbackUnit(expectedMs, elapsedMs) == asio::DsdCallbackUnit::BitSamples) {
+        if (++dsdBitUnitCallbackStreak_ >= kDsdBufferUnitMismatchCallbacks) {
+          pendingDsdBufferUnitMismatch_.store(true, std::memory_order_release);
+        }
+      } else {
+        dsdBitUnitCallbackStreak_ = 0;
+      }
+    }
   }
   lastRenderTime_ = now;
 
@@ -1636,6 +1732,20 @@ bool AsioBackend::recover(AsioHostEvent event, const std::string& message) {
     if (stopRequested_.load()) {
       cancelRecovery();
       return false;
+    }
+    if (event == AsioHostEvent::BufferFailure && attempt > 0) {
+      // JRiver's "Use large hardware buffers" as an automatic ladder: each
+      // retry of a buffer-geometry fault reopens one step larger, capped by
+      // the driver's advertised maximum, so repeated buffer failures heal
+      // into a more forgiving geometry instead of flapping at the same one.
+      std::lock_guard lock(mutex_);
+      const long ceiling =
+          deviceInfo_.maxBufferSize > 0
+              ? deviceInfo_.maxBufferSize
+              : std::max<long>(openConfig_.bufferSizeFrames * 8, 4096);
+      long escalated = openConfig_.bufferSizeFrames > 0 ? openConfig_.bufferSizeFrames * 4 : 1024;
+      if (escalated > ceiling) escalated = ceiling;
+      if (escalated > openConfig_.bufferSizeFrames) openConfig_.bufferSizeFrames = escalated;
     }
     std::string error;
     host_->stop();

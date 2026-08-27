@@ -4,6 +4,7 @@
 #include "SacdIsoProbe.h"
 #include "ScarletbookToc.h"
 #include "../core/DsdRate.h"
+#include "../core/Utf8Path.h"
 
 #include <algorithm>
 #include <array>
@@ -570,7 +571,7 @@ bool SacdIsoDemuxer::open(const std::string& path, std::string* error) {
     return false;
   }
 
-  impl_->file.open(impl_->source.path, std::ios::binary);
+  impl_->file.open(utf8Path(impl_->source.path), std::ios::binary);
   if (!impl_->file) {
     if (error) *error = "Failed to open ISO file for reading";
     return false;

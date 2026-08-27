@@ -276,6 +276,8 @@ bool MockAsioHost::outputReady() {
   return true;
 }
 
+long MockAsioHost::activeBufferSize() const { return openResult.bufferSizeFrames; }
+
 void MockAsioHost::triggerBufferSwitch(long bufferIndex) {
   if (bufferSwitch_) bufferSwitch_(bufferIndex);
 }

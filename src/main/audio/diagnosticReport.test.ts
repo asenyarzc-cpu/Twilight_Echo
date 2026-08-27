@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AudioDiagnosticReport } from './audioDiagnostics.ts'
-import { collectReportReasons, renderAudioDiagnosticMarkdown } from './diagnosticReport.ts'
+import {
+  collectReportReasons,
+  renderAudioDiagnosticMarkdown,
+  selectTimelineEvents
+} from './diagnosticReport.ts'
 
 function buildReport(
   overrides: {
@@ -173,6 +177,68 @@ test('the raw JSON is embedded for developers and the event count reported', () 
   assert.match(markdown, /共 1 条事件记录/)
   assert.match(markdown, /```json/)
   assert.match(markdown, /session-under-test/)
+})
+
+test('the timeline keeps warnings/errors and DSD route decisions, dropping info noise', () => {
+  const event = (
+    sequence: number,
+    level: 'info' | 'warning' | 'error',
+    event: string,
+    details: Record<string, unknown> = {}
+  ) => ({
+    timestamp: `2026-08-23T12:00:0${sequence}.000Z`,
+    sessionId: 'session-under-test',
+    sequence,
+    level,
+    event,
+    details
+  })
+  const selected = selectTimelineEvents([
+    event(1, 'info', 'engine-ready'),
+    event(2, 'info', 'playback-state', { source: 'app' }),
+    event(3, 'info', 'dsd_route_decision', {
+      source: 'engine',
+      message: 'backend=asio dsdRate=64'
+    }),
+    event(4, 'warning', 'dsd_pcm_fallback', { source: 'engine', message: 'probe failed' }),
+    event(5, 'info', 'loudnorm-status')
+  ])
+  assert.deepEqual(
+    selected.map((entry) => entry.event),
+    ['dsd_route_decision', 'dsd_pcm_fallback']
+  )
+
+  // Capped to the newest entries.
+  const many = Array.from({ length: 60 }, (_, index) =>
+    event(index + 1, 'warning', `warn-${index + 1}`)
+  )
+  assert.equal(selectTimelineEvents(many).length, 40)
+  assert.equal(selectTimelineEvents(many).at(-1)?.event, 'warn-60')
+})
+
+test('the rendered report carries an event timeline with clock, level and origin', () => {
+  const report = buildReport({
+    events: [
+      {
+        timestamp: '2026-08-23T12:00:01.500Z',
+        sessionId: 'session-under-test',
+        sequence: 1,
+        level: 'warning',
+        event: 'dsd_pcm_fallback',
+        details: { source: 'engine', message: 'Current output backend cannot carry DSD or DoP' }
+      }
+    ]
+  })
+  const markdown = renderAudioDiagnosticMarkdown('zh-CN', report)
+  assert.match(markdown, /事件时间线/)
+  assert.match(markdown, /`08-23 12:00:01.500` \[warning\] \(engine\) `dsd_pcm_fallback`/)
+  assert.match(markdown, /Current output backend cannot carry DSD or DoP/)
+})
+
+test('an empty timeline says so instead of rendering a bare heading', () => {
+  const markdown = renderAudioDiagnosticMarkdown('zh-CN', buildReport())
+  assert.match(markdown, /事件时间线/)
+  assert.match(markdown, /时间线中没有警告或错误事件/)
 })
 
 test('malformed diagnosis shapes degrade instead of throwing', () => {
