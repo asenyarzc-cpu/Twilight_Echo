@@ -33,7 +33,8 @@ function writeUInt32(value) {
 }
 
 function msDosDateTime(date) {
-  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2)
+  const dosTime =
+    (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2)
   const dosDate = ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate()
   return { dosDate, dosTime }
 }

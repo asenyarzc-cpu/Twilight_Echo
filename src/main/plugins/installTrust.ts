@@ -58,10 +58,7 @@ export async function runFinalPluginPackageTrustBoundary<T>(options: {
   stagingRoot: string
   evidence: TwilightPluginInstallEvidence
   inspectStagedPackage: (packagePath: string) => Promise<T>
-  requestConfirmation: (
-    inspected: T,
-    evidence: TwilightPluginInstallEvidence
-  ) => Promise<boolean>
+  requestConfirmation: (inspected: T, evidence: TwilightPluginInstallEvidence) => Promise<boolean>
   now?: () => Date
 }): Promise<{ inspected: T; evidence: TwilightPluginInstallEvidence }> {
   const staged = await stageFinalPluginPackage(
@@ -122,9 +119,7 @@ export function pluginInstallEvidenceRevalidationDeadline(
     deadlines.push(parseEvidenceDeadline(evidence.expiresAt, '索引 expiresAt'))
   }
   if (evidence.verification?.revalidateAt) {
-    deadlines.push(
-      parseEvidenceDeadline(evidence.verification.revalidateAt, '发布者密钥重验时间')
-    )
+    deadlines.push(parseEvidenceDeadline(evidence.verification.revalidateAt, '发布者密钥重验时间'))
   }
   return deadlines.length > 0 ? Math.min(...deadlines) : null
 }
@@ -188,9 +183,7 @@ export function buildPluginInstallConfirmationDetail(
     `签名密钥 ID：${verification?.keyId ?? '无'}`,
     `签名公钥 SHA-256 指纹：${verification?.keyFingerprintSha256 ?? '无'}`,
     `信任重验截止：${
-      revalidationDeadline === null
-        ? '无计划边界'
-        : new Date(revalidationDeadline).toISOString()
+      revalidationDeadline === null ? '无计划边界' : new Date(revalidationDeadline).toISOString()
     }`,
     ...(verification ? [`验证说明：${verification.reason}`] : []),
     `作者：${manifest.author}`,

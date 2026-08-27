@@ -48,26 +48,68 @@ test('combines lossless, DSD, sample rate, bit depth, folder, and provider filte
     folder: 'D:\\Music\\DSD',
     provider: 'local'
   }
-  const selected = applyLibraryView([
-    track('match', {
-      filePath: 'D:\\Music\\DSD\\match.dsf',
-      dir: 'D:\\Music\\DSD',
-      format: 'dsf',
-      sampleRate: 2_822_400,
-      bitDepth: 1
-    }),
-    track('wrong-provider', { source: 'ncm', filePath: 'ncm:wrong-provider', format: 'dsf', sampleRate: 2_822_400, bitDepth: 1 }),
-    track('wrong-rate', { filePath: 'D:\\Music\\DSD\\wrong-rate.dsf', dir: 'D:\\Music\\DSD', format: 'dsf', sampleRate: 176_400, bitDepth: 1 })
-  ], state)
-  assert.deepEqual(selected.map((item) => item.id), ['match'])
+  const selected = applyLibraryView(
+    [
+      track('match', {
+        filePath: 'D:\\Music\\DSD\\match.dsf',
+        dir: 'D:\\Music\\DSD',
+        format: 'dsf',
+        sampleRate: 2_822_400,
+        bitDepth: 1
+      }),
+      track('wrong-provider', {
+        source: 'ncm',
+        filePath: 'ncm:wrong-provider',
+        format: 'dsf',
+        sampleRate: 2_822_400,
+        bitDepth: 1
+      }),
+      track('wrong-rate', {
+        filePath: 'D:\\Music\\DSD\\wrong-rate.dsf',
+        dir: 'D:\\Music\\DSD',
+        format: 'dsf',
+        sampleRate: 176_400,
+        bitDepth: 1
+      })
+    ],
+    state
+  )
+  assert.deepEqual(
+    selected.map((item) => item.id),
+    ['match']
+  )
 })
 
 test('sorts every required field with stable tie breaking and last-played metadata', () => {
   const state = createDefaultLibraryViewState()
   const tracks = [
-    track('z', { title: 'Zulu', artist: 'Zed', album: 'Z', duration: 300, format: 'wav', sampleRate: 48_000, addedAt: 3 }),
-    track('a', { title: 'Alpha', artist: 'Able', album: 'A', duration: 120, format: 'flac', sampleRate: 96_000, addedAt: 1 }),
-    track('b', { title: 'Beta', artist: 'Baker', album: 'B', duration: 240, format: 'dsf', sampleRate: 2_822_400, addedAt: 2 })
+    track('z', {
+      title: 'Zulu',
+      artist: 'Zed',
+      album: 'Z',
+      duration: 300,
+      format: 'wav',
+      sampleRate: 48_000,
+      addedAt: 3
+    }),
+    track('a', {
+      title: 'Alpha',
+      artist: 'Able',
+      album: 'A',
+      duration: 120,
+      format: 'flac',
+      sampleRate: 96_000,
+      addedAt: 1
+    }),
+    track('b', {
+      title: 'Beta',
+      artist: 'Baker',
+      album: 'B',
+      duration: 240,
+      format: 'dsf',
+      sampleRate: 2_822_400,
+      addedAt: 2
+    })
   ]
   for (const [sortKey, expected] of [
     ['title', ['a', 'b', 'z']],
@@ -82,7 +124,18 @@ test('sorts every required field with stable tie breaking and last-played metada
   ] as const) {
     state.sortKey = sortKey
     state.sortDirection = 'asc'
-    assert.deepEqual(applyLibraryView(tracks, state, new Map([['a', 1], ['z', 2], ['b', 3]])).map((item) => item.id), expected)
+    assert.deepEqual(
+      applyLibraryView(
+        tracks,
+        state,
+        new Map([
+          ['a', 1],
+          ['z', 2],
+          ['b', 3]
+        ])
+      ).map((item) => item.id),
+      expected
+    )
   }
 })
 
@@ -148,10 +201,17 @@ test('trackNumber sort falls back to natural fileName when tags are absent', () 
 test('sorting keeps Chinese collation and natural numeric filename order', () => {
   const titleState = createDefaultLibraryViewState()
   const titleOrdered = applyLibraryView(
-    [track('cn-2', { title: '中文' }), track('cn-1', { title: '阿波' }), track('cn-3', { title: '英文' })],
+    [
+      track('cn-2', { title: '中文' }),
+      track('cn-1', { title: '阿波' }),
+      track('cn-3', { title: '英文' })
+    ],
     titleState
   )
-  assert.deepEqual(titleOrdered.map((item) => item.id), ['cn-1', 'cn-3', 'cn-2'])
+  assert.deepEqual(
+    titleOrdered.map((item) => item.id),
+    ['cn-1', 'cn-3', 'cn-2']
+  )
 
   const albumState = createDefaultLibraryViewState('albums')
   const fileOrdered = applyLibraryView(
@@ -162,7 +222,10 @@ test('sorting keeps Chinese collation and natural numeric filename order', () =>
     ],
     albumState
   )
-  assert.deepEqual(fileOrdered.map((item) => item.id), ['file-1', 'file-2', 'file-10'])
+  assert.deepEqual(
+    fileOrdered.map((item) => item.id),
+    ['file-1', 'file-2', 'file-10']
+  )
 })
 
 test('persists independent state for every category and detail filter', () => {
@@ -179,7 +242,10 @@ test('persists independent state for every category and detail filter', () => {
   assert.equal(preferences.read(allSongs).sortKey, 'duration')
   assert.equal(preferences.read(album, 'albums').filters.provider, 'ncm')
   assert.equal(preferences.read(album, 'albums').sortKey, 'trackNumber')
-  assert.equal(preferences.read(libraryViewKey('artists', 'artist:other'), 'artists').sortKey, 'title')
+  assert.equal(
+    preferences.read(libraryViewKey('artists', 'artist:other'), 'artists').sortKey,
+    'title'
+  )
 })
 
 test('filters and sorts 10,000 tracks within the virtualized view budget', () => {

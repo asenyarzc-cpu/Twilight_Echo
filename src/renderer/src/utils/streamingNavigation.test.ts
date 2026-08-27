@@ -6,9 +6,9 @@ const {
   getFirstVisibleStreamingTab,
   hasStreamingSidebarEntries,
   isSidebarItemActiveForProvider
-} = (await import(new URL('./streamingNavigation.ts', import.meta.url).href)) as typeof import(
-  './streamingNavigation'
-)
+} = (await import(
+  new URL('./streamingNavigation.ts', import.meta.url).href
+)) as typeof import('./streamingNavigation')
 
 test('provider sidebar active state is provider driven without dedicated provider pages', () => {
   assert.equal(
@@ -70,7 +70,10 @@ test('keeps shared music library visible when a unified provider is enabled with
     }
   ])
   assert.equal(getFirstVisibleStreamingTab(items), 'library')
-  assert.equal(items.some((item) => item.tab === 'cloud'), false)
+  assert.equal(
+    items.some((item) => item.tab === 'cloud'),
+    false
+  )
   assert.equal(hasStreamingSidebarEntries(items), true)
 })
 

@@ -88,7 +88,10 @@ test('provider artist and playlist artwork fields use image grants', () => {
 
 test('remote media grants reject credentials, wrong kinds, and malformed tokens', () => {
   const grants = new RemoteMediaGrantService({ createToken: () => 'cover-token' })
-  assert.throws(() => grants.grant('https://user:secret@media.example/file', 'audio'), /credentials/)
+  assert.throws(
+    () => grants.grant('https://user:secret@media.example/file', 'audio'),
+    /credentials/
+  )
 
   const granted = grants.grant('https://cover.example/art.jpg', 'image')
   assert.throws(() => grants.resolve(granted, 'audio'), /kind/)

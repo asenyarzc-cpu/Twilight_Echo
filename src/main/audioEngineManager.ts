@@ -1142,6 +1142,32 @@ export class AudioEngineManager extends EventEmitter {
     return this.playback.getVisualizationData(options)
   }
 
+  /**
+   * 引擎诊断事件日志：返回 sequence 大于 sinceSequence 的新条目（JSON 数组字符串），
+   * 按时间升序。引擎不可用或原生模块过旧（无 GetDiagnosticLog 导出）时返回 null，
+   * 调用方按"无引擎事件"处理而不是失败。返回值本身不抛错。
+   */
+  async readEngineDiagnosticLog(sinceSequence: number, maxEntries = 256): Promise<string | null> {
+    if (!this.native) return null
+    try {
+      if (typeof this.native.GetDiagnosticLog === 'function') {
+        const value = this.native.GetDiagnosticLog(sinceSequence, maxEntries)
+        return typeof value === 'string' ? value : JSON.stringify(value)
+      }
+      const service = this.native as AudioEngineServiceNativeBinding
+      if (typeof service.callAsync === 'function') {
+        const value = (await service.callAsync('GetDiagnosticLog', [
+          sinceSequence,
+          maxEntries
+        ])) as string
+        return typeof value === 'string' ? value : JSON.stringify(value)
+      }
+    } catch (error) {
+      console.warn('读取引擎诊断日志失败：', error instanceof Error ? error.message : String(error))
+    }
+    return null
+  }
+
   private startClock(): void {
     this.playback.startClock()
   }

@@ -29,14 +29,8 @@ test('provider file and stream targets can enter the native playback path', () =
 test('twilight-media grant URLs route to the native engine', () => {
   assert.equal(isTwilightMediaGrantTarget('twilight-media://audio/opaque-token'), true)
   assert.equal(isTwilightMediaGrantTarget('https://media.example/track.flac'), false)
-  assert.equal(
-    shouldUseNativePlaybackTarget('ncm', 'twilight-media://audio/opaque-token'),
-    true
-  )
-  assert.equal(
-    shouldUseNativePlaybackTarget('bili', 'twilight-media://audio/opaque-token'),
-    true
-  )
+  assert.equal(shouldUseNativePlaybackTarget('ncm', 'twilight-media://audio/opaque-token'), true)
+  assert.equal(shouldUseNativePlaybackTarget('bili', 'twilight-media://audio/opaque-token'), true)
 })
 
 test('renderer-only targets stay on renderer audio path', () => {

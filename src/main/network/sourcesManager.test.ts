@@ -7,10 +7,7 @@ import test from 'node:test'
 import { createNetworkSourcesManager } from './sourcesManager.ts'
 import { createNetworkLibrary } from './networkLibrary.ts'
 import type { NetworkProfileStore } from './profileStore.ts'
-import type {
-  NetworkEntry,
-  NetworkSourceProfileSummary
-} from '../../shared/networkSources.ts'
+import type { NetworkEntry, NetworkSourceProfileSummary } from '../../shared/networkSources.ts'
 
 const FLAC_BYTES = Buffer.from('MANAGER-DATA')
 
@@ -32,10 +29,7 @@ function textFrame(id: string, text: string): Buffer {
 }
 
 const TAGGED_MP3 = (() => {
-  const frames = Buffer.concat([
-    textFrame('TIT2', 'Test Title'),
-    textFrame('TPE1', 'Test Artist')
-  ])
+  const frames = Buffer.concat([textFrame('TIT2', 'Test Title'), textFrame('TPE1', 'Test Artist')])
   const header = Buffer.concat([
     Buffer.from('ID3', 'ascii'),
     Buffer.from([3, 0, 0]),

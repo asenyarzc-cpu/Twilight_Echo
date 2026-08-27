@@ -833,6 +833,20 @@ const perfectReasonDetail = computed(() => {
   return resolved.known ? resolved : null
 })
 
+/**
+ * The engine's own one-line cause (route decision, negotiation or probe
+ * detail). Shown under the registry copy as evidence; hidden when it merely
+ * restates the label and truncated so a driver essay cannot blow up the deck.
+ */
+const perfectReasonEngineDetail = computed(() => {
+  const raw = (outputInfo.value?.perfectReason || playbackInfo.value?.perfectReason || '').trim()
+  if (!raw) return ''
+  const code = outputInfo.value?.perfectReasonCode || playbackInfo.value?.perfectReasonCode || ''
+  const resolved = code ? resolveReasonCode(locale.value, code) : null
+  if (resolved?.known && resolved.label === raw) return ''
+  return raw.length > 160 ? `${raw.slice(0, 157)}...` : raw
+})
+
 function nativeDsdRuntimeTone(state: string): 'success' | 'warning' | 'muted' {
   if (state === 'proven') return 'success'
   if (state === 'candidate' || state === 'unproven' || state === 'mismatch') return 'warning'
@@ -2087,6 +2101,7 @@ onBeforeUnmount(() => {
           :perfect-reason-code="perfectReasonCode"
           :perfect-reason-explain="perfectReasonDetail?.explain || ''"
           :perfect-reason-fix="perfectReasonDetail?.fix || ''"
+          :perfect-reason-engine-detail="perfectReasonEngineDetail"
           :volume="volume"
           :gapless-active="playbackInfo?.gaplessActive === true"
           :preload-ready="playbackInfo?.preloadReady === true"

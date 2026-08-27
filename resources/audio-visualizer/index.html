@@ -1,2452 +1,2522 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Audio Visualization Interface Preview - 1:1 Replica</title>
-  <script src="./visibility-animation-controller.js"></script>
-  <style>
-    :root {
-      --bg-color: #e4e6eb;
-      --grid-color: rgba(0, 0, 0, 0.04);
-      --accent-red: #ff3b30;
-      --text-primary: #121212;
-      --text-secondary: #5f6168;
-      --text-tertiary: #8f9199;
-      --font-sans: 'Jost', sans-serif;
-      --font-title: 'Jost', sans-serif;
-      --font-digital: 'Jost', sans-serif;
-      --font-tech: 'Jost', sans-serif;
-      --left-panel-offset: clamp(18px, 2.4vw, 42px);
-      --radar-size: min(100%, calc(100vh - 230px));
-      --album-art-scale: 66%;
-    }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Audio Visualization Interface Preview - 1:1 Replica</title>
+    <script src="./visibility-animation-controller.js"></script>
+    <style>
+      :root {
+        --bg-color: #e4e6eb;
+        --grid-color: rgba(0, 0, 0, 0.04);
+        --accent-red: #ff3b30;
+        --text-primary: #121212;
+        --text-secondary: #5f6168;
+        --text-tertiary: #8f9199;
+        --font-sans: 'Jost', sans-serif;
+        --font-title: 'Jost', sans-serif;
+        --font-digital: 'Jost', sans-serif;
+        --font-tech: 'Jost', sans-serif;
+        --left-panel-offset: clamp(18px, 2.4vw, 42px);
+        --radar-size: min(100%, calc(100vh - 230px));
+        --album-art-scale: 66%;
+      }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
 
-    body {
-      background-color: var(--bg-color);
-      /* Grid background resembling blueprint texture */
-      background-image: 
-        linear-gradient(var(--grid-color) 1px, transparent 1px),
-        linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-      background-size: 32px 32px;
-      font-family: var(--font-sans);
-      color: var(--text-primary);
-      width: 100vw;
-      height: 100vh;
-      overflow: hidden;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      user-select: none;
-    }
-
-    .app-viewport {
-      width: 100vw;
-      height: 56.25vw;
-      max-width: 1920px;
-      max-height: 1080px;
-      display: grid;
-      grid-template-columns: 37% 63%;
-      padding: 4% 5% 3% 5%;
-      position: relative;
-      box-sizing: border-box;
-    }
-
-    @media (min-aspect-ratio: 16/9) {
-      .app-viewport {
-        width: 177.78vh;
+      body {
+        background-color: var(--bg-color);
+        /* Grid background resembling blueprint texture */
+        background-image:
+          linear-gradient(var(--grid-color) 1px, transparent 1px),
+          linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+        background-size: 32px 32px;
+        font-family: var(--font-sans);
+        color: var(--text-primary);
+        width: 100vw;
         height: 100vh;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        user-select: none;
       }
-    }
 
-    /* Watermark Top Left */
-    .watermark-top-left {
-      position: absolute;
-      top: 30px;
-      left: 45px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-      font-weight: 500;
-      color: rgba(0, 0, 0, 0.45);
-      letter-spacing: 0.5px;
-    }
-
-    .watermark-top-left .dot-red {
-      width: 6px;
-      height: 6px;
-      background-color: var(--accent-red);
-      border-radius: 50%;
-    }
-
-    .watermark-top-left .bilibili-text {
-      font-weight: bold;
-      opacity: 0.7;
-    }
-
-    /* Drag and Drop Overlay Hint */
-    .drag-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: rgba(228, 230, 235, 0.95);
-      z-index: 100;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      border: 3px dashed var(--accent-red);
-      margin: 20px;
-      border-radius: 12px;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.3s ease;
-    }
-
-    .drag-overlay.active {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    .drag-overlay h2 {
-      font-size: 28px;
-      margin-bottom: 10px;
-      color: var(--text-primary);
-    }
-
-    .drag-overlay p {
-      color: var(--text-secondary);
-      font-size: 16px;
-    }
-
-    /* --- LEFT PANEL --- */
-    .left-panel {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-      z-index: 0;
-      transform: translateY(28px);
-      min-width: 0;
-      padding-inline: clamp(12px, 1.6vw, 28px) var(--left-panel-offset);
-    }
-
-    /* Radar Circles */
-    .radar-container {
-      position: relative;
-      width: var(--radar-size);
-      max-width: 600px;
-      aspect-ratio: 1;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin-right: var(--left-panel-offset);
-    }
-
-    .radar-svg {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 1;
-      pointer-events: none;
-    }
-
-    .radar-svg circle {
-      fill: none;
-      stroke: rgba(0, 0, 0, 0.15);
-      stroke-width: 1px;
-    }
-
-    .radar-svg circle.dashed {
-      stroke-dasharray: 4, 4;
-    }
-
-    .radar-svg circle.dashed-fine {
-      stroke-dasharray: 1, 3;
-      stroke: rgba(0, 0, 0, 0.12);
-    }
-
-    .radar-svg line.axis {
-      stroke: rgba(0, 0, 0, 0.12);
-      stroke-width: 1px;
-    }
-
-    .radar-svg line.diagonal {
-      stroke: rgba(0, 0, 0, 0.065);
-      stroke-width: 1px;
-      stroke-dasharray: 2, 8;
-    }
-
-    .radar-svg .grid-ticks {
-      stroke: rgba(0, 0, 0, 0.15);
-      stroke-width: 1px;
-    }
-
-    .album-orbit-system {
-      position: absolute;
-      inset: -30%;
-      z-index: 0;
-      pointer-events: none;
-      opacity: 0.9;
-    }
-
-    .album-orbit-ring {
-      position: absolute;
-      border: 1px solid rgba(0, 0, 0, 0.22);
-      border-radius: 50%;
-      transform: translateZ(0);
-    }
-
-    .album-orbit-ring.time-ticks::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      animation: tick-ring-drift 52s linear infinite;
-      animation-play-state: paused;
-      background: repeating-conic-gradient(
-        from -2deg,
-        rgba(34, 36, 42, 0.34) 0deg 0.28deg,
-        transparent 0.28deg 30deg
-      );
-      mask: radial-gradient(
-        farthest-side,
-        transparent calc(100% - 15px),
-        #000 calc(100% - 15px) calc(100% - 7px),
-        transparent calc(100% - 7px)
-      );
-      -webkit-mask: radial-gradient(
-        farthest-side,
-        transparent calc(100% - 15px),
-        #000 calc(100% - 15px) calc(100% - 7px),
-        transparent calc(100% - 7px)
-      );
-    }
-
-    body.is-playing .album-orbit-ring.time-ticks::before {
-      animation-play-state: running;
-    }
-
-    .album-track-runner {
-      position: absolute;
-      inset: 6%;
-      border-radius: 50%;
-      animation: outer-track-run 44s linear infinite;
-      animation-play-state: paused;
-      will-change: transform;
-    }
-
-    body.is-playing .album-track-runner {
-      animation-play-state: running;
-    }
-
-    .album-track-runner::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 50%;
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--accent-red);
-      box-shadow:
-        0 0 0 1px rgba(228, 230, 235, 0.68),
-        0 0 0 3px rgba(255, 59, 48, 0.08);
-      transform: translate(-50%, -50%);
-    }
-
-    .album-orbit-ring.dashed {
-      border-style: dashed;
-      border-color: rgba(0, 0, 0, 0.13);
-    }
-
-    .album-orbit-ring.ring-2 {
-      inset: 6%;
-    }
-
-    .album-orbit-ring.ring-3 {
-      inset: 13.4%;
-    }
-
-    .album-orbit-ring.ring-4 {
-      inset: 20.8%;
-    }
-
-    .album-orbit-ring.ring-5 {
-      inset: 28.2%;
-    }
-
-    .album-orbit-ring.ring-6 {
-      inset: 35.6%;
-    }
-
-    .album-orbit-scan {
-      position: absolute;
-      top: 50%;
-      left: -5%;
-      width: 110%;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.13), transparent);
-      transform: rotate(-11deg);
-      transform-origin: 50% 50%;
-    }
-
-    .album-orbit-node,
-    .album-orbit-tick {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 0;
-      height: 0;
-      transform: translate(-50%, -50%) rotate(var(--orbit-start));
-      animation: orbit-spin var(--orbit-duration) linear infinite;
-      will-change: transform;
-    }
-
-    .album-orbit-node::before,
-    .album-orbit-tick::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 0;
-      transform: translate(-50%, calc(-1 * var(--orbit-radius)));
-    }
-
-    .album-orbit-node::before {
-      width: var(--node-size, 4px);
-      height: var(--node-size, 4px);
-      border-radius: 50%;
-      background: rgba(70, 72, 76, 0.62);
-      box-shadow: 0 0 0 1px rgba(228, 230, 235, 0.5);
-    }
-
-    .album-orbit-node.red::before {
-      width: var(--node-size, 5px);
-      height: var(--node-size, 5px);
-      background: var(--accent-red);
-      box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.08);
-    }
-
-    .album-orbit-node.faint::before {
-      opacity: 0.62;
-    }
-
-    .album-orbit-tick::before {
-      width: 14px;
-      height: 1px;
-      background: rgba(25, 26, 30, 0.45);
-      transform:
-        translate(-50%, calc(-1 * var(--orbit-radius)))
-        rotate(var(--tick-angle, -34deg));
-      transform-origin: 50% 50%;
-    }
-
-    /* Coordinate text labels around radar */
-    .coord-label {
-      position: absolute;
-      font-family: var(--font-sans);
-      font-size: 11px;
-      font-weight: 500;
-      color: var(--text-secondary);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      z-index: 2;
-    }
-
-    .coord-label .red-accent {
-      color: var(--accent-red);
-      font-size: 10px;
-      line-height: 1;
-    }
-
-    .coord-label.top {
-      top: 0;
-      transform: translateY(-5px);
-    }
-    .coord-label.top span {
-      line-height: 1.2;
-    }
-
-    .coord-label.bottom {
-      bottom: 0;
-      transform: translateY(5px);
-    }
-    .coord-label.bottom span {
-      line-height: 1.2;
-    }
-
-    .coord-label.left {
-      left: 0;
-      top: 50%;
-      transform: translate(-100%, -50%);
-      margin-left: -12px;
-      flex-direction: row;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .coord-label.right {
-      right: 0;
-      top: 50%;
-      transform: translate(100%, -50%);
-      margin-right: -12px;
-      flex-direction: row;
-      align-items: center;
-      gap: 3px;
-    }
-
-    .coord-circle-marker {
-      width: 4px;
-      height: 4px;
-      border: 1px solid var(--text-secondary);
-      border-radius: 50%;
-      display: inline-block;
-      margin-left: 2px;
-    }
-
-    /* Album Art Image Box */
-    .album-art-box {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: var(--album-art-scale);
-      aspect-ratio: 1;
-      z-index: 3;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-      background-color: #d1d3d9;
-    }
-
-    .album-art-box img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-      visibility: hidden;
-    }
-
-    .album-art-box img:not([src]),
-    .album-art-box img[src=""] {
-      visibility: hidden;
-    }
-
-    .album-cover-motion {
-      position: absolute;
-      inset: -58%;
-      z-index: 4;
-      pointer-events: none;
-      overflow: visible;
-      opacity: 0.86;
-    }
-
-    .album-edge-node,
-    .album-edge-tick {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 0;
-      height: 0;
-      transform: translate(-50%, -50%) rotate(var(--orbit-start));
-      animation: orbit-spin var(--orbit-duration) linear infinite;
-      will-change: transform;
-    }
-
-    .album-edge-node::before,
-    .album-edge-tick::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 0;
-      transform: translate(-50%, calc(-1 * var(--orbit-radius)));
-    }
-
-    .album-edge-node::before {
-      width: var(--node-size, 4px);
-      height: var(--node-size, 4px);
-      border-radius: 50%;
-      background: rgba(54, 56, 61, 0.72);
-      box-shadow: 0 0 0 1px rgba(228, 230, 235, 0.55);
-    }
-
-    .album-edge-node.red::before {
-      width: var(--node-size, 5px);
-      height: var(--node-size, 5px);
-      background: var(--accent-red);
-      box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.09);
-    }
-
-    .album-edge-tick::before {
-      width: 13px;
-      height: 1px;
-      background: rgba(20, 22, 26, 0.58);
-      transform:
-        translate(-50%, calc(-1 * var(--orbit-radius)))
-        rotate(var(--tick-angle, -28deg));
-      transform-origin: 50% 50%;
-    }
-
-    .album-cover-badge {
-      position: absolute;
-      top: 4%;
-      right: 4%;
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-      border: 1px solid rgba(255, 255, 255, 0.76);
-      background: rgba(255, 255, 255, 0.1);
-      box-shadow: 0 0 0 1px rgba(255, 59, 48, 0.2);
-      z-index: 6;
-      pointer-events: none;
-    }
-
-    .album-cover-badge::before,
-    .album-cover-badge::after {
-      content: '';
-      position: absolute;
-      border: 1px solid rgba(255, 255, 255, 0.82);
-      border-radius: 50%;
-    }
-
-    .album-cover-badge::before {
-      inset: 7px;
-      border-top-color: transparent;
-      transform: rotate(-30deg);
-    }
-
-    .album-cover-badge::after {
-      width: 5px;
-      height: 5px;
-      top: 5px;
-      right: 5px;
-      border-left-color: transparent;
-      border-bottom-color: transparent;
-    }
-
-    /* Red corners on the album art */
-    .bracket {
-      position: absolute;
-      width: 16px;
-      height: 16px;
-      border: 2px solid var(--accent-red);
-      z-index: 7;
-    }
-    .bracket.tl { top: -2px; left: -2px; border-right: none; border-bottom: none; }
-    .bracket.tr { top: -2px; right: -2px; border-left: none; border-bottom: none; }
-    .bracket.bl { bottom: -2px; left: -2px; border-right: none; border-top: none; }
-    .bracket.br { bottom: -2px; right: -2px; border-left: none; border-top: none; }
-
-    /* Control Panel below Radar */
-    .controls-container {
-      position: relative;
-      margin-top: 58px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 52px;
-      width: 100%;
-      max-width: 430px;
-      height: 120px;
-      margin-right: var(--left-panel-offset);
-      z-index: 5;
-    }
-
-    .controls-container::before {
-      content: '';
-      position: absolute;
-      left: -22px;
-      right: -22px;
-      top: 50%;
-      height: 1px;
-      background: rgba(0, 0, 0, 0.09);
-      transform: translateY(-50%);
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .control-orbit-system {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 500px;
-      height: 190px;
-      transform: translate(-50%, -50%) translateZ(0);
-      z-index: 0;
-      pointer-events: none;
-      opacity: 0.92;
-    }
-
-    .control-orbit-track {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      border: 1px solid rgba(0, 0, 0, 0.085);
-      border-radius: 50%;
-      transform: translate(-50%, -50%);
-    }
-
-    .control-orbit-track.outer {
-      width: 142px;
-      height: 142px;
-      border-color: rgba(0, 0, 0, 0.16);
-    }
-
-    .control-orbit-track.inner {
-      width: 94px;
-      height: 94px;
-      border-color: rgba(0, 0, 0, 0.14);
-    }
-
-    .control-orbit-sweep {
-      position: absolute;
-      left: 7%;
-      top: 47%;
-      width: 86%;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.16), transparent);
-      transform: rotate(-10deg);
-      transform-origin: 50% 50%;
-    }
-
-    .control-orbit-node {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 0;
-      height: 0;
-      transform: translate(-50%, -50%) rotate(var(--orbit-start));
-      animation: orbit-spin 22s linear infinite;
-      animation-play-state: paused;
-      will-change: transform;
-    }
-
-    body.is-playing .control-orbit-node {
-      animation-play-state: running;
-    }
-
-    .control-orbit-node::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: var(--node-size, 4px);
-      height: var(--node-size, 4px);
-      border-radius: 50%;
-      transform: translate(-50%, calc(-1 * var(--orbit-radius)));
-      background: rgba(64, 66, 70, 0.64);
-      box-shadow: 0 0 0 1px rgba(228, 230, 235, 0.5);
-    }
-
-    .control-orbit-node.red::before {
-      width: var(--node-size, 6px);
-      height: var(--node-size, 6px);
-      background: var(--accent-red);
-      box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.08);
-    }
-
-    .control-orbit-node.gray::before {
-      background: rgba(72, 74, 78, 0.68);
-      box-shadow: 0 0 0 1px rgba(228, 230, 235, 0.5);
-    }
-
-    body:not(.is-playing) .album-orbit-node,
-    body:not(.is-playing) .album-orbit-tick,
-    body:not(.is-playing) .album-edge-node,
-    body:not(.is-playing) .album-edge-tick,
-    body:not(.is-playing) .control-orbit-node {
-      opacity: 0.9;
-    }
-
-    @keyframes orbit-spin {
-      from {
-        transform: translate(-50%, -50%) rotate(var(--orbit-start));
+      .app-viewport {
+        width: 100vw;
+        height: 56.25vw;
+        max-width: 1920px;
+        max-height: 1080px;
+        display: grid;
+        grid-template-columns: 37% 63%;
+        padding: 4% 5% 3% 5%;
+        position: relative;
+        box-sizing: border-box;
       }
-      to {
-        transform: translate(-50%, -50%) rotate(calc(var(--orbit-start) + 360deg));
+
+      @media (min-aspect-ratio: 16/9) {
+        .app-viewport {
+          width: 177.78vh;
+          height: 100vh;
+        }
       }
-    }
 
-    @keyframes tick-ring-drift {
-      from {
-        transform: rotate(0deg);
+      /* Watermark Top Left */
+      .watermark-top-left {
+        position: absolute;
+        top: 30px;
+        left: 45px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        color: rgba(0, 0, 0, 0.45);
+        letter-spacing: 0.5px;
       }
-      to {
-        transform: rotate(360deg);
+
+      .watermark-top-left .dot-red {
+        width: 6px;
+        height: 6px;
+        background-color: var(--accent-red);
+        border-radius: 50%;
       }
-    }
 
-    @keyframes outer-track-run {
-      from {
-        transform: rotate(0deg);
+      .watermark-top-left .bilibili-text {
+        font-weight: bold;
+        opacity: 0.7;
       }
-      to {
-        transform: rotate(-360deg);
+
+      /* Drag and Drop Overlay Hint */
+      .drag-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(228, 230, 235, 0.95);
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        border: 3px dashed var(--accent-red);
+        margin: 20px;
+        border-radius: 12px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
       }
-    }
 
-    @media (prefers-reduced-motion: reduce) {
-      .album-orbit-node,
-      .album-orbit-tick,
-      .album-edge-node,
-      .album-edge-tick,
-      .control-orbit-node,
-      .album-orbit-ring.time-ticks::before,
-      .album-track-runner {
-        animation: none;
+      .drag-overlay.active {
+        opacity: 1;
+        pointer-events: auto;
       }
-    }
 
-    /* Circle behind controls with small red dots */
-    .controls-ring {
-      position: absolute;
-      width: 480px;
-      height: 70px;
-      border: 1px solid rgba(0, 0, 0, 0.035);
-      border-radius: 0;
-      z-index: 0;
-      pointer-events: none;
-      top: 50%;
-      transform: translateY(-50%);
-      opacity: 0.72;
-    }
+      .drag-overlay h2 {
+        font-size: 28px;
+        margin-bottom: 10px;
+        color: var(--text-primary);
+      }
 
-    .controls-ring::before {
-      content: '';
-      position: absolute;
-      left: 50%;
-      top: -1px;
-      bottom: -1px;
-      width: 1px;
-      background: rgba(0, 0, 0, 0.035);
-      transform: translateX(-50%);
-    }
+      .drag-overlay p {
+        color: var(--text-secondary);
+        font-size: 16px;
+      }
 
-    .controls-ring::after {
-      content: '';
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 58%;
-      height: 1px;
-      background: rgba(0, 0, 0, 0.055);
-      transform: translate(-50%, -50%);
-    }
-
-    .btn-circle {
-      width: 74px;
-      height: 74px;
-      border-radius: 50%;
-      border: 1px solid rgba(0, 0, 0, 0.16);
-      background-color: transparent;
-      color: #17181c;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      cursor: pointer;
-      z-index: 2;
-      transition:
-        transform 0.2s ease,
-        background-color 0.2s ease,
-        border-color 0.2s ease;
-      outline: none;
-    }
-
-    .btn-circle svg {
-      width: 34px;
-      height: 34px;
-    }
-
-    .btn-circle:hover {
-      background-color: rgba(0, 0, 0, 0.035);
-      border-color: rgba(0, 0, 0, 0.25);
-    }
-
-    .btn-circle.play-pause {
-      width: 84px;
-      height: 84px;
-      background-color: #1c1d22;
-      color: #ffffff;
-      border: none;
-      box-shadow:
-        0 0 0 4px rgba(255, 255, 255, 0.3),
-        0 12px 28px rgba(0, 0, 0, 0.18);
-    }
-
-    .btn-circle.play-pause svg {
-      width: 32px;
-      height: 32px;
-    }
-
-    .btn-circle.play-pause:hover {
-      background-color: #0b0c0f;
-      transform: scale(1.04);
-    }
-
-    /* Keep transport controls within the 16:9 canvas on compact desktop windows. */
-    @media (max-width: 900px) {
+      /* --- LEFT PANEL --- */
       .left-panel {
-        transform: none;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        z-index: 0;
+        transform: translateY(28px);
+        min-width: 0;
+        padding-inline: clamp(12px, 1.6vw, 28px) var(--left-panel-offset);
       }
 
+      /* Radar Circles */
+      .radar-container {
+        position: relative;
+        width: var(--radar-size);
+        max-width: 600px;
+        aspect-ratio: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-right: var(--left-panel-offset);
+      }
+
+      .radar-svg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+        pointer-events: none;
+      }
+
+      .radar-svg circle {
+        fill: none;
+        stroke: rgba(0, 0, 0, 0.15);
+        stroke-width: 1px;
+      }
+
+      .radar-svg circle.dashed {
+        stroke-dasharray: 4, 4;
+      }
+
+      .radar-svg circle.dashed-fine {
+        stroke-dasharray: 1, 3;
+        stroke: rgba(0, 0, 0, 0.12);
+      }
+
+      .radar-svg line.axis {
+        stroke: rgba(0, 0, 0, 0.12);
+        stroke-width: 1px;
+      }
+
+      .radar-svg line.diagonal {
+        stroke: rgba(0, 0, 0, 0.065);
+        stroke-width: 1px;
+        stroke-dasharray: 2, 8;
+      }
+
+      .radar-svg .grid-ticks {
+        stroke: rgba(0, 0, 0, 0.15);
+        stroke-width: 1px;
+      }
+
+      .album-orbit-system {
+        position: absolute;
+        inset: -30%;
+        z-index: 0;
+        pointer-events: none;
+        opacity: 0.9;
+      }
+
+      .album-orbit-ring {
+        position: absolute;
+        border: 1px solid rgba(0, 0, 0, 0.22);
+        border-radius: 50%;
+        transform: translateZ(0);
+      }
+
+      .album-orbit-ring.time-ticks::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        animation: tick-ring-drift 52s linear infinite;
+        animation-play-state: paused;
+        background: repeating-conic-gradient(
+          from -2deg,
+          rgba(34, 36, 42, 0.34) 0deg 0.28deg,
+          transparent 0.28deg 30deg
+        );
+        mask: radial-gradient(
+          farthest-side,
+          transparent calc(100% - 15px),
+          #000 calc(100% - 15px) calc(100% - 7px),
+          transparent calc(100% - 7px)
+        );
+        -webkit-mask: radial-gradient(
+          farthest-side,
+          transparent calc(100% - 15px),
+          #000 calc(100% - 15px) calc(100% - 7px),
+          transparent calc(100% - 7px)
+        );
+      }
+
+      body.is-playing .album-orbit-ring.time-ticks::before {
+        animation-play-state: running;
+      }
+
+      .album-track-runner {
+        position: absolute;
+        inset: 6%;
+        border-radius: 50%;
+        animation: outer-track-run 44s linear infinite;
+        animation-play-state: paused;
+        will-change: transform;
+      }
+
+      body.is-playing .album-track-runner {
+        animation-play-state: running;
+      }
+
+      .album-track-runner::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 50%;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent-red);
+        box-shadow:
+          0 0 0 1px rgba(228, 230, 235, 0.68),
+          0 0 0 3px rgba(255, 59, 48, 0.08);
+        transform: translate(-50%, -50%);
+      }
+
+      .album-orbit-ring.dashed {
+        border-style: dashed;
+        border-color: rgba(0, 0, 0, 0.13);
+      }
+
+      .album-orbit-ring.ring-2 {
+        inset: 6%;
+      }
+
+      .album-orbit-ring.ring-3 {
+        inset: 13.4%;
+      }
+
+      .album-orbit-ring.ring-4 {
+        inset: 20.8%;
+      }
+
+      .album-orbit-ring.ring-5 {
+        inset: 28.2%;
+      }
+
+      .album-orbit-ring.ring-6 {
+        inset: 35.6%;
+      }
+
+      .album-orbit-scan {
+        position: absolute;
+        top: 50%;
+        left: -5%;
+        width: 110%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.13), transparent);
+        transform: rotate(-11deg);
+        transform-origin: 50% 50%;
+      }
+
+      .album-orbit-node,
+      .album-orbit-tick {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        transform: translate(-50%, -50%) rotate(var(--orbit-start));
+        animation: orbit-spin var(--orbit-duration) linear infinite;
+        will-change: transform;
+      }
+
+      .album-orbit-node::before,
+      .album-orbit-tick::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        transform: translate(-50%, calc(-1 * var(--orbit-radius)));
+      }
+
+      .album-orbit-node::before {
+        width: var(--node-size, 4px);
+        height: var(--node-size, 4px);
+        border-radius: 50%;
+        background: rgba(70, 72, 76, 0.62);
+        box-shadow: 0 0 0 1px rgba(228, 230, 235, 0.5);
+      }
+
+      .album-orbit-node.red::before {
+        width: var(--node-size, 5px);
+        height: var(--node-size, 5px);
+        background: var(--accent-red);
+        box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.08);
+      }
+
+      .album-orbit-node.faint::before {
+        opacity: 0.62;
+      }
+
+      .album-orbit-tick::before {
+        width: 14px;
+        height: 1px;
+        background: rgba(25, 26, 30, 0.45);
+        transform: translate(-50%, calc(-1 * var(--orbit-radius))) rotate(var(--tick-angle, -34deg));
+        transform-origin: 50% 50%;
+      }
+
+      /* Coordinate text labels around radar */
+      .coord-label {
+        position: absolute;
+        font-family: var(--font-sans);
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        z-index: 2;
+      }
+
+      .coord-label .red-accent {
+        color: var(--accent-red);
+        font-size: 10px;
+        line-height: 1;
+      }
+
+      .coord-label.top {
+        top: 0;
+        transform: translateY(-5px);
+      }
+      .coord-label.top span {
+        line-height: 1.2;
+      }
+
+      .coord-label.bottom {
+        bottom: 0;
+        transform: translateY(5px);
+      }
+      .coord-label.bottom span {
+        line-height: 1.2;
+      }
+
+      .coord-label.left {
+        left: 0;
+        top: 50%;
+        transform: translate(-100%, -50%);
+        margin-left: -12px;
+        flex-direction: row;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .coord-label.right {
+        right: 0;
+        top: 50%;
+        transform: translate(100%, -50%);
+        margin-right: -12px;
+        flex-direction: row;
+        align-items: center;
+        gap: 3px;
+      }
+
+      .coord-circle-marker {
+        width: 4px;
+        height: 4px;
+        border: 1px solid var(--text-secondary);
+        border-radius: 50%;
+        display: inline-block;
+        margin-left: 2px;
+      }
+
+      /* Album Art Image Box */
+      .album-art-box {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: var(--album-art-scale);
+        aspect-ratio: 1;
+        z-index: 3;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        background-color: #d1d3d9;
+      }
+
+      .album-art-box img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        visibility: hidden;
+      }
+
+      .album-art-box img:not([src]),
+      .album-art-box img[src=''] {
+        visibility: hidden;
+      }
+
+      .album-cover-motion {
+        position: absolute;
+        inset: -58%;
+        z-index: 4;
+        pointer-events: none;
+        overflow: visible;
+        opacity: 0.86;
+      }
+
+      .album-edge-node,
+      .album-edge-tick {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        transform: translate(-50%, -50%) rotate(var(--orbit-start));
+        animation: orbit-spin var(--orbit-duration) linear infinite;
+        will-change: transform;
+      }
+
+      .album-edge-node::before,
+      .album-edge-tick::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        transform: translate(-50%, calc(-1 * var(--orbit-radius)));
+      }
+
+      .album-edge-node::before {
+        width: var(--node-size, 4px);
+        height: var(--node-size, 4px);
+        border-radius: 50%;
+        background: rgba(54, 56, 61, 0.72);
+        box-shadow: 0 0 0 1px rgba(228, 230, 235, 0.55);
+      }
+
+      .album-edge-node.red::before {
+        width: var(--node-size, 5px);
+        height: var(--node-size, 5px);
+        background: var(--accent-red);
+        box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.09);
+      }
+
+      .album-edge-tick::before {
+        width: 13px;
+        height: 1px;
+        background: rgba(20, 22, 26, 0.58);
+        transform: translate(-50%, calc(-1 * var(--orbit-radius))) rotate(var(--tick-angle, -28deg));
+        transform-origin: 50% 50%;
+      }
+
+      .album-cover-badge {
+        position: absolute;
+        top: 4%;
+        right: 4%;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.76);
+        background: rgba(255, 255, 255, 0.1);
+        box-shadow: 0 0 0 1px rgba(255, 59, 48, 0.2);
+        z-index: 6;
+        pointer-events: none;
+      }
+
+      .album-cover-badge::before,
+      .album-cover-badge::after {
+        content: '';
+        position: absolute;
+        border: 1px solid rgba(255, 255, 255, 0.82);
+        border-radius: 50%;
+      }
+
+      .album-cover-badge::before {
+        inset: 7px;
+        border-top-color: transparent;
+        transform: rotate(-30deg);
+      }
+
+      .album-cover-badge::after {
+        width: 5px;
+        height: 5px;
+        top: 5px;
+        right: 5px;
+        border-left-color: transparent;
+        border-bottom-color: transparent;
+      }
+
+      /* Red corners on the album art */
+      .bracket {
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--accent-red);
+        z-index: 7;
+      }
+      .bracket.tl {
+        top: -2px;
+        left: -2px;
+        border-right: none;
+        border-bottom: none;
+      }
+      .bracket.tr {
+        top: -2px;
+        right: -2px;
+        border-left: none;
+        border-bottom: none;
+      }
+      .bracket.bl {
+        bottom: -2px;
+        left: -2px;
+        border-right: none;
+        border-top: none;
+      }
+      .bracket.br {
+        bottom: -2px;
+        right: -2px;
+        border-left: none;
+        border-top: none;
+      }
+
+      /* Control Panel below Radar */
       .controls-container {
-        margin-top: clamp(20px, 4.25vw, 38px);
-        gap: clamp(8px, 2vw, 18px);
-        height: calc(clamp(52px, 8vw, 72px) + 10px);
+        position: relative;
+        margin-top: 58px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 52px;
+        width: 100%;
+        max-width: 430px;
+        height: 120px;
+        margin-right: var(--left-panel-offset);
+        z-index: 5;
+      }
+
+      .controls-container::before {
+        content: '';
+        position: absolute;
+        left: -22px;
+        right: -22px;
+        top: 50%;
+        height: 1px;
+        background: rgba(0, 0, 0, 0.09);
+        transform: translateY(-50%);
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      .control-orbit-system {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 500px;
+        height: 190px;
+        transform: translate(-50%, -50%) translateZ(0);
+        z-index: 0;
+        pointer-events: none;
+        opacity: 0.92;
+      }
+
+      .control-orbit-track {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        border: 1px solid rgba(0, 0, 0, 0.085);
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+      }
+
+      .control-orbit-track.outer {
+        width: 142px;
+        height: 142px;
+        border-color: rgba(0, 0, 0, 0.16);
+      }
+
+      .control-orbit-track.inner {
+        width: 94px;
+        height: 94px;
+        border-color: rgba(0, 0, 0, 0.14);
+      }
+
+      .control-orbit-sweep {
+        position: absolute;
+        left: 7%;
+        top: 47%;
+        width: 86%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.16), transparent);
+        transform: rotate(-10deg);
+        transform-origin: 50% 50%;
+      }
+
+      .control-orbit-node {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 0;
+        height: 0;
+        transform: translate(-50%, -50%) rotate(var(--orbit-start));
+        animation: orbit-spin 22s linear infinite;
+        animation-play-state: paused;
+        will-change: transform;
+      }
+
+      body.is-playing .control-orbit-node {
+        animation-play-state: running;
+      }
+
+      .control-orbit-node::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: var(--node-size, 4px);
+        height: var(--node-size, 4px);
+        border-radius: 50%;
+        transform: translate(-50%, calc(-1 * var(--orbit-radius)));
+        background: rgba(64, 66, 70, 0.64);
+        box-shadow: 0 0 0 1px rgba(228, 230, 235, 0.5);
+      }
+
+      .control-orbit-node.red::before {
+        width: var(--node-size, 6px);
+        height: var(--node-size, 6px);
+        background: var(--accent-red);
+        box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.08);
+      }
+
+      .control-orbit-node.gray::before {
+        background: rgba(72, 74, 78, 0.68);
+        box-shadow: 0 0 0 1px rgba(228, 230, 235, 0.5);
+      }
+
+      body:not(.is-playing) .album-orbit-node,
+      body:not(.is-playing) .album-orbit-tick,
+      body:not(.is-playing) .album-edge-node,
+      body:not(.is-playing) .album-edge-tick,
+      body:not(.is-playing) .control-orbit-node {
+        opacity: 0.9;
+      }
+
+      @keyframes orbit-spin {
+        from {
+          transform: translate(-50%, -50%) rotate(var(--orbit-start));
+        }
+        to {
+          transform: translate(-50%, -50%) rotate(calc(var(--orbit-start) + 360deg));
+        }
+      }
+
+      @keyframes tick-ring-drift {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes outer-track-run {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(-360deg);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .album-orbit-node,
+        .album-orbit-tick,
+        .album-edge-node,
+        .album-edge-tick,
+        .control-orbit-node,
+        .album-orbit-ring.time-ticks::before,
+        .album-track-runner {
+          animation: none;
+        }
+      }
+
+      /* Circle behind controls with small red dots */
+      .controls-ring {
+        position: absolute;
+        width: 480px;
+        height: 70px;
+        border: 1px solid rgba(0, 0, 0, 0.035);
+        border-radius: 0;
+        z-index: 0;
+        pointer-events: none;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.72;
+      }
+
+      .controls-ring::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: -1px;
+        bottom: -1px;
+        width: 1px;
+        background: rgba(0, 0, 0, 0.035);
+        transform: translateX(-50%);
+      }
+
+      .controls-ring::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 58%;
+        height: 1px;
+        background: rgba(0, 0, 0, 0.055);
+        transform: translate(-50%, -50%);
       }
 
       .btn-circle {
-        width: clamp(44px, 7.1vw, 64px);
-        height: clamp(44px, 7.1vw, 64px);
-        flex: 0 0 clamp(44px, 7.1vw, 64px);
-      }
-
-      .btn-circle.play-pause {
-        width: clamp(52px, 8vw, 72px);
-        height: clamp(52px, 8vw, 72px);
-        flex-basis: clamp(52px, 8vw, 72px);
+        width: 74px;
+        height: 74px;
+        border-radius: 50%;
+        border: 1px solid rgba(0, 0, 0, 0.16);
+        background-color: transparent;
+        color: #17181c;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        z-index: 2;
+        transition:
+          transform 0.2s ease,
+          background-color 0.2s ease,
+          border-color 0.2s ease;
+        outline: none;
       }
 
       .btn-circle svg {
-        width: clamp(20px, 3vw, 28px);
-        height: clamp(20px, 3vw, 28px);
+        width: 34px;
+        height: 34px;
+      }
+
+      .btn-circle:hover {
+        background-color: rgba(0, 0, 0, 0.035);
+        border-color: rgba(0, 0, 0, 0.25);
+      }
+
+      .btn-circle.play-pause {
+        width: 84px;
+        height: 84px;
+        background-color: #1c1d22;
+        color: #ffffff;
+        border: none;
+        box-shadow:
+          0 0 0 4px rgba(255, 255, 255, 0.3),
+          0 12px 28px rgba(0, 0, 0, 0.18);
       }
 
       .btn-circle.play-pause svg {
-        width: clamp(22px, 3.2vw, 30px);
-        height: clamp(22px, 3.2vw, 30px);
+        width: 32px;
+        height: 32px;
       }
-    }
 
-    /* --- RIGHT PANEL --- */
-    .right-panel {
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-start;
-      position: relative;
-      z-index: 2;
-      padding-left: 20px;
-      min-height: 0;
-      height: 100%;
-    }
+      .btn-circle.play-pause:hover {
+        background-color: #0b0c0f;
+        transform: scale(1.04);
+      }
 
-    .right-panel > div:not(.spectrum-outer-container) {
-      flex-shrink: 0;
-    }
+      /* Keep transport controls within the 16:9 canvas on compact desktop windows. */
+      @media (max-width: 900px) {
+        .left-panel {
+          transform: none;
+        }
 
-    /* Header text layout */
-    .header-section {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 16px;
-    }
+        .controls-container {
+          margin-top: clamp(20px, 4.25vw, 38px);
+          gap: clamp(8px, 2vw, 18px);
+          height: calc(clamp(52px, 8vw, 72px) + 10px);
+        }
 
-    .source-tag-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
+        .btn-circle {
+          width: clamp(44px, 7.1vw, 64px);
+          height: clamp(44px, 7.1vw, 64px);
+          flex: 0 0 clamp(44px, 7.1vw, 64px);
+        }
 
-    .source-block {
-      width: 8px;
-      height: 8px;
-      background-color: var(--accent-red);
-      position: relative;
-    }
+        .btn-circle.play-pause {
+          width: clamp(52px, 8vw, 72px);
+          height: clamp(52px, 8vw, 72px);
+          flex-basis: clamp(52px, 8vw, 72px);
+        }
 
-    .source-block::after {
-      content: '';
-      position: absolute;
-      width: 4px;
-      height: 2px;
-      background-color: #fff;
-      top: 3px;
-      left: 2px;
-    }
+        .btn-circle svg {
+          width: clamp(20px, 3vw, 28px);
+          height: clamp(20px, 3vw, 28px);
+        }
 
-    .source-text {
-      font-size: 11px;
-      color: var(--text-secondary);
-      font-family: var(--font-tech);
-      font-weight: 600;
-      letter-spacing: 0.08em;
-    }
+        .btn-circle.play-pause svg {
+          width: clamp(22px, 3.2vw, 30px);
+          height: clamp(22px, 3.2vw, 30px);
+        }
+      }
 
-    .red-line-header {
-      width: 32px;
-      height: 1px;
-      background-color: var(--accent-red);
-    }
+      /* --- RIGHT PANEL --- */
+      .right-panel {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        position: relative;
+        z-index: 2;
+        padding-left: 20px;
+        min-height: 0;
+        height: 100%;
+      }
 
-    .track-title {
-      font-family: var(--font-title);
-      font-size: clamp(38px, 3.05vw, 48px);
-      font-weight: 400;
-      letter-spacing: 0.035em;
-      color: var(--text-primary);
-      margin-bottom: 10px;
-      text-transform: uppercase;
-      line-height: 1.05;
-      height: 2.1em;
-      overflow: hidden;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-    }
+      .right-panel > div:not(.spectrum-outer-container) {
+        flex-shrink: 0;
+      }
 
-    .track-title.single-line {
-      display: flex;
-      align-items: center;
-      justify-content: flex-start;
-      text-align: left;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      -webkit-line-clamp: unset;
-      -webkit-box-orient: initial;
-    }
+      /* Header text layout */
+      .header-section {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 16px;
+      }
 
-    .track-artist {
-      font-size: 18px;
-      font-weight: 400;
-      color: var(--text-secondary);
-      letter-spacing: 0.025em;
-      line-height: 1.15;
-    }
+      .source-tag-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
 
-    .track-artist::before {
-      content: 'By';
-      display: block;
-      margin-bottom: 4px;
-      font-family: var(--font-tech);
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      color: var(--text-tertiary);
-    }
+      .source-block {
+        width: 8px;
+        height: 8px;
+        background-color: var(--accent-red);
+        position: relative;
+      }
 
-    .track-artist span {
-      color: var(--text-tertiary);
-      font-weight: 400;
-      font-size: 12px;
-    }
+      .source-block::after {
+        content: '';
+        position: absolute;
+        width: 4px;
+        height: 2px;
+        background-color: #fff;
+        top: 3px;
+        left: 2px;
+      }
 
-    .quality-container {
-      text-align: right;
-      font-family: var(--font-tech);
-      padding-top: 52px;
-    }
+      .source-text {
+        font-size: 11px;
+        color: var(--text-secondary);
+        font-family: var(--font-tech);
+        font-weight: 600;
+        letter-spacing: 0.08em;
+      }
 
-    .quality-label {
-      font-size: 11px;
-      color: var(--text-tertiary);
-      text-transform: none;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      margin-bottom: 4px;
-    }
+      .red-line-header {
+        width: 32px;
+        height: 1px;
+        background-color: var(--accent-red);
+      }
 
-    .quality-value {
-      font-size: 12px;
-      color: var(--text-secondary);
-      font-weight: 500;
-      letter-spacing: 0.03em;
-    }
+      .track-title {
+        font-family: var(--font-title);
+        font-size: clamp(38px, 3.05vw, 48px);
+        font-weight: 400;
+        letter-spacing: 0.035em;
+        color: var(--text-primary);
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        line-height: 1.05;
+        height: 2.1em;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
 
-    /* Core Stats Grid */
-    .stats-grid-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      border-top: 1.5px solid rgba(0, 0, 0, 0.18);
-      padding: 16px 0 18px 0;
-      margin-bottom: 18px;
-    }
+      .track-title.single-line {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        text-align: left;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        -webkit-line-clamp: unset;
+        -webkit-box-orient: initial;
+      }
 
-    .stat-col {
-      display: flex;
-      flex-direction: column;
-      padding-inline: 0 22px;
-    }
+      .track-artist {
+        font-size: 18px;
+        font-weight: 400;
+        color: var(--text-secondary);
+        letter-spacing: 0.025em;
+        line-height: 1.15;
+      }
 
-    .stat-col:not(:last-child) {
-      border-right: 1px solid rgba(0, 0, 0, 0.08);
-    }
+      .track-artist::before {
+        content: 'By';
+        display: block;
+        margin-bottom: 4px;
+        font-family: var(--font-tech);
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        color: var(--text-tertiary);
+      }
 
-    .stat-col + .stat-col {
-      padding-left: 24px;
-    }
+      .track-artist span {
+        color: var(--text-tertiary);
+        font-weight: 400;
+        font-size: 12px;
+      }
 
-    .stat-label {
-      font-size: 10px;
-      color: var(--text-tertiary);
-      text-transform: none;
-      font-family: var(--font-tech);
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      margin-bottom: 10px;
-    }
+      .quality-container {
+        text-align: right;
+        font-family: var(--font-tech);
+        padding-top: 52px;
+      }
 
-    .stat-value {
-      font-family: var(--font-sans);
-      font-size: 18px;
-      font-weight: 400;
-      color: var(--text-primary);
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      letter-spacing: 0.035em;
-    }
+      .quality-label {
+        font-size: 11px;
+        color: var(--text-tertiary);
+        text-transform: none;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        margin-bottom: 4px;
+      }
 
-    .stat-value.mono {
-      font-family: var(--font-tech);
-      font-size: 23px;
-      font-weight: 500;
-      letter-spacing: 0.055em;
-    }
+      .quality-value {
+        font-size: 12px;
+        color: var(--text-secondary);
+        font-weight: 500;
+        letter-spacing: 0.03em;
+      }
 
-    .stat-value.right-align {
-      justify-content: flex-end;
-      text-align: right;
-    }
+      /* Core Stats Grid */
+      .stats-grid-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        border-top: 1.5px solid rgba(0, 0, 0, 0.18);
+        padding: 16px 0 18px 0;
+        margin-bottom: 18px;
+      }
 
-    /* Custom BPM Meter Graphic */
-    .bpm-meter {
-      display: flex;
-      gap: 2px;
-      align-items: center;
-      height: 16px;
-    }
+      .stat-col {
+        display: flex;
+        flex-direction: column;
+        padding-inline: 0 22px;
+      }
 
-    .bpm-meter-block {
-      width: 14px;
-      height: 12px;
-      border: 1px solid rgba(0, 0, 0, 0.15);
-      background-color: transparent;
-    }
+      .stat-col:not(:last-child) {
+        border-right: 1px solid rgba(0, 0, 0, 0.08);
+      }
 
-    .bpm-meter-block.filled {
-      background-color: rgba(0, 0, 0, 0.05);
-    }
+      .stat-col + .stat-col {
+        padding-left: 24px;
+      }
 
-    .bpm-meter-indicator {
-      width: 2px;
-      height: 16px;
-      background-color: var(--accent-red);
-      margin-left: 2px;
-    }
+      .stat-label {
+        font-size: 10px;
+        color: var(--text-tertiary);
+        text-transform: none;
+        font-family: var(--font-tech);
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        margin-bottom: 10px;
+      }
 
-    /* --- SPECTRUM ANALYZER GRID --- */
-    .spectrum-outer-container {
-      --spectrum-top-growth: 24px;
-      position: relative;
-      flex: 0 0 calc(250px + var(--spectrum-top-growth));
-      min-height: 0;
-      height: calc(250px + var(--spectrum-top-growth));
-      border-bottom: 2px solid #2b2b2b;
-      margin-bottom: calc(20px - var(--spectrum-top-growth));
-      display: flex;
-      flex-direction: column;
-      transform: translateY(calc(-1 * var(--spectrum-top-growth)));
-    }
+      .stat-value {
+        font-family: var(--font-sans);
+        font-size: 18px;
+        font-weight: 400;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        letter-spacing: 0.035em;
+      }
 
-    /* Grid layout containing Hz labels on top */
-    .spectrum-hz-labels {
-      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-      padding-bottom: 4px;
-      margin-bottom: 4px;
-      margin-left: 26px; /* Align with canvas start */
-      height: 14px;
-      font-family: var(--font-sans);
-      font-size: 9px;
-      font-weight: 600;
-      color: var(--text-tertiary);
-      letter-spacing: 0.5px;
-      position: relative;
-    }
+      .stat-value.mono {
+        font-family: var(--font-tech);
+        font-size: 23px;
+        font-weight: 500;
+        letter-spacing: 0.055em;
+      }
 
-    .spectrum-hz-labels span {
-      position: absolute;
-      top: 0;
-      white-space: nowrap;
-      transform: translateX(-50%);
-    }
+      .stat-value.right-align {
+        justify-content: flex-end;
+        text-align: right;
+      }
 
-    /* Vertical grid lines markers */
-    .hz-marker-line {
-      position: absolute;
-      top: 15px;
-      bottom: 0;
-      width: 1px;
-      background-color: rgba(0, 0, 0, 0.03);
-      pointer-events: none;
-      z-index: 1;
-    }
+      /* Custom BPM Meter Graphic */
+      .bpm-meter {
+        display: flex;
+        gap: 2px;
+        align-items: center;
+        height: 16px;
+      }
 
-    .spectrum-main-area {
-      position: relative;
-      flex-grow: 1;
-      display: flex;
-    }
+      .bpm-meter-block {
+        width: 14px;
+        height: 12px;
+        border: 1px solid rgba(0, 0, 0, 0.15);
+        background-color: transparent;
+      }
 
-    /* Y-Axis dB Labels on Left */
-    .spectrum-db-labels {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      width: 26px;
-      padding-right: 6px;
-      font-family: var(--font-sans);
-      font-size: 9px;
-      font-weight: 500;
-      color: var(--text-tertiary);
-      text-align: right;
-      height: calc(100% - 10px);
-      margin-top: 5px;
-    }
+      .bpm-meter-block.filled {
+        background-color: rgba(0, 0, 0, 0.05);
+      }
 
-    .spectrum-canvas-wrapper {
-      position: relative;
-      flex-grow: 1;
-      height: 100%;
-    }
+      .bpm-meter-indicator {
+        width: 2px;
+        height: 16px;
+        background-color: var(--accent-red);
+        margin-left: 2px;
+      }
 
-    .spectrum-canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-      z-index: 2;
-      position: absolute;
-      top: 0;
-      left: 0;
-    }
+      /* --- SPECTRUM ANALYZER GRID --- */
+      .spectrum-outer-container {
+        --spectrum-top-growth: 24px;
+        position: relative;
+        flex: 0 0 calc(250px + var(--spectrum-top-growth));
+        min-height: 0;
+        height: calc(250px + var(--spectrum-top-growth));
+        border-bottom: 2px solid #2b2b2b;
+        margin-bottom: calc(20px - var(--spectrum-top-growth));
+        display: flex;
+        flex-direction: column;
+        transform: translateY(calc(-1 * var(--spectrum-top-growth)));
+      }
 
-    /* --- TIMELINE WAVEFORM --- */
-    .timeline-container {
-      position: relative;
-      margin-bottom: 20px;
-    }
+      /* Grid layout containing Hz labels on top */
+      .spectrum-hz-labels {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        padding-bottom: 4px;
+        margin-bottom: 4px;
+        margin-left: 26px; /* Align with canvas start */
+        height: 14px;
+        font-family: var(--font-sans);
+        font-size: 9px;
+        font-weight: 600;
+        color: var(--text-tertiary);
+        letter-spacing: 0.5px;
+        position: relative;
+      }
 
-    .waveform-wrapper {
-      position: relative;
-      height: 48px;
-      background-color: rgba(0, 0, 0, 0.02);
-      border: 1px solid rgba(0, 0, 0, 0.05);
-      cursor: pointer;
-    }
+      .spectrum-hz-labels span {
+        position: absolute;
+        top: 0;
+        white-space: nowrap;
+        transform: translateX(-50%);
+      }
 
-    .waveform-canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
+      /* Vertical grid lines markers */
+      .hz-marker-line {
+        position: absolute;
+        top: 15px;
+        bottom: 0;
+        width: 1px;
+        background-color: rgba(0, 0, 0, 0.03);
+        pointer-events: none;
+        z-index: 1;
+      }
 
-    /* Red playhead and indicator */
-    .playhead-line {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      width: 2px;
-      background-color: var(--accent-red);
-      left: 10%; /* Initial pos (10s of 353s = 2.8%) */
-      pointer-events: none;
-      z-index: 10;
-    }
+      .spectrum-main-area {
+        position: relative;
+        flex-grow: 1;
+        display: flex;
+      }
 
-    /* Floating Time Indicator above playhead */
-    .playhead-time-badge {
-      position: absolute;
-      top: -24px;
-      left: 10%;
-      transform: translateX(-50%);
-      background-color: var(--accent-red);
-      color: #ffffff;
-      font-family: var(--font-digital);
-      font-size: 11px;
-      padding: 2px 5px;
-      border-radius: 1px;
-      pointer-events: none;
-      z-index: 11;
-      font-weight: 600;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
+      /* Y-Axis dB Labels on Left */
+      .spectrum-db-labels {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        width: 26px;
+        padding-right: 6px;
+        font-family: var(--font-sans);
+        font-size: 9px;
+        font-weight: 500;
+        color: var(--text-tertiary);
+        text-align: right;
+        height: calc(100% - 10px);
+        margin-top: 5px;
+      }
 
-    /* Timeline grid timestamps */
-    .timeline-ticks {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 6px;
-      font-family: var(--font-sans);
-      font-size: 10px;
-      font-weight: 500;
-      color: var(--text-secondary);
-    }
+      .spectrum-canvas-wrapper {
+        position: relative;
+        flex-grow: 1;
+        height: 100%;
+      }
 
-    /* --- BOTTOM METRICS & METADATA --- */
-    .bottom-metrics-row {
-      display: grid;
-      grid-template-columns: 20% 28% 52%;
-      align-items: end;
-      margin-top: auto;
-    }
+      .spectrum-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        z-index: 2;
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
 
-    .metric-box {
-      display: flex;
-      flex-direction: column;
-      padding-right: 15px;
-    }
+      /* --- TIMELINE WAVEFORM --- */
+      .timeline-container {
+        position: relative;
+        margin-bottom: 20px;
+      }
 
-    .metric-label {
-      font-size: 10px;
-      color: var(--text-tertiary);
-      font-weight: 500; /* Clean medium weight */
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 6px;
-    }
+      .waveform-wrapper {
+        position: relative;
+        height: 48px;
+        background-color: rgba(0, 0, 0, 0.02);
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        cursor: pointer;
+      }
 
-    .metric-value-row {
-      display: flex;
-      align-items: baseline;
-      gap: 4px;
-    }
+      .waveform-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
 
-    .metric-number {
-      font-family: var(--font-tech);
-      font-size: 26px;
-      font-weight: 400; /* Light weight for metrics (2.1 / -8.9) */
-      color: var(--text-primary);
-    }
+      /* Red playhead and indicator */
+      .playhead-line {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background-color: var(--accent-red);
+        left: 10%; /* Initial pos (10s of 353s = 2.8%) */
+        pointer-events: none;
+        z-index: 10;
+      }
 
-    .metric-unit {
-      font-size: 10px;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
+      /* Floating Time Indicator above playhead */
+      .playhead-time-badge {
+        position: absolute;
+        top: -24px;
+        left: 10%;
+        transform: translateX(-50%);
+        background-color: var(--accent-red);
+        color: #ffffff;
+        font-family: var(--font-digital);
+        font-size: 11px;
+        padding: 2px 5px;
+        border-radius: 1px;
+        pointer-events: none;
+        z-index: 11;
+        font-weight: 600;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
 
-    .metric-bar-bg {
-      width: 100%;
-      height: 3px;
-      background-color: rgba(0, 0, 0, 0.06);
-      margin-top: 6px;
-      position: relative;
-    }
+      /* Timeline grid timestamps */
+      .timeline-ticks {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 6px;
+        font-family: var(--font-sans);
+        font-size: 10px;
+        font-weight: 500;
+        color: var(--text-secondary);
+      }
 
-    .metric-bar-fill {
-      width: 100%;
-      height: 100%;
-      background-color: var(--accent-red);
-      transform: scaleX(0);
-      transform-origin: 0 50%;
-      transition: transform 0.1s ease;
-    }
+      /* --- BOTTOM METRICS & METADATA --- */
+      .bottom-metrics-row {
+        display: grid;
+        grid-template-columns: 20% 28% 52%;
+        align-items: end;
+        margin-top: auto;
+      }
 
-    /* Metadata details table */
-    .metadata-table {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      grid-gap: 8px 12px;
-      font-size: 11px;
-      padding-left: 20px;
-      border-left: 1px solid rgba(0, 0, 0, 0.08);
-      margin-bottom: 5px;
-    }
+      .metric-box {
+        display: flex;
+        flex-direction: column;
+        padding-right: 15px;
+      }
 
-    .meta-item {
-      display: flex;
-      flex-direction: column;
-    }
+      .metric-label {
+        font-size: 10px;
+        color: var(--text-tertiary);
+        font-weight: 500; /* Clean medium weight */
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 6px;
+      }
 
-    .meta-label {
-      color: var(--text-tertiary);
-      font-size: 9px;
-      text-transform: uppercase;
-      font-weight: 600;
-      letter-spacing: 0.5px;
-      margin-bottom: 2px;
-    }
+      .metric-value-row {
+        display: flex;
+        align-items: baseline;
+        gap: 4px;
+      }
 
-    .meta-val {
-      color: var(--text-primary);
-      font-weight: 600;
-    }
+      .metric-number {
+        font-family: var(--font-tech);
+        font-size: 26px;
+        font-weight: 400; /* Light weight for metrics (2.1 / -8.9) */
+        color: var(--text-primary);
+      }
 
-    /* Footer area with footnote & brand icon */
-    .footer-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 15px;
-      border-top: 1px solid rgba(0, 0, 0, 0.04);
-      padding-top: 8px;
-    }
+      .metric-unit {
+        font-size: 10px;
+        color: var(--text-secondary);
+        font-weight: 500;
+      }
 
-    .footnote {
-      font-size: 9px;
-      color: var(--text-tertiary);
-      font-style: italic;
-    }
+      .metric-bar-bg {
+        width: 100%;
+        height: 3px;
+        background-color: rgba(0, 0, 0, 0.06);
+        margin-top: 6px;
+        position: relative;
+      }
 
-    .brand-logo-svg {
-      color: rgba(0, 0, 0, 0.15);
-      width: 32px;
-      height: 32px;
-      transition: color 0.3s ease;
-      cursor: pointer;
-    }
+      .metric-bar-fill {
+        width: 100%;
+        height: 100%;
+        background-color: var(--accent-red);
+        transform: scaleX(0);
+        transform-origin: 0 50%;
+        transition: transform 0.1s ease;
+      }
 
-    .brand-logo-svg:hover {
-      color: var(--accent-red);
-    }
-  </style>
-</head>
-<body>
+      /* Metadata details table */
+      .metadata-table {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        grid-gap: 8px 12px;
+        font-size: 11px;
+        padding-left: 20px;
+        border-left: 1px solid rgba(0, 0, 0, 0.08);
+        margin-bottom: 5px;
+      }
 
-  <div class="app-viewport">
-    
-    
+      .meta-item {
+        display: flex;
+        flex-direction: column;
+      }
 
-    <!-- --- LEFT PANEL (Circular Radar & Album Cover) --- -->
-    <div class="left-panel">
-      <div class="radar-container">
+      .meta-label {
+        color: var(--text-tertiary);
+        font-size: 9px;
+        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+      }
 
-        <!-- SVG Radar Concentric Circles -->
-        <svg class="radar-svg" viewBox="0 0 500 500" id="radar-svg">
-          <!-- Main axes -->
-          <line x1="40" y1="250" x2="460" y2="250" class="axis" />
-          <line x1="250" y1="40" x2="250" y2="460" class="axis" />
-          
-          <!-- Diagonal grid lines -->
-          <line x1="100" y1="100" x2="400" y2="400" class="diagonal" />
-          <line x1="100" y1="400" x2="400" y2="100" class="diagonal" />
+      .meta-val {
+        color: var(--text-primary);
+        font-weight: 600;
+      }
 
-          <!-- Small tick marks on the concentric rings -->
-          <!-- Generated via JS for exact spacing -->
-        </svg>
+      /* Footer area with footnote & brand icon */
+      .footer-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 15px;
+        border-top: 1px solid rgba(0, 0, 0, 0.04);
+        padding-top: 8px;
+      }
 
-        <div class="album-orbit-system" aria-hidden="true">
-          <span class="album-track-runner"></span>
-          <div class="album-orbit-ring solid ring-2 time-ticks"></div>
-          <div class="album-orbit-ring dashed ring-3"></div>
-          <div class="album-orbit-ring solid ring-4"></div>
-          <div class="album-orbit-ring dashed ring-5"></div>
-          <div class="album-orbit-ring solid ring-6"></div>
-          <div class="album-orbit-scan"></div>
+      .footnote {
+        font-size: 9px;
+        color: var(--text-tertiary);
+        font-style: italic;
+      }
+
+      .brand-logo-svg {
+        color: rgba(0, 0, 0, 0.15);
+        width: 32px;
+        height: 32px;
+        transition: color 0.3s ease;
+        cursor: pointer;
+      }
+
+      .brand-logo-svg:hover {
+        color: var(--accent-red);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-viewport">
+      <!-- --- LEFT PANEL (Circular Radar & Album Cover) --- -->
+      <div class="left-panel">
+        <div class="radar-container">
+          <!-- SVG Radar Concentric Circles -->
+          <svg class="radar-svg" viewBox="0 0 500 500" id="radar-svg">
+            <!-- Main axes -->
+            <line x1="40" y1="250" x2="460" y2="250" class="axis" />
+            <line x1="250" y1="40" x2="250" y2="460" class="axis" />
+
+            <!-- Diagonal grid lines -->
+            <line x1="100" y1="100" x2="400" y2="400" class="diagonal" />
+            <line x1="100" y1="400" x2="400" y2="100" class="diagonal" />
+
+            <!-- Small tick marks on the concentric rings -->
+            <!-- Generated via JS for exact spacing -->
+          </svg>
+
+          <div class="album-orbit-system" aria-hidden="true">
+            <span class="album-track-runner"></span>
+            <div class="album-orbit-ring solid ring-2 time-ticks"></div>
+            <div class="album-orbit-ring dashed ring-3"></div>
+            <div class="album-orbit-ring solid ring-4"></div>
+            <div class="album-orbit-ring dashed ring-5"></div>
+            <div class="album-orbit-ring solid ring-6"></div>
+            <div class="album-orbit-scan"></div>
+          </div>
+
+          <!-- Compass labels -->
+          <!-- Top Label: W 20 ^ -->
+          <div class="coord-label top">
+            <span>W</span>
+            <span
+              style="
+                font-family: var(--font-tech);
+                font-weight: bold;
+                font-size: 12px;
+                margin: 2px 0;
+              "
+              >20</span
+            >
+            <span class="red-accent">▲</span>
+          </div>
+
+          <!-- Left Label: 270 N -->
+          <div class="coord-label left">
+            <span>N</span>
+            <span style="font-family: var(--font-tech); font-weight: bold">270</span>
+            <span class="coord-circle-marker"></span>
+          </div>
+
+          <!-- Right Label: 90 -->
+          <div class="coord-label right">
+            <span style="font-family: var(--font-tech); font-weight: bold">90</span>
+            <span class="coord-circle-marker"></span>
+          </div>
+
+          <!-- Bottom Label: V #09 v -->
+          <div class="coord-label bottom">
+            <span class="red-accent">▼</span>
+            <span
+              style="
+                font-family: var(--font-tech);
+                font-weight: bold;
+                font-size: 11px;
+                margin: 2px 0;
+              "
+              >#09</span
+            >
+            <span>V</span>
+          </div>
+
+          <!-- Album Art Box in Center -->
+          <div class="album-art-box">
+            <div class="bracket tl"></div>
+            <div class="bracket tr"></div>
+            <div class="bracket bl"></div>
+            <div class="bracket br"></div>
+            <!-- album cover is fed by the host app via postMessage -->
+            <img id="album-cover-img" src="" alt="" />
+            <div class="album-cover-motion" aria-hidden="true"></div>
+            <div class="album-cover-badge" aria-hidden="true"></div>
+          </div>
         </div>
 
-        <!-- Compass labels -->
-        <!-- Top Label: W 20 ^ -->
-        <div class="coord-label top">
-          <span>W</span>
-          <span style="font-family: var(--font-tech); font-weight: bold; font-size:12px; margin: 2px 0;">20</span>
-          <span class="red-accent">▲</span>
-        </div>
-
-        <!-- Left Label: 270 N -->
-        <div class="coord-label left">
-          <span>N</span>
-          <span style="font-family: var(--font-tech); font-weight: bold;">270</span>
-          <span class="coord-circle-marker"></span>
-        </div>
-
-        <!-- Right Label: 90 -->
-        <div class="coord-label right">
-          <span style="font-family: var(--font-tech); font-weight: bold;">90</span>
-          <span class="coord-circle-marker"></span>
-        </div>
-
-        <!-- Bottom Label: V #09 v -->
-        <div class="coord-label bottom">
-          <span class="red-accent">▼</span>
-          <span style="font-family: var(--font-tech); font-weight: bold; font-size:11px; margin: 2px 0;">#09</span>
-          <span>V</span>
-        </div>
-
-        <!-- Album Art Box in Center -->
-        <div class="album-art-box">
-          <div class="bracket tl"></div>
-          <div class="bracket tr"></div>
-          <div class="bracket bl"></div>
-          <div class="bracket br"></div>
-          <!-- album cover is fed by the host app via postMessage -->
-          <img id="album-cover-img" src="" alt="">
-          <div class="album-cover-motion" aria-hidden="true"></div>
-          <div class="album-cover-badge" aria-hidden="true"></div>
-        </div>
-      </div>
-
-      <!-- Controls Panel below radar-container -->
-      <div class="controls-container">
-        <!-- Concentric dashed backing circle -->
+        <!-- Controls Panel below radar-container -->
+        <div class="controls-container">
+          <!-- Concentric dashed backing circle -->
           <div class="controls-ring"></div>
-        <div class="control-orbit-system" aria-hidden="true">
-          <div class="control-orbit-track outer"></div>
-          <div class="control-orbit-track inner"></div>
-          <div class="control-orbit-sweep"></div>
-          <span
-            class="control-orbit-node red"
-            style="--orbit-start: 0deg; --orbit-radius: 71px; --node-size: 6px;"
-          ></span>
-          <span
-            class="control-orbit-node gray"
-            style="--orbit-start: 60deg; --orbit-radius: 71px; --node-size: 4px;"
-          ></span>
-          <span
-            class="control-orbit-node red"
-            style="--orbit-start: 120deg; --orbit-radius: 71px; --node-size: 6px;"
-          ></span>
-          <span
-            class="control-orbit-node gray"
-            style="--orbit-start: 180deg; --orbit-radius: 71px; --node-size: 4px;"
-          ></span>
-          <span
-            class="control-orbit-node red"
-            style="--orbit-start: 240deg; --orbit-radius: 71px; --node-size: 6px;"
-          ></span>
-          <span
-            class="control-orbit-node gray"
-            style="--orbit-start: 300deg; --orbit-radius: 71px; --node-size: 4px;"
-          ></span>
+          <div class="control-orbit-system" aria-hidden="true">
+            <div class="control-orbit-track outer"></div>
+            <div class="control-orbit-track inner"></div>
+            <div class="control-orbit-sweep"></div>
+            <span
+              class="control-orbit-node red"
+              style="--orbit-start: 0deg; --orbit-radius: 71px; --node-size: 6px"
+            ></span>
+            <span
+              class="control-orbit-node gray"
+              style="--orbit-start: 60deg; --orbit-radius: 71px; --node-size: 4px"
+            ></span>
+            <span
+              class="control-orbit-node red"
+              style="--orbit-start: 120deg; --orbit-radius: 71px; --node-size: 6px"
+            ></span>
+            <span
+              class="control-orbit-node gray"
+              style="--orbit-start: 180deg; --orbit-radius: 71px; --node-size: 4px"
+            ></span>
+            <span
+              class="control-orbit-node red"
+              style="--orbit-start: 240deg; --orbit-radius: 71px; --node-size: 6px"
+            ></span>
+            <span
+              class="control-orbit-node gray"
+              style="--orbit-start: 300deg; --orbit-radius: 71px; --node-size: 4px"
+            ></span>
+          </div>
+
+          <button class="btn-circle" id="btn-prev" title="Previous Track">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M11 5 3 12l8 7V5Zm10 0-8 7 8 7V5Z" />
+            </svg>
+          </button>
+
+          <button class="btn-circle play-pause" id="btn-play-pause" title="Play / Pause Demo Synth">
+            <!-- Play icon -->
+            <svg id="svg-play" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            <!-- Pause icon -->
+            <svg
+              id="svg-pause"
+              viewBox="0 0 24 24"
+              width="24"
+              height="24"
+              fill="currentColor"
+              style="display: none"
+            >
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+            </svg>
+          </button>
+
+          <button class="btn-circle" id="btn-next" title="Next Track / Audio Upload">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="m3 5 8 7-8 7V5Zm10 0 8 7-8 7V5Z" />
+            </svg>
+          </button>
         </div>
-
-        <button class="btn-circle" id="btn-prev" title="Previous Track">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M11 5 3 12l8 7V5Zm10 0-8 7 8 7V5Z" />
-          </svg>
-        </button>
-
-        <button class="btn-circle play-pause" id="btn-play-pause" title="Play / Pause Demo Synth">
-          <!-- Play icon -->
-          <svg id="svg-play" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-          <!-- Pause icon -->
-          <svg id="svg-pause" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" style="display: none;">
-            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-          </svg>
-        </button>
-
-        <button class="btn-circle" id="btn-next" title="Next Track / Audio Upload">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="m3 5 8 7-8 7V5Zm10 0 8 7-8 7V5Z" />
-          </svg>
-        </button>
       </div>
-    </div>
 
-    <!-- --- RIGHT PANEL (Metadata & Spectrum Analyzer) --- -->
-    <div class="right-panel">
-      
-      <!-- Track Header Title -->
-      <div>
-        <div class="header-section">
-          <div>
-            <div class="source-tag-row">
-              <div class="source-block"></div>
-              <span class="source-text" id="display-album">From: --</span>
-              <div class="red-line-header"></div>
+      <!-- --- RIGHT PANEL (Metadata & Spectrum Analyzer) --- -->
+      <div class="right-panel">
+        <!-- Track Header Title -->
+        <div>
+          <div class="header-section">
+            <div>
+              <div class="source-tag-row">
+                <div class="source-block"></div>
+                <span class="source-text" id="display-album">From: --</span>
+                <div class="red-line-header"></div>
+              </div>
+              <h1 class="track-title" id="display-title">WACCA ULTRA DREAM MEGAMIX</h1>
+              <p class="track-artist" id="display-artist">USAO / Kobaryo</p>
             </div>
-            <h1 class="track-title" id="display-title">WACCA ULTRA DREAM MEGAMIX</h1>
-            <p class="track-artist" id="display-artist">USAO / Kobaryo</p>
+
+            <div class="quality-container">
+              <div class="quality-label">Quality</div>
+              <div class="quality-value" id="display-quality">~192kbps / 48.0kHz</div>
+            </div>
           </div>
-          
-          <div class="quality-container">
-            <div class="quality-label">Quality</div>
-            <div class="quality-value" id="display-quality">~192kbps / 48.0kHz</div>
+
+          <!-- BPM / Genre / Duration Grid -->
+          <div class="stats-grid-row">
+            <!-- BPM -->
+            <div class="stat-col">
+              <div class="stat-label">BPM</div>
+              <div class="stat-value">
+                <span class="mono" id="display-bpm">200.00</span>
+                <div class="bpm-meter">
+                  <div class="bpm-meter-block filled"></div>
+                  <div class="bpm-meter-block filled"></div>
+                  <div class="bpm-meter-block filled"></div>
+                  <div class="bpm-meter-block filled"></div>
+                  <div class="bpm-meter-block"></div>
+                  <div class="bpm-meter-indicator"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Genre -->
+            <div class="stat-col">
+              <div class="stat-label">Genre</div>
+              <div class="stat-value" id="display-genre">Hardcore</div>
+            </div>
+
+            <!-- Duration -->
+            <div class="stat-col" style="align-items: flex-end">
+              <div class="stat-label">Duration</div>
+              <div class="stat-value mono right-align" id="display-duration">5:53</div>
+            </div>
           </div>
         </div>
 
-        <!-- BPM / Genre / Duration Grid -->
-        <div class="stats-grid-row">
-          <!-- BPM -->
-          <div class="stat-col">
-            <div class="stat-label">BPM</div>
-            <div class="stat-value">
-              <span class="mono" id="display-bpm">200.00</span>
-              <div class="bpm-meter">
-                <div class="bpm-meter-block filled"></div>
-                <div class="bpm-meter-block filled"></div>
-                <div class="bpm-meter-block filled"></div>
-                <div class="bpm-meter-block filled"></div>
-                <div class="bpm-meter-block"></div>
-                <div class="bpm-meter-indicator"></div>
+        <!-- Main Spectrum Analyzer -->
+        <div class="spectrum-outer-container">
+          <!-- Top X Axis (Hz) -->
+          <div class="spectrum-hz-labels" id="hz-labels-row">
+            <span data-frequency="20">20</span>
+            <span data-frequency="200">200</span>
+            <span data-frequency="1000">1K</span>
+            <span data-frequency="2000">2K</span>
+            <span data-frequency="5000">5K</span>
+            <span data-frequency="10000">10K</span>
+            <span data-frequency="20000">20K</span>
+          </div>
+
+          <!-- Main Display: dB column & Canvas plot -->
+          <div class="spectrum-main-area">
+            <div class="spectrum-db-labels">
+              <span>0</span>
+              <span>-20</span>
+              <span>-40</span>
+              <span>-60</span>
+              <span>-80</span>
+              <span>-100</span>
+            </div>
+
+            <div class="spectrum-canvas-wrapper">
+              <canvas class="spectrum-canvas" id="spectrum-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Waveform Timeline scrubber -->
+        <div class="timeline-container">
+          <div class="waveform-wrapper" id="waveform-scrubber">
+            <!-- Floating current playhead marker and badge -->
+            <div class="playhead-line" id="playhead-line"></div>
+            <div class="playhead-time-badge" id="playhead-badge">0:10</div>
+
+            <canvas class="waveform-canvas" id="waveform-canvas"></canvas>
+          </div>
+
+          <!-- Timeline numbers -->
+          <div class="timeline-ticks" id="timeline-time-labels">
+            <span>0:00</span>
+            <span>1:10</span>
+            <span>2:21</span>
+            <span>3:32</span>
+            <span>4:42</span>
+            <span>5:53</span>
+          </div>
+        </div>
+
+        <!-- Metrics and File Details Section -->
+        <div>
+          <div class="bottom-metrics-row">
+            <!-- Dynamic Range -->
+            <div class="metric-box">
+              <div class="metric-label">Dynamic range</div>
+              <div class="metric-value-row">
+                <span class="metric-number" id="val-dynamic-range">2.1</span>
+                <span class="metric-unit">dB</span>
+              </div>
+              <div class="metric-bar-bg">
+                <div
+                  class="metric-bar-fill"
+                  id="bar-dynamic-range"
+                  style="transform: scaleX(0.25)"
+                ></div>
+              </div>
+            </div>
+
+            <!-- Loudness -->
+            <div class="metric-box" style="padding-right: 30px">
+              <div class="metric-label">Loudness*</div>
+              <div class="metric-value-row">
+                <span class="metric-number" id="val-loudness">-8.9</span>
+                <span class="metric-unit">dB</span>
+              </div>
+              <div class="metric-bar-bg">
+                <div
+                  class="metric-bar-fill"
+                  id="bar-loudness"
+                  style="transform: scaleX(0.68)"
+                ></div>
+              </div>
+            </div>
+
+            <!-- File properties table -->
+            <div class="metadata-table">
+              <div class="meta-item">
+                <span class="meta-label">Sample rate</span>
+                <span class="meta-val" id="meta-samplerate">48.0 kHz</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Bit depth</span>
+                <span class="meta-val" id="meta-bitdepth">--</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Channels</span>
+                <span class="meta-val" id="meta-channels">Stereo</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Bitrate</span>
+                <span class="meta-val" id="meta-bitrate">192 kbps</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">File size</span>
+                <span class="meta-val" id="meta-filesize">8.1 MB</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Format</span>
+                <span class="meta-val" id="meta-format">MP3</span>
               </div>
             </div>
           </div>
 
-          <!-- Genre -->
-          <div class="stat-col">
-            <div class="stat-label">Genre</div>
-            <div class="stat-value" id="display-genre">Hardcore</div>
+          <!-- Footer -->
+          <div class="footer-row">
+            <div class="footnote">*estimated short-window RMS metrics</div>
           </div>
-
-          <!-- Duration -->
-          <div class="stat-col" style="align-items: flex-end;">
-            <div class="stat-label">Duration</div>
-            <div class="stat-value mono right-align" id="display-duration">5:53</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Main Spectrum Analyzer -->
-      <div class="spectrum-outer-container">
-        <!-- Top X Axis (Hz) -->
-        <div class="spectrum-hz-labels" id="hz-labels-row">
-          <span data-frequency="20">20</span>
-          <span data-frequency="200">200</span>
-          <span data-frequency="1000">1K</span>
-          <span data-frequency="2000">2K</span>
-          <span data-frequency="5000">5K</span>
-          <span data-frequency="10000">10K</span>
-          <span data-frequency="20000">20K</span>
-        </div>
-
-        <!-- Main Display: dB column & Canvas plot -->
-        <div class="spectrum-main-area">
-          <div class="spectrum-db-labels">
-            <span>0</span>
-            <span>-20</span>
-            <span>-40</span>
-            <span>-60</span>
-            <span>-80</span>
-            <span>-100</span>
-          </div>
-          
-          <div class="spectrum-canvas-wrapper">
-            <canvas class="spectrum-canvas" id="spectrum-canvas"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <!-- Waveform Timeline scrubber -->
-      <div class="timeline-container">
-        <div class="waveform-wrapper" id="waveform-scrubber">
-          <!-- Floating current playhead marker and badge -->
-          <div class="playhead-line" id="playhead-line"></div>
-          <div class="playhead-time-badge" id="playhead-badge">0:10</div>
-          
-          <canvas class="waveform-canvas" id="waveform-canvas"></canvas>
-        </div>
-        
-        <!-- Timeline numbers -->
-        <div class="timeline-ticks" id="timeline-time-labels">
-          <span>0:00</span>
-          <span>1:10</span>
-          <span>2:21</span>
-          <span>3:32</span>
-          <span>4:42</span>
-          <span>5:53</span>
-        </div>
-      </div>
-
-      <!-- Metrics and File Details Section -->
-      <div>
-        <div class="bottom-metrics-row">
-          <!-- Dynamic Range -->
-          <div class="metric-box">
-            <div class="metric-label">Dynamic range</div>
-            <div class="metric-value-row">
-              <span class="metric-number" id="val-dynamic-range">2.1</span>
-              <span class="metric-unit">dB</span>
-            </div>
-            <div class="metric-bar-bg">
-              <div class="metric-bar-fill" id="bar-dynamic-range" style="transform: scaleX(0.25);"></div>
-            </div>
-          </div>
-
-          <!-- Loudness -->
-          <div class="metric-box" style="padding-right: 30px;">
-            <div class="metric-label">Loudness*</div>
-            <div class="metric-value-row">
-              <span class="metric-number" id="val-loudness">-8.9</span>
-              <span class="metric-unit">dB</span>
-            </div>
-            <div class="metric-bar-bg">
-              <div class="metric-bar-fill" id="bar-loudness" style="transform: scaleX(0.68);"></div>
-            </div>
-          </div>
-
-          <!-- File properties table -->
-          <div class="metadata-table">
-            <div class="meta-item">
-              <span class="meta-label">Sample rate</span>
-              <span class="meta-val" id="meta-samplerate">48.0 kHz</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Bit depth</span>
-              <span class="meta-val" id="meta-bitdepth">--</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Channels</span>
-              <span class="meta-val" id="meta-channels">Stereo</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Bitrate</span>
-              <span class="meta-val" id="meta-bitrate">192 kbps</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">File size</span>
-              <span class="meta-val" id="meta-filesize">8.1 MB</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Format</span>
-              <span class="meta-val" id="meta-format">MP3</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="footer-row">
-          <div class="footnote">*estimated short-window RMS metrics</div>
-          
-          
         </div>
       </div>
     </div>
-  </div>
 
-  <script>
-    // --- STATE MANAGEMENT ---
-    // Audio source/analyser removed: the host app (Twilight Echo native audio
-    // engine) feeds spectrum + waveform data via postMessage. This file only
-    // renders visualizations; it does not decode or play audio.
+    <script>
+      // --- STATE MANAGEMENT ---
+      // Audio source/analyser removed: the host app (Twilight Echo native audio
+      // engine) feeds spectrum + waveform data via postMessage. This file only
+      // renders visualizations; it does not decode or play audio.
 
-    // Playback state — driven by host messages
-    let isPlaying = false;
-    let pausedTime = 0;     // Current playback position in seconds (pushed by host)
-    let songDuration = 0;   // Current track duration in seconds (pushed by host)
+      // Playback state — driven by host messages
+      let isPlaying = false
+      let pausedTime = 0 // Current playback position in seconds (pushed by host)
+      let songDuration = 0 // Current track duration in seconds (pushed by host)
 
-    // Raw FFT bins from the host. The renderer keeps the reference WebAudio
-    // visualizer's log-Hz bar mapping here so low-frequency interpolation
-    // stays visually identical to audio_visualizer_preview.html.
-    const SPECTRUM_BAR_COUNT = 140;
-    let dataArray = new Float32Array(4096);
-    let precomputedBars = new Float32Array(SPECTRUM_BAR_COUNT);
-    let previousPrecomputedBars = new Float32Array(SPECTRUM_BAR_COUNT);
-    let displayPrecomputedBars = new Float32Array(SPECTRUM_BAR_COUNT);
-    let precomputedBarsTransitionStartedAt = performance.now();
-    const PRECOMPUTED_BAR_TRANSITION_MS = 48;
-    let usingPrecomputedBars = false;
-    let hostSampleRate = 44100;  // Updated by host 'spectrum' messages
-    let hostMaxFrequency = 20000;
-    let nativePeakDb = null;
-    let nativeRmsDb = null;
-    let nativeLufsMomentary = null;
-    let liveWaveformPoints = [];  // Time-domain waveform from host
-    let lastSpectrumFrameAt = performance.now();
-    let lastMetricsUpdateAt = 0;
-    let lastSpectrumDebug = null;
-    window.__twilightVisualizerDebug = () => lastSpectrumDebug;
+      // Raw FFT bins from the host. The renderer keeps the reference WebAudio
+      // visualizer's log-Hz bar mapping here so low-frequency interpolation
+      // stays visually identical to audio_visualizer_preview.html.
+      const SPECTRUM_BAR_COUNT = 140
+      let dataArray = new Float32Array(4096)
+      let precomputedBars = new Float32Array(SPECTRUM_BAR_COUNT)
+      let previousPrecomputedBars = new Float32Array(SPECTRUM_BAR_COUNT)
+      let displayPrecomputedBars = new Float32Array(SPECTRUM_BAR_COUNT)
+      let precomputedBarsTransitionStartedAt = performance.now()
+      const PRECOMPUTED_BAR_TRANSITION_MS = 48
+      let usingPrecomputedBars = false
+      let hostSampleRate = 44100 // Updated by host 'spectrum' messages
+      let hostMaxFrequency = 20000
+      let nativePeakDb = null
+      let nativeRmsDb = null
+      let nativeLufsMomentary = null
+      let liveWaveformPoints = [] // Time-domain waveform from host
+      let lastSpectrumFrameAt = performance.now()
+      let lastMetricsUpdateAt = 0
+      let lastSpectrumDebug = null
+      window.__twilightVisualizerDebug = () => lastSpectrumDebug
 
-    // UI Elements
-    const btnPlayPause = document.getElementById('btn-play-pause');
-    const svgPlay = document.getElementById('svg-play');
-    const svgPause = document.getElementById('svg-pause');
-    const playheadLine = document.getElementById('playhead-line');
-    const playheadBadge = document.getElementById('playhead-badge');
-    const scrubber = document.getElementById('waveform-scrubber');
-    const loudnessEl = document.getElementById('val-loudness');
-    const loudnessBar = document.getElementById('bar-loudness');
-    const dynamicRangeEl = document.getElementById('val-dynamic-range');
-    const dynamicRangeBar = document.getElementById('bar-dynamic-range');
-    const hzLabelsRow = document.getElementById('hz-labels-row');
-    const hzLabelEls = Array.from(hzLabelsRow.querySelectorAll('[data-frequency]'));
+      // UI Elements
+      const btnPlayPause = document.getElementById('btn-play-pause')
+      const svgPlay = document.getElementById('svg-play')
+      const svgPause = document.getElementById('svg-pause')
+      const playheadLine = document.getElementById('playhead-line')
+      const playheadBadge = document.getElementById('playhead-badge')
+      const scrubber = document.getElementById('waveform-scrubber')
+      const loudnessEl = document.getElementById('val-loudness')
+      const loudnessBar = document.getElementById('bar-loudness')
+      const dynamicRangeEl = document.getElementById('val-dynamic-range')
+      const dynamicRangeBar = document.getElementById('bar-dynamic-range')
+      const hzLabelsRow = document.getElementById('hz-labels-row')
+      const hzLabelEls = Array.from(hzLabelsRow.querySelectorAll('[data-frequency]'))
 
-    // Canvas elements
-    const spectrumCanvas = document.getElementById('spectrum-canvas');
-    const specCtx = spectrumCanvas.getContext('2d');
-    const waveformCanvas = document.getElementById('waveform-canvas');
-    const waveCtx = waveformCanvas.getContext('2d');
+      // Canvas elements
+      const spectrumCanvas = document.getElementById('spectrum-canvas')
+      const specCtx = spectrumCanvas.getContext('2d')
+      const waveformCanvas = document.getElementById('waveform-canvas')
+      const waveCtx = waveformCanvas.getContext('2d')
 
-    // Placeholder track — overridden by host 'track' messages
-    const defaultTrack = {
-      title: "", artist: "", quality: "", bpm: "", genre: "",
-      duration: "", durationSeconds: 0, dynamicRange: "", loudness: "",
-      samplerate: "", bitdepth: "", channels: "", bitrate: "",
-      filesize: "", format: ""
-    };
-    let currentTrack = { ...defaultTrack };
+      // Placeholder track — overridden by host 'track' messages
+      const defaultTrack = {
+        title: '',
+        artist: '',
+        quality: '',
+        bpm: '',
+        genre: '',
+        duration: '',
+        durationSeconds: 0,
+        dynamicRange: '',
+        loudness: '',
+        samplerate: '',
+        bitdepth: '',
+        channels: '',
+        bitrate: '',
+        filesize: '',
+        format: ''
+      }
+      let currentTrack = { ...defaultTrack }
 
-    // --- CANVASES INITIALIZATION ---
-    function resizeCanvases() {
-      const dpr = window.devicePixelRatio || 1;
+      // --- CANVASES INITIALIZATION ---
+      function resizeCanvases() {
+        const dpr = window.devicePixelRatio || 1
 
-      const specRect = spectrumCanvas.parentElement.getBoundingClientRect();
-      spectrumCanvas.width = specRect.width * dpr;
-      spectrumCanvas.height = specRect.height * dpr;
-      specCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const specRect = spectrumCanvas.parentElement.getBoundingClientRect()
+        spectrumCanvas.width = specRect.width * dpr
+        spectrumCanvas.height = specRect.height * dpr
+        specCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-      const waveRect = waveformCanvas.parentElement.getBoundingClientRect();
-      waveformCanvas.width = waveRect.width * dpr;
-      waveformCanvas.height = waveRect.height * dpr;
-      waveCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const waveRect = waveformCanvas.parentElement.getBoundingClientRect()
+        waveformCanvas.width = waveRect.width * dpr
+        waveformCanvas.height = waveRect.height * dpr
+        waveCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-      drawWaveform();
-      updateHzLabels();
-      syncTitleLineClass();
-    }
-
-    window.addEventListener('resize', resizeCanvases);
-    const canvasResizeObserver = new ResizeObserver(resizeCanvases);
-    canvasResizeObserver.observe(spectrumCanvas.parentElement);
-    canvasResizeObserver.observe(waveformCanvas.parentElement);
-
-    // --- WAVEFORM RENDER (live, host-fed) ---
-    function drawWaveform() {
-      const width = waveformCanvas.width / (window.devicePixelRatio || 1);
-      const height = waveformCanvas.height / (window.devicePixelRatio || 1);
-
-      waveCtx.clearRect(0, 0, width, height);
-
-      const points = liveWaveformPoints;
-      if (points.length === 0) return;
-
-      let maxAbs = 0;
-      for (let i = 0; i < points.length; i++) {
-        const value = Math.abs(Number.isFinite(points[i]) ? points[i] : 0);
-        if (value > maxAbs) maxAbs = value;
+        drawWaveform()
+        updateHzLabels()
+        syncTitleLineClass()
       }
 
-      const centerY = height * 0.5;
-      const amplitudeScale = height * 0.38;
-      const visualGain = maxAbs > 0 ? Math.min(3.2, Math.max(1, 0.72 / maxAbs)) : 1;
-      const step = width / Math.max(1, points.length - 1);
+      window.addEventListener('resize', resizeCanvases)
+      const canvasResizeObserver = new ResizeObserver(resizeCanvases)
+      canvasResizeObserver.observe(spectrumCanvas.parentElement)
+      canvasResizeObserver.observe(waveformCanvas.parentElement)
 
-      waveCtx.save();
-      waveCtx.lineCap = 'round';
-      waveCtx.lineJoin = 'round';
-      waveCtx.strokeStyle = 'rgba(60, 62, 68, 0.78)';
-      waveCtx.lineWidth = 1.35;
-      waveCtx.beginPath();
+      // --- WAVEFORM RENDER (live, host-fed) ---
+      function drawWaveform() {
+        const width = waveformCanvas.width / (window.devicePixelRatio || 1)
+        const height = waveformCanvas.height / (window.devicePixelRatio || 1)
 
-      for (let i = 0; i < points.length; i++) {
-        // Host waveform values are time-domain samples in the -1..1 range.
-        const previous = i > 0 ? points[i - 1] : points[i];
-        const current = points[i];
-        const next = i < points.length - 1 ? points[i + 1] : points[i];
-        const sample = Math.max(
-          -1,
-          Math.min(1, (previous * 0.12 + current * 0.76 + next * 0.12) * visualGain)
-        );
-        const x = i * step;
-        const y = centerY - sample * amplitudeScale;
-        if (i === 0) {
-          waveCtx.moveTo(x, y);
+        waveCtx.clearRect(0, 0, width, height)
+
+        const points = liveWaveformPoints
+        if (points.length === 0) return
+
+        let maxAbs = 0
+        for (let i = 0; i < points.length; i++) {
+          const value = Math.abs(Number.isFinite(points[i]) ? points[i] : 0)
+          if (value > maxAbs) maxAbs = value
+        }
+
+        const centerY = height * 0.5
+        const amplitudeScale = height * 0.38
+        const visualGain = maxAbs > 0 ? Math.min(3.2, Math.max(1, 0.72 / maxAbs)) : 1
+        const step = width / Math.max(1, points.length - 1)
+
+        waveCtx.save()
+        waveCtx.lineCap = 'round'
+        waveCtx.lineJoin = 'round'
+        waveCtx.strokeStyle = 'rgba(60, 62, 68, 0.78)'
+        waveCtx.lineWidth = 1.35
+        waveCtx.beginPath()
+
+        for (let i = 0; i < points.length; i++) {
+          // Host waveform values are time-domain samples in the -1..1 range.
+          const previous = i > 0 ? points[i - 1] : points[i]
+          const current = points[i]
+          const next = i < points.length - 1 ? points[i + 1] : points[i]
+          const sample = Math.max(
+            -1,
+            Math.min(1, (previous * 0.12 + current * 0.76 + next * 0.12) * visualGain)
+          )
+          const x = i * step
+          const y = centerY - sample * amplitudeScale
+          if (i === 0) {
+            waveCtx.moveTo(x, y)
+          } else {
+            waveCtx.lineTo(x, y)
+          }
+        }
+
+        waveCtx.stroke()
+        waveCtx.restore()
+      }
+
+      // --- SPECTRUM RENDER LOOP ---
+      let lastSpectrumHeights = new Float32Array(SPECTRUM_BAR_COUNT).fill(0)
+      let rawComputedBars = new Float32Array(SPECTRUM_BAR_COUNT)
+      let rawPrecomputedBars = new Float32Array(SPECTRUM_BAR_COUNT)
+      let sourceLevels = new Float32Array(SPECTRUM_BAR_COUNT)
+      let contouredLevels = new Float32Array(SPECTRUM_BAR_COUNT)
+      let displayDebugBars = new Float32Array(SPECTRUM_BAR_COUNT)
+      let spectrumBinCenters = new Float32Array(SPECTRUM_BAR_COUNT)
+      let spectrumBinCenterKey = ''
+      let spectrumAnimationFrame = 0
+      let playheadAnimationFrame = 0
+      const SPECTRUM_ATTACK_SECONDS = 0.014
+      const SPECTRUM_DECAY_SECONDS = 0.16
+      const FREQUENCY_TICKS = [20, 200, 1000, 2000, 5000, 10000, 20000]
+      const SPECTRUM_MIN_FREQUENCY = 20
+      const SPECTRUM_DISPLAY_GAIN = 1.32
+      const SPECTRUM_DISPLAY_RANGE = 1.42
+      const SPECTRUM_DISPLAY_GAMMA = 0.78
+      const SPECTRUM_DISPLAY_HEADROOM = 1
+      const SPECTRUM_HEIGHT_SCALE = 1
+      const SPECTRUM_CONTRAST_FLOOR = 0.16
+      const SPECTRUM_CONTRAST_POWER = 0.68
+      const LOW_FREQUENCY_CONTOUR_BAR_LIMIT = 72
+      const LOW_FREQUENCY_CONTOUR_MIN_LEVEL = 0.14
+      const LOW_FREQUENCY_CONTOUR_FLAT_RANGE = 0.2
+      const LOW_FREQUENCY_CONTOUR_BASE_DEPTH = 0.24
+      const LOW_FREQUENCY_CONTOUR_DEPTH = 0.52
+      let lowFrequencyContourPhase = 0
+      let previousLowFrequencyContourLevels = new Float32Array(LOW_FREQUENCY_CONTOUR_BAR_LIMIT)
+
+      function smoothSpectrumHeight(currentHeight, targetHeight, deltaSeconds) {
+        const smoothingSeconds =
+          targetHeight > currentHeight ? SPECTRUM_ATTACK_SECONDS : SPECTRUM_DECAY_SECONDS
+        const smoothingAlpha = 1 - Math.exp(-deltaSeconds / smoothingSeconds)
+        return currentHeight + (targetHeight - currentHeight) * smoothingAlpha
+      }
+
+      function visualizerDisplayLevel(value) {
+        const ranged = Math.max(
+          0,
+          Math.min(SPECTRUM_DISPLAY_RANGE, Number.isFinite(value) ? value : 0)
+        )
+        const normalized = ranged / SPECTRUM_DISPLAY_RANGE
+        const contrasted =
+          normalized <= SPECTRUM_CONTRAST_FLOOR
+            ? normalized * 0.58
+            : SPECTRUM_CONTRAST_FLOOR * 0.58 +
+              Math.pow(
+                (normalized - SPECTRUM_CONTRAST_FLOOR) / (1 - SPECTRUM_CONTRAST_FLOOR),
+                SPECTRUM_CONTRAST_POWER
+              ) *
+                (1 - SPECTRUM_CONTRAST_FLOOR * 0.58)
+        const level = Math.min(1, contrasted * SPECTRUM_DISPLAY_GAIN)
+        return Math.pow(level, SPECTRUM_DISPLAY_GAMMA) * SPECTRUM_DISPLAY_HEADROOM
+      }
+
+      function updateLowFrequencyContourPhase(rawBars, deltaSeconds) {
+        const limit = Math.min(LOW_FREQUENCY_CONTOUR_BAR_LIMIT, rawBars.length)
+        if (limit <= 0) return lowFrequencyContourPhase
+
+        let weightedIndex = 0
+        let totalLevel = 0
+        let flux = 0
+        for (let i = 0; i < limit; i++) {
+          const level = Math.max(0, Math.min(1, Number.isFinite(rawBars[i]) ? rawBars[i] : 0))
+          weightedIndex += level * (i / Math.max(1, limit - 1))
+          totalLevel += level
+          flux += Math.abs(level - previousLowFrequencyContourLevels[i])
+          previousLowFrequencyContourLevels[i] = level
+        }
+
+        if (totalLevel <= 0.001) return lowFrequencyContourPhase
+
+        const centroid = weightedIndex / totalLevel
+        const normalizedFlux = Math.min(1, flux / limit / 0.08)
+        const motionRate = 0.65 + centroid * 1.25 + normalizedFlux * 1.8
+        lowFrequencyContourPhase += Math.max(0.001, deltaSeconds) * motionRate * 4.2
+        return lowFrequencyContourPhase
+      }
+
+      function lowFrequencySubBinContour(binIndexDecimal, barIndex, phase) {
+        const primary = Math.sin(binIndexDecimal * 5.0 + phase * 1.7)
+        const secondary = Math.sin((barIndex + 1) * 1.618 + binIndexDecimal * 0.73 - phase * 2.3)
+        const tertiary = Math.sin((barIndex + 1) * 2.37 + phase * 0.9)
+        const contour = Math.max(
+          0,
+          Math.min(1, 0.5 + (primary * 0.56 + secondary * 0.28 + tertiary * 0.16) * 0.5)
+        )
+        return 1 - LOW_FREQUENCY_CONTOUR_DEPTH * 0.5 + LOW_FREQUENCY_CONTOUR_DEPTH * contour
+      }
+
+      function ensureSpectrumScratchLength(barCount) {
+        if (sourceLevels.length === barCount) return
+        rawComputedBars = new Float32Array(barCount)
+        rawPrecomputedBars = new Float32Array(barCount)
+        sourceLevels = new Float32Array(barCount)
+        contouredLevels = new Float32Array(barCount)
+        displayDebugBars = new Float32Array(barCount)
+        spectrumBinCenters = new Float32Array(barCount)
+        lastSpectrumHeights = new Float32Array(barCount)
+        spectrumBinCenterKey = ''
+      }
+
+      function buildLogFrequencyBinCenters(barCount, sampleRate, fftSize) {
+        ensureSpectrumScratchLength(barCount)
+        const maxF = spectrumMaxFrequency()
+        const key = `${barCount}:${sampleRate}:${fftSize}:${maxF}`
+        if (spectrumBinCenterKey === key) return spectrumBinCenters
+
+        const minF = SPECTRUM_MIN_FREQUENCY
+        const binWidth = sampleRate / Math.max(2, fftSize)
+        const frequencyRatio = maxF / minF
+        const frequencyStepCount = Math.max(1, barCount - 1)
+        for (let i = 0; i < barCount; i++) {
+          const frequency = minF * Math.pow(frequencyRatio, i / frequencyStepCount)
+          spectrumBinCenters[i] = frequency / binWidth
+        }
+        spectrumBinCenterKey = key
+        return spectrumBinCenters
+      }
+
+      function applyLowFrequencyShelfContour(rawBars, binCenters, contourPhase) {
+        ensureSpectrumScratchLength(rawBars.length)
+        contouredLevels.set(rawBars)
+
+        for (let i = 0; i < Math.min(LOW_FREQUENCY_CONTOUR_BAR_LIMIT, rawBars.length); i++) {
+          const level = rawBars[i]
+          if (level < LOW_FREQUENCY_CONTOUR_MIN_LEVEL) continue
+
+          const start = Math.max(0, i - 5)
+          const end = Math.min(LOW_FREQUENCY_CONTOUR_BAR_LIMIT - 1, rawBars.length - 1, i + 5)
+          let localMin = 1
+          let localMax = 0
+          for (let j = start; j <= end; j++) {
+            const neighbor = rawBars[j]
+            if (neighbor < localMin) localMin = neighbor
+            if (neighbor > localMax) localMax = neighbor
+          }
+
+          const localRange = localMax - localMin
+          const flatness =
+            1 - Math.max(0, Math.min(1, localRange / LOW_FREQUENCY_CONTOUR_FLAT_RANGE))
+          const depth =
+            LOW_FREQUENCY_CONTOUR_BASE_DEPTH +
+            (LOW_FREQUENCY_CONTOUR_DEPTH - LOW_FREQUENCY_CONTOUR_BASE_DEPTH) * flatness
+          const contour = lowFrequencySubBinContour(binCenters[i], i, contourPhase)
+          const gain = 1 + (contour - 1) * (depth / LOW_FREQUENCY_CONTOUR_DEPTH)
+          contouredLevels[i] = Math.max(0, Math.min(1, level * gain))
+        }
+
+        return contouredLevels
+      }
+
+      function summarizeBarSlice(values, limit) {
+        const slice = Array.from(values.slice(0, Math.min(limit, values.length)))
+        if (slice.length === 0) return { min: 0, max: 0, uniqueHeights: 0 }
+        const rounded = slice.map((value) => Math.round(value * 240))
+        return {
+          min: Math.min(...slice),
+          max: Math.max(...slice),
+          uniqueHeights: new Set(rounded).size
+        }
+      }
+
+      function ensurePrecomputedBarBufferLength(length) {
+        if (precomputedBars.length === length) return
+        precomputedBars = new Float32Array(length)
+        previousPrecomputedBars = new Float32Array(length)
+        displayPrecomputedBars = new Float32Array(length)
+      }
+
+      function currentPrecomputedBarValue(index, now) {
+        const elapsed = now - precomputedBarsTransitionStartedAt
+        const progress = Math.max(0, Math.min(1, elapsed / PRECOMPUTED_BAR_TRANSITION_MS))
+        const eased = progress * progress * (3 - 2 * progress)
+        const previousValue = previousPrecomputedBars[index] || 0
+        const targetValue = precomputedBars[index] || 0
+        const value = previousValue + (targetValue - previousValue) * eased
+        displayPrecomputedBars[index] = value
+        return value
+      }
+
+      function spectrumMaxFrequency() {
+        const nyquist = hostSampleRate > 0 ? hostSampleRate / 2 : 20000
+        return Math.max(
+          SPECTRUM_MIN_FREQUENCY,
+          Math.min(20000, hostMaxFrequency || nyquist, nyquist)
+        )
+      }
+
+      function spectrumFrequencyPosition(frequency) {
+        const maxF = spectrumMaxFrequency()
+        if (frequency <= SPECTRUM_MIN_FREQUENCY) return 0
+        if (frequency >= maxF) return 1
+        return (
+          Math.log(frequency / SPECTRUM_MIN_FREQUENCY) / Math.log(maxF / SPECTRUM_MIN_FREQUENCY)
+        )
+      }
+
+      function updateHzLabels() {
+        const maxF = spectrumMaxFrequency()
+        for (const label of hzLabelEls) {
+          const frequency = Number(label.dataset.frequency)
+          const visible = Number.isFinite(frequency) && frequency <= maxF
+          label.style.display = visible ? 'block' : 'none'
+          if (!visible) continue
+          const position = spectrumFrequencyPosition(frequency)
+          label.style.left = position * 100 + '%'
+          label.style.transform =
+            position <= 0.001
+              ? 'translateX(0)'
+              : position >= 0.999
+                ? 'translateX(-100%)'
+                : 'translateX(-50%)'
+        }
+      }
+
+      function syncTitleLineClass() {
+        const titleEl = document.getElementById('display-title')
+        if (!titleEl) return
+        titleEl.classList.remove('single-line')
+        const range = document.createRange()
+        range.selectNodeContents(titleEl)
+        const lineTops = new Set()
+        for (const rect of range.getClientRects()) {
+          if (rect.width <= 1 || rect.height <= 1) continue
+          lineTops.add(Math.round(rect.top))
+        }
+        range.detach()
+        titleEl.classList.toggle('single-line', lineTops.size <= 1)
+      }
+
+      function retargetPrecomputedBars(incomingBars) {
+        const now = performance.now()
+        ensurePrecomputedBarBufferLength(incomingBars.length)
+        for (let i = 0; i < incomingBars.length; i++) {
+          previousPrecomputedBars[i] = currentPrecomputedBarValue(i, now)
+        }
+        for (let i = 0; i < incomingBars.length; i++) {
+          const value =
+            typeof incomingBars[i] === 'number' && isFinite(incomingBars[i])
+              ? Math.max(0, Math.min(1, incomingBars[i]))
+              : 0
+          precomputedBars[i] = value
+        }
+        precomputedBarsTransitionStartedAt = now
+        usingPrecomputedBars = true
+      }
+
+      function renderSpectrumFrame(now) {
+        const deltaSeconds = Math.min(0.05, Math.max(0.001, (now - lastSpectrumFrameAt) / 1000))
+        lastSpectrumFrameAt = now
+
+        const width = spectrumCanvas.width / (window.devicePixelRatio || 1)
+        const height = spectrumCanvas.height / (window.devicePixelRatio || 1)
+
+        specCtx.clearRect(0, 0, width, height)
+
+        // Grid lines (unchanged from original)
+        specCtx.strokeStyle = 'rgba(0, 0, 0, 0.04)'
+        specCtx.lineWidth = 1
+
+        const numGridLines = 6
+        for (let j = 0; j < numGridLines; j++) {
+          const y = 5 + (j / (numGridLines - 1)) * (height - 15)
+          specCtx.beginPath()
+          specCtx.moveTo(0, y)
+          specCtx.lineTo(width, y)
+          specCtx.stroke()
+        }
+
+        const maxGridFrequency = spectrumMaxFrequency()
+        for (const frequency of FREQUENCY_TICKS) {
+          if (frequency > maxGridFrequency) continue
+          const x = spectrumFrequencyPosition(frequency) * width
+          specCtx.beginPath()
+          specCtx.moveTo(x, 0)
+          specCtx.lineTo(x, height)
+          specCtx.stroke()
+        }
+
+        const barCount = SPECTRUM_BAR_COUNT
+        ensureSpectrumScratchLength(barCount)
+        const barSpacing = 1.5
+        const totalSpacing = barSpacing * (barCount - 1)
+        const barWidth = (width - totalSpacing) / barCount
+
+        let sumSq = 0
+        const minF = 20
+        const maxF = spectrumMaxFrequency()
+        const sampleRate = hostSampleRate || 44100
+        const fftSize = Math.max(2, dataArray.length * 2)
+        const binWidth = sampleRate / fftSize
+        const maxBinIndex = Math.max(0, dataArray.length - 1)
+        let binCenters = null
+        let rawDebugBars = null
+        let contourPhase = lowFrequencyContourPhase
+
+        if (!usingPrecomputedBars) {
+          binCenters = buildLogFrequencyBinCenters(barCount, sampleRate, fftSize)
+          const frequencyRatio = maxF / minF
+          for (let i = 0; i < barCount; i++) {
+            const binIndexDecimal = binCenters[i]
+            const indexLow = Math.min(Math.floor(binIndexDecimal), maxBinIndex)
+            const indexHigh = Math.min(indexLow + 1, maxBinIndex)
+            const fract = binIndexDecimal - indexLow
+            const valLow = (dataArray[indexLow] || 0) * 255
+            const valHigh = (dataArray[indexHigh] || 0) * 255
+            const val = valLow + (valHigh - valLow) * fract
+            rawComputedBars[i] = val / 255
+          }
+          rawDebugBars = rawComputedBars
+          contourPhase = updateLowFrequencyContourPhase(rawComputedBars, deltaSeconds)
+          sourceLevels = applyLowFrequencyShelfContour(rawComputedBars, binCenters, contourPhase)
         } else {
-          waveCtx.lineTo(x, y);
-        }
-      }
-
-      waveCtx.stroke();
-      waveCtx.restore();
-    }
-
-    // --- SPECTRUM RENDER LOOP ---
-    let lastSpectrumHeights = new Float32Array(SPECTRUM_BAR_COUNT).fill(0);
-    let rawComputedBars = new Float32Array(SPECTRUM_BAR_COUNT);
-    let rawPrecomputedBars = new Float32Array(SPECTRUM_BAR_COUNT);
-    let sourceLevels = new Float32Array(SPECTRUM_BAR_COUNT);
-    let contouredLevels = new Float32Array(SPECTRUM_BAR_COUNT);
-    let displayDebugBars = new Float32Array(SPECTRUM_BAR_COUNT);
-    let spectrumBinCenters = new Float32Array(SPECTRUM_BAR_COUNT);
-    let spectrumBinCenterKey = '';
-    let spectrumAnimationFrame = 0;
-    let playheadAnimationFrame = 0;
-    const SPECTRUM_ATTACK_SECONDS = 0.014;
-    const SPECTRUM_DECAY_SECONDS = 0.16;
-    const FREQUENCY_TICKS = [20, 200, 1000, 2000, 5000, 10000, 20000];
-    const SPECTRUM_MIN_FREQUENCY = 20;
-    const SPECTRUM_DISPLAY_GAIN = 1.32;
-    const SPECTRUM_DISPLAY_RANGE = 1.42;
-    const SPECTRUM_DISPLAY_GAMMA = 0.78;
-    const SPECTRUM_DISPLAY_HEADROOM = 1;
-    const SPECTRUM_HEIGHT_SCALE = 1;
-    const SPECTRUM_CONTRAST_FLOOR = 0.16;
-    const SPECTRUM_CONTRAST_POWER = 0.68;
-    const LOW_FREQUENCY_CONTOUR_BAR_LIMIT = 72;
-    const LOW_FREQUENCY_CONTOUR_MIN_LEVEL = 0.14;
-    const LOW_FREQUENCY_CONTOUR_FLAT_RANGE = 0.2;
-    const LOW_FREQUENCY_CONTOUR_BASE_DEPTH = 0.24;
-    const LOW_FREQUENCY_CONTOUR_DEPTH = 0.52;
-    let lowFrequencyContourPhase = 0;
-    let previousLowFrequencyContourLevels = new Float32Array(LOW_FREQUENCY_CONTOUR_BAR_LIMIT);
-
-    function smoothSpectrumHeight(currentHeight, targetHeight, deltaSeconds) {
-      const smoothingSeconds = targetHeight > currentHeight
-        ? SPECTRUM_ATTACK_SECONDS
-        : SPECTRUM_DECAY_SECONDS;
-      const smoothingAlpha = 1 - Math.exp(-deltaSeconds / smoothingSeconds);
-      return currentHeight + (targetHeight - currentHeight) * smoothingAlpha;
-    }
-
-    function visualizerDisplayLevel(value) {
-      const ranged = Math.max(0, Math.min(SPECTRUM_DISPLAY_RANGE, Number.isFinite(value) ? value : 0));
-      const normalized = ranged / SPECTRUM_DISPLAY_RANGE;
-      const contrasted = normalized <= SPECTRUM_CONTRAST_FLOOR
-        ? normalized * 0.58
-        : SPECTRUM_CONTRAST_FLOOR * 0.58 +
-          Math.pow(
-            (normalized - SPECTRUM_CONTRAST_FLOOR) / (1 - SPECTRUM_CONTRAST_FLOOR),
-            SPECTRUM_CONTRAST_POWER
-          ) *
-          (1 - SPECTRUM_CONTRAST_FLOOR * 0.58);
-      const level = Math.min(1, contrasted * SPECTRUM_DISPLAY_GAIN);
-      return Math.pow(level, SPECTRUM_DISPLAY_GAMMA) * SPECTRUM_DISPLAY_HEADROOM;
-    }
-
-    function updateLowFrequencyContourPhase(rawBars, deltaSeconds) {
-      const limit = Math.min(LOW_FREQUENCY_CONTOUR_BAR_LIMIT, rawBars.length);
-      if (limit <= 0) return lowFrequencyContourPhase;
-
-      let weightedIndex = 0;
-      let totalLevel = 0;
-      let flux = 0;
-      for (let i = 0; i < limit; i++) {
-        const level = Math.max(0, Math.min(1, Number.isFinite(rawBars[i]) ? rawBars[i] : 0));
-        weightedIndex += level * (i / Math.max(1, limit - 1));
-        totalLevel += level;
-        flux += Math.abs(level - previousLowFrequencyContourLevels[i]);
-        previousLowFrequencyContourLevels[i] = level;
-      }
-
-      if (totalLevel <= 0.001) return lowFrequencyContourPhase;
-
-      const centroid = weightedIndex / totalLevel;
-      const normalizedFlux = Math.min(1, flux / limit / 0.08);
-      const motionRate = 0.65 + centroid * 1.25 + normalizedFlux * 1.8;
-      lowFrequencyContourPhase += Math.max(0.001, deltaSeconds) * motionRate * 4.2;
-      return lowFrequencyContourPhase;
-    }
-
-    function lowFrequencySubBinContour(binIndexDecimal, barIndex, phase) {
-      const primary = Math.sin(binIndexDecimal * 5.0 + phase * 1.7);
-      const secondary = Math.sin((barIndex + 1) * 1.618 + binIndexDecimal * 0.73 - phase * 2.3);
-      const tertiary = Math.sin((barIndex + 1) * 2.37 + phase * 0.9);
-      const contour = Math.max(
-        0,
-        Math.min(1, 0.5 + (primary * 0.56 + secondary * 0.28 + tertiary * 0.16) * 0.5)
-      );
-      return 1 - LOW_FREQUENCY_CONTOUR_DEPTH * 0.5 + LOW_FREQUENCY_CONTOUR_DEPTH * contour;
-    }
-
-    function ensureSpectrumScratchLength(barCount) {
-      if (sourceLevels.length === barCount) return;
-      rawComputedBars = new Float32Array(barCount);
-      rawPrecomputedBars = new Float32Array(barCount);
-      sourceLevels = new Float32Array(barCount);
-      contouredLevels = new Float32Array(barCount);
-      displayDebugBars = new Float32Array(barCount);
-      spectrumBinCenters = new Float32Array(barCount);
-      lastSpectrumHeights = new Float32Array(barCount);
-      spectrumBinCenterKey = '';
-    }
-
-    function buildLogFrequencyBinCenters(barCount, sampleRate, fftSize) {
-      ensureSpectrumScratchLength(barCount);
-      const maxF = spectrumMaxFrequency();
-      const key = `${barCount}:${sampleRate}:${fftSize}:${maxF}`;
-      if (spectrumBinCenterKey === key) return spectrumBinCenters;
-
-      const minF = SPECTRUM_MIN_FREQUENCY;
-      const binWidth = sampleRate / Math.max(2, fftSize);
-      const frequencyRatio = maxF / minF;
-      const frequencyStepCount = Math.max(1, barCount - 1);
-      for (let i = 0; i < barCount; i++) {
-        const frequency = minF * Math.pow(frequencyRatio, i / frequencyStepCount);
-        spectrumBinCenters[i] = frequency / binWidth;
-      }
-      spectrumBinCenterKey = key;
-      return spectrumBinCenters;
-    }
-
-    function applyLowFrequencyShelfContour(rawBars, binCenters, contourPhase) {
-      ensureSpectrumScratchLength(rawBars.length);
-      contouredLevels.set(rawBars);
-
-      for (let i = 0; i < Math.min(LOW_FREQUENCY_CONTOUR_BAR_LIMIT, rawBars.length); i++) {
-        const level = rawBars[i];
-        if (level < LOW_FREQUENCY_CONTOUR_MIN_LEVEL) continue;
-
-        const start = Math.max(0, i - 5);
-        const end = Math.min(LOW_FREQUENCY_CONTOUR_BAR_LIMIT - 1, rawBars.length - 1, i + 5);
-        let localMin = 1;
-        let localMax = 0;
-        for (let j = start; j <= end; j++) {
-          const neighbor = rawBars[j];
-          if (neighbor < localMin) localMin = neighbor;
-          if (neighbor > localMax) localMax = neighbor;
+          for (let i = 0; i < barCount; i++) {
+            rawPrecomputedBars[i] = currentPrecomputedBarValue(i, now)
+          }
+          binCenters = buildLogFrequencyBinCenters(barCount, sampleRate, fftSize)
+          contourPhase = updateLowFrequencyContourPhase(rawPrecomputedBars, deltaSeconds)
+          sourceLevels = applyLowFrequencyShelfContour(rawPrecomputedBars, binCenters, contourPhase)
         }
 
-        const localRange = localMax - localMin;
-        const flatness =
-          1 - Math.max(0, Math.min(1, localRange / LOW_FREQUENCY_CONTOUR_FLAT_RANGE));
-        const depth =
-          LOW_FREQUENCY_CONTOUR_BASE_DEPTH +
-          (LOW_FREQUENCY_CONTOUR_DEPTH - LOW_FREQUENCY_CONTOUR_BASE_DEPTH) * flatness;
-        const contour = lowFrequencySubBinContour(binCenters[i], i, contourPhase);
-        const gain = 1 + (contour - 1) * (depth / LOW_FREQUENCY_CONTOUR_DEPTH);
-        contouredLevels[i] = Math.max(0, Math.min(1, level * gain));
-      }
-
-      return contouredLevels;
-    }
-
-    function summarizeBarSlice(values, limit) {
-      const slice = Array.from(values.slice(0, Math.min(limit, values.length)));
-      if (slice.length === 0) return { min: 0, max: 0, uniqueHeights: 0 };
-      const rounded = slice.map((value) => Math.round(value * 240));
-      return {
-        min: Math.min(...slice),
-        max: Math.max(...slice),
-        uniqueHeights: new Set(rounded).size
-      };
-    }
-
-    function ensurePrecomputedBarBufferLength(length) {
-      if (precomputedBars.length === length) return;
-      precomputedBars = new Float32Array(length);
-      previousPrecomputedBars = new Float32Array(length);
-      displayPrecomputedBars = new Float32Array(length);
-    }
-
-    function currentPrecomputedBarValue(index, now) {
-      const elapsed = now - precomputedBarsTransitionStartedAt;
-      const progress = Math.max(0, Math.min(1, elapsed / PRECOMPUTED_BAR_TRANSITION_MS));
-      const eased = progress * progress * (3 - 2 * progress);
-      const previousValue = previousPrecomputedBars[index] || 0;
-      const targetValue = precomputedBars[index] || 0;
-      const value = previousValue + (targetValue - previousValue) * eased;
-      displayPrecomputedBars[index] = value;
-      return value;
-    }
-
-    function spectrumMaxFrequency() {
-      const nyquist = hostSampleRate > 0 ? hostSampleRate / 2 : 20000;
-      return Math.max(SPECTRUM_MIN_FREQUENCY, Math.min(20000, hostMaxFrequency || nyquist, nyquist));
-    }
-
-    function spectrumFrequencyPosition(frequency) {
-      const maxF = spectrumMaxFrequency();
-      if (frequency <= SPECTRUM_MIN_FREQUENCY) return 0;
-      if (frequency >= maxF) return 1;
-      return Math.log(frequency / SPECTRUM_MIN_FREQUENCY) / Math.log(maxF / SPECTRUM_MIN_FREQUENCY);
-    }
-
-    function updateHzLabels() {
-      const maxF = spectrumMaxFrequency();
-      for (const label of hzLabelEls) {
-        const frequency = Number(label.dataset.frequency);
-        const visible = Number.isFinite(frequency) && frequency <= maxF;
-        label.style.display = visible ? 'block' : 'none';
-        if (!visible) continue;
-        const position = spectrumFrequencyPosition(frequency);
-        label.style.left = (position * 100) + '%';
-        label.style.transform = position <= 0.001
-          ? 'translateX(0)'
-          : position >= 0.999
-            ? 'translateX(-100%)'
-            : 'translateX(-50%)';
-      }
-    }
-
-    function syncTitleLineClass() {
-      const titleEl = document.getElementById('display-title');
-      if (!titleEl) return;
-      titleEl.classList.remove('single-line');
-      const range = document.createRange();
-      range.selectNodeContents(titleEl);
-      const lineTops = new Set();
-      for (const rect of range.getClientRects()) {
-        if (rect.width <= 1 || rect.height <= 1) continue;
-        lineTops.add(Math.round(rect.top));
-      }
-      range.detach();
-      titleEl.classList.toggle('single-line', lineTops.size <= 1);
-    }
-
-    function retargetPrecomputedBars(incomingBars) {
-      const now = performance.now();
-      ensurePrecomputedBarBufferLength(incomingBars.length);
-      for (let i = 0; i < incomingBars.length; i++) {
-        previousPrecomputedBars[i] = currentPrecomputedBarValue(i, now);
-      }
-      for (let i = 0; i < incomingBars.length; i++) {
-        const value = typeof incomingBars[i] === 'number' && isFinite(incomingBars[i])
-          ? Math.max(0, Math.min(1, incomingBars[i]))
-          : 0;
-        precomputedBars[i] = value;
-      }
-      precomputedBarsTransitionStartedAt = now;
-      usingPrecomputedBars = true;
-    }
-
-    function renderSpectrumFrame(now) {
-      const deltaSeconds = Math.min(0.05, Math.max(0.001, (now - lastSpectrumFrameAt) / 1000));
-      lastSpectrumFrameAt = now;
-
-      const width = spectrumCanvas.width / (window.devicePixelRatio || 1);
-      const height = spectrumCanvas.height / (window.devicePixelRatio || 1);
-
-      specCtx.clearRect(0, 0, width, height);
-
-      // Grid lines (unchanged from original)
-      specCtx.strokeStyle = 'rgba(0, 0, 0, 0.04)';
-      specCtx.lineWidth = 1;
-
-      const numGridLines = 6;
-      for (let j = 0; j < numGridLines; j++) {
-        const y = 5 + (j / (numGridLines - 1)) * (height - 15);
-        specCtx.beginPath();
-        specCtx.moveTo(0, y);
-        specCtx.lineTo(width, y);
-        specCtx.stroke();
-      }
-
-      const maxGridFrequency = spectrumMaxFrequency();
-      for (const frequency of FREQUENCY_TICKS) {
-        if (frequency > maxGridFrequency) continue;
-        const x = spectrumFrequencyPosition(frequency) * width;
-        specCtx.beginPath();
-        specCtx.moveTo(x, 0);
-        specCtx.lineTo(x, height);
-        specCtx.stroke();
-      }
-
-      const barCount = SPECTRUM_BAR_COUNT;
-      ensureSpectrumScratchLength(barCount);
-      const barSpacing = 1.5;
-      const totalSpacing = barSpacing * (barCount - 1);
-      const barWidth = (width - totalSpacing) / barCount;
-
-      let sumSq = 0;
-      const minF = 20;
-      const maxF = spectrumMaxFrequency();
-      const sampleRate = hostSampleRate || 44100;
-      const fftSize = Math.max(2, dataArray.length * 2);
-      const binWidth = sampleRate / fftSize;
-      const maxBinIndex = Math.max(0, dataArray.length - 1);
-      let binCenters = null;
-      let rawDebugBars = null;
-      let contourPhase = lowFrequencyContourPhase;
-
-      if (!usingPrecomputedBars) {
-        binCenters = buildLogFrequencyBinCenters(barCount, sampleRate, fftSize);
-        const frequencyRatio = maxF / minF;
         for (let i = 0; i < barCount; i++) {
-          const binIndexDecimal = binCenters[i];
-          const indexLow = Math.min(Math.floor(binIndexDecimal), maxBinIndex);
-          const indexHigh = Math.min(indexLow + 1, maxBinIndex);
-          const fract = binIndexDecimal - indexLow;
-          const valLow = (dataArray[indexLow] || 0) * 255;
-          const valHigh = (dataArray[indexHigh] || 0) * 255;
-          const val = valLow + (valHigh - valLow) * fract;
-          rawComputedBars[i] = val / 255;
+          const val = visualizerDisplayLevel(sourceLevels[i]) * 255
+          displayDebugBars[i] = val / 255
+
+          sumSq += val * val
+
+          const targetHeight = (val / 255) * height * SPECTRUM_HEIGHT_SCALE
+          lastSpectrumHeights[i] = smoothSpectrumHeight(
+            lastSpectrumHeights[i],
+            targetHeight,
+            deltaSeconds
+          )
+
+          const finalBarH = lastSpectrumHeights[i]
+
+          specCtx.fillStyle = '#3c3e44'
+          specCtx.fillRect(i * (barWidth + barSpacing), height - finalBarH, barWidth, finalBarH)
         }
-        rawDebugBars = rawComputedBars;
-        contourPhase = updateLowFrequencyContourPhase(rawComputedBars, deltaSeconds);
-        sourceLevels = applyLowFrequencyShelfContour(rawComputedBars, binCenters, contourPhase);
-      } else {
-        for (let i = 0; i < barCount; i++) {
-          rawPrecomputedBars[i] = currentPrecomputedBarValue(i, now);
+
+        lastSpectrumDebug = {
+          usingPrecomputedBars,
+          sampleRate,
+          maxFrequency: maxF,
+          lowFrequencyContourPhase: contourPhase,
+          raw: rawDebugBars ? summarizeBarSlice(rawDebugBars, 72) : null,
+          contoured: summarizeBarSlice(sourceLevels, 72),
+          display: summarizeBarSlice(displayDebugBars, 72)
         }
-        binCenters = buildLogFrequencyBinCenters(barCount, sampleRate, fftSize);
-        contourPhase = updateLowFrequencyContourPhase(rawPrecomputedBars, deltaSeconds);
-        sourceLevels = applyLowFrequencyShelfContour(rawPrecomputedBars, binCenters, contourPhase);
+
+        if (isPlaying && now - lastMetricsUpdateAt >= 100) {
+          lastMetricsUpdateAt = now
+          const rms = Math.sqrt(sumSq / barCount) / 128
+          let dB =
+            typeof nativeLufsMomentary === 'number'
+              ? nativeLufsMomentary
+              : typeof nativeRmsDb === 'number'
+                ? nativeRmsDb
+                : 20 * Math.log10(Math.max(rms, 0.0001))
+          if (typeof nativeLufsMomentary !== 'number' && typeof nativeRmsDb !== 'number') {
+            dB = dB * 0.5 - 6.0
+          }
+          if (dB > 0) dB = 0
+          if (dB < -60) dB = -60
+
+          loudnessEl.innerText = dB.toFixed(1)
+          const fillPercent = Math.max(0, Math.min(100, ((dB + 40) / 40) * 100))
+          loudnessBar.style.transform = 'scaleX(' + fillPercent / 100 + ')'
+
+          let peakHeight = 0
+          for (let i = 0; i < barCount; i++) {
+            if (lastSpectrumHeights[i] > peakHeight) peakHeight = lastSpectrumHeights[i]
+          }
+          const peak =
+            typeof nativePeakDb === 'number'
+              ? Math.pow(10, Math.max(-60, nativePeakDb) / 20)
+              : peakHeight / height
+          const dynRange = Math.max(1.0, (peak / (rms + 0.05)) * 1.5).toFixed(1)
+          dynamicRangeEl.innerText = dynRange
+          dynamicRangeBar.style.transform =
+            'scaleX(' + Math.min(100, (dynRange / 15) * 100) / 100 + ')'
+        }
       }
 
-      for (let i = 0; i < barCount; i++) {
-        const val = visualizerDisplayLevel(sourceLevels[i]) * 255;
-        displayDebugBars[i] = val / 255;
-
-        sumSq += val * val;
-
-        const targetHeight = (val / 255) * height * SPECTRUM_HEIGHT_SCALE;
-        lastSpectrumHeights[i] = smoothSpectrumHeight(
-          lastSpectrumHeights[i],
-          targetHeight,
-          deltaSeconds
-        );
-
-        const finalBarH = lastSpectrumHeights[i];
-
-        specCtx.fillStyle = '#3c3e44';
-        specCtx.fillRect(
-          i * (barWidth + barSpacing),
-          height - finalBarH,
-          barWidth,
-          finalBarH
-        );
+      function drawSpectrum() {
+        spectrumAnimationFrame = 0
+        renderSpectrumFrame(performance.now())
+        if (isPlaying) {
+          spectrumAnimationFrame = requestAnimationFrame(drawSpectrum)
+        }
       }
 
-      lastSpectrumDebug = {
-        usingPrecomputedBars,
-        sampleRate,
-        maxFrequency: maxF,
-        lowFrequencyContourPhase: contourPhase,
-        raw: rawDebugBars ? summarizeBarSlice(rawDebugBars, 72) : null,
-        contoured: summarizeBarSlice(sourceLevels, 72),
-        display: summarizeBarSlice(displayDebugBars, 72)
-      };
-
-      if (isPlaying && now - lastMetricsUpdateAt >= 100) {
-        lastMetricsUpdateAt = now;
-        const rms = Math.sqrt(sumSq / barCount) / 128;
-        let dB = typeof nativeLufsMomentary === 'number'
-          ? nativeLufsMomentary
-          : typeof nativeRmsDb === 'number'
-            ? nativeRmsDb
-            : 20 * Math.log10(Math.max(rms, 0.0001));
-        if (typeof nativeLufsMomentary !== 'number' && typeof nativeRmsDb !== 'number') {
-          dB = (dB * 0.5) - 6.0;
-        }
-        if (dB > 0) dB = 0;
-        if (dB < -60) dB = -60;
-
-        loudnessEl.innerText = dB.toFixed(1);
-        const fillPercent = Math.max(0, Math.min(100, ((dB + 40) / 40) * 100));
-        loudnessBar.style.transform = 'scaleX(' + (fillPercent / 100) + ')';
-
-        let peakHeight = 0;
-        for (let i = 0; i < barCount; i++) {
-          if (lastSpectrumHeights[i] > peakHeight) peakHeight = lastSpectrumHeights[i];
-        }
-        const peak = typeof nativePeakDb === 'number'
-          ? Math.pow(10, Math.max(-60, nativePeakDb) / 20)
-          : peakHeight / height;
-        const dynRange = Math.max(1.0, (peak / (rms + 0.05)) * 1.5).toFixed(1);
-        dynamicRangeEl.innerText = dynRange;
-        dynamicRangeBar.style.transform = 'scaleX(' + (Math.min(100, (dynRange / 15) * 100) / 100) + ')';
+      function startSpectrumLoop() {
+        if (spectrumAnimationFrame !== 0) return
+        spectrumAnimationFrame = requestAnimationFrame(drawSpectrum)
       }
-    }
 
-    function drawSpectrum() {
-      spectrumAnimationFrame = 0;
-      renderSpectrumFrame(performance.now());
-      if (isPlaying) {
-        spectrumAnimationFrame = requestAnimationFrame(drawSpectrum);
+      function stopSpectrumLoop() {
+        if (spectrumAnimationFrame === 0) return
+        cancelAnimationFrame(spectrumAnimationFrame)
+        spectrumAnimationFrame = 0
       }
-    }
 
-    function startSpectrumLoop() {
-      if (spectrumAnimationFrame !== 0) return;
-      spectrumAnimationFrame = requestAnimationFrame(drawSpectrum);
-    }
+      // --- PLAYHEAD MOVEMENT (host-driven) ---
+      function updatePlayhead() {
+        playheadAnimationFrame = 0
+        if (!isPlaying || songDuration <= 0) return
 
-    function stopSpectrumLoop() {
-      if (spectrumAnimationFrame === 0) return;
-      cancelAnimationFrame(spectrumAnimationFrame);
-      spectrumAnimationFrame = 0;
-    }
+        const percent = (pausedTime / songDuration) * 100
+        playheadLine.style.left = percent + '%'
+        playheadBadge.style.left = percent + '%'
+        playheadBadge.innerText = formatTime(pausedTime)
 
-    // --- PLAYHEAD MOVEMENT (host-driven) ---
-    function updatePlayhead() {
-      playheadAnimationFrame = 0;
-      if (!isPlaying || songDuration <= 0) return;
-
-      const percent = (pausedTime / songDuration) * 100;
-      playheadLine.style.left = percent + '%';
-      playheadBadge.style.left = percent + '%';
-      playheadBadge.innerText = formatTime(pausedTime);
-
-      playheadAnimationFrame = requestAnimationFrame(updatePlayhead);
-    }
-
-    function startPlayheadLoop() {
-      if (playheadAnimationFrame !== 0) return;
-      playheadAnimationFrame = requestAnimationFrame(updatePlayhead);
-    }
-
-    const visibilityAnimationController = window.createVisibilityAnimationController(
-      () => document.hidden,
-      () => { stopSpectrumLoop(); stopPlayheadLoop(); },
-      () => { if (isPlaying) { startSpectrumLoop(); startPlayheadLoop(); } }
-    );
-    document.addEventListener('visibilitychange', () => visibilityAnimationController.onVisibilityChange());
-
-    function stopPlayheadLoop() {
-      if (playheadAnimationFrame === 0) return;
-      cancelAnimationFrame(playheadAnimationFrame);
-      playheadAnimationFrame = 0;
-    }
-
-    function formatTime(sec) {
-      if (!isFinite(sec) || sec < 0) sec = 0;
-      const minutes = Math.floor(sec / 60);
-      const seconds = Math.floor(sec % 60);
-      return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-    }
-
-    function syncPlayPauseVisual() {
-      document.body.classList.toggle('is-playing', isPlaying);
-      if (isPlaying) {
-        btnPlayPause.classList.remove('paused');
-        svgPlay.style.display = 'none';
-        svgPause.style.display = 'block';
-      } else {
-        btnPlayPause.classList.add('paused');
-        svgPlay.style.display = 'block';
-        svgPause.style.display = 'none';
+        playheadAnimationFrame = requestAnimationFrame(updatePlayhead)
       }
-    }
 
-    function postHostControl(action, payload = {}) {
-      window.parent.postMessage({ kind: 'control', action, ...payload }, '*');
-    }
+      function startPlayheadLoop() {
+        if (playheadAnimationFrame !== 0) return
+        playheadAnimationFrame = requestAnimationFrame(updatePlayhead)
+      }
 
-    function isNumericSequence(value) {
-      return Array.isArray(value) || ArrayBuffer.isView(value);
-    }
-
-    btnPlayPause.addEventListener('click', () => {
-      postHostControl('togglePlay');
-    });
-
-    document.getElementById('btn-prev').addEventListener('click', () => {
-      postHostControl('previous');
-    });
-
-    document.getElementById('btn-next').addEventListener('click', () => {
-      postHostControl('next');
-    });
-
-    scrubber.addEventListener('click', (event) => {
-      if (songDuration <= 0) return;
-      const rect = scrubber.getBoundingClientRect();
-      const progress = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-      const position = progress * songDuration;
-      pausedTime = position;
-      playheadLine.style.left = (progress * 100) + '%';
-      playheadBadge.style.left = (progress * 100) + '%';
-      playheadBadge.innerText = formatTime(position);
-      postHostControl('seek', { position });
-    });
-
-    // --- HOST MESSAGE BRIDGE ---
-    // Receives spectrum data, track metadata, cover URL, and playback state
-    // from the parent Vue component (AudioVisualizerPanel.vue).
-    let albumCoverRequestId = 0;
-
-    function updateAlbumCover(url) {
-      const mountedImage = document.getElementById('album-cover-img');
-      if (!mountedImage) return;
-
-      const requestId = ++albumCoverRequestId;
-      mountedImage.style.visibility = 'hidden';
-      mountedImage.removeAttribute('src');
-      if (typeof url !== 'string' || url.trim().length === 0) return;
-
-      const candidate = new Image();
-      candidate.id = 'album-cover-img';
-      candidate.alt = '';
-      candidate.style.visibility = 'hidden';
-      candidate.onload = () => {
-        if (requestId !== albumCoverRequestId) return;
-        const currentImage = document.getElementById('album-cover-img');
-        if (!currentImage) return;
-        currentImage.replaceWith(candidate);
-        candidate.style.visibility = 'visible';
-        candidate.onload = null;
-        candidate.onerror = null;
-      };
-      candidate.onerror = () => {
-        if (requestId !== albumCoverRequestId) return;
-        mountedImage.style.visibility = 'hidden';
-        mountedImage.removeAttribute('src');
-      };
-      candidate.src = url.trim();
-    }
-
-    window.addEventListener('message', (event) => {
-      const msg = event.data;
-      if (!msg || typeof msg.kind !== 'string') return;
-
-      switch (msg.kind) {
-        case 'spectrum': {
-          const incomingBars = isNumericSequence(msg.bars) ? msg.bars : null;
-          const incoming = isNumericSequence(msg.data) ? msg.data : null;
-          if (incomingBars && incomingBars.length > 0) {
-            retargetPrecomputedBars(incomingBars);
-          } else if (incoming && incoming.length > 0) {
-            if (dataArray.length !== incoming.length) {
-              dataArray = new Float32Array(incoming.length);
-            }
-            for (let i = 0; i < incoming.length; i++) {
-              const value = typeof incoming[i] === 'number' && isFinite(incoming[i])
-                ? Math.max(0, Math.min(1, incoming[i]))
-                : 0;
-              dataArray[i] = value;
-            }
-            usingPrecomputedBars = false;
-          }
-          if (typeof msg.sampleRate === 'number' && msg.sampleRate > 0) {
-            hostSampleRate = msg.sampleRate;
-          }
-          if (typeof msg.maxFrequency === 'number' && msg.maxFrequency > 0) {
-            hostMaxFrequency = msg.maxFrequency;
-          } else if (hostSampleRate > 0) {
-            hostMaxFrequency = Math.min(20000, hostSampleRate / 2);
-          }
-          updateHzLabels();
-          nativePeakDb = typeof msg.peakDb === 'number' && isFinite(msg.peakDb) ? msg.peakDb : null;
-          nativeRmsDb = typeof msg.rmsDb === 'number' && isFinite(msg.rmsDb) ? msg.rmsDb : null;
-          nativeLufsMomentary =
-            typeof msg.lufsMomentary === 'number' && isFinite(msg.lufsMomentary)
-              ? msg.lufsMomentary
-              : null;
-          if (msg.active === false) {
-            if (isPlaying) {
-              dataArray.fill(0);
-              precomputedBars.fill(0);
-              previousPrecomputedBars.fill(0);
-              displayPrecomputedBars.fill(0);
-              startSpectrumLoop();
-            } else {
-              dataArray.fill(0);
-              precomputedBars.fill(0);
-              previousPrecomputedBars.fill(0);
-              displayPrecomputedBars.fill(0);
-              lastSpectrumHeights.fill(0);
-              stopSpectrumLoop();
-              renderSpectrumFrame(performance.now());
-            }
-          } else if (isPlaying) {
-            startSpectrumLoop();
-          }
-          // Update live waveform if provided alongside spectrum
-          if (isNumericSequence(msg.waveform) && msg.waveform.length > 0) {
-            liveWaveformPoints = msg.waveform;
-            drawWaveform();
-          }
-          break;
-        }
-        case 'track': {
-          if (msg.track && typeof msg.track === 'object') {
-            currentTrack = { ...defaultTrack, ...msg.track };
-            applyTrackToUI(currentTrack);
-          }
-          break;
-        }
-        case 'bpm': {
-          updateBpmDisplay(msg.bpm, msg.source);
-          break;
-        }
-        case 'cover': {
-          updateAlbumCover(msg.url);
-          break;
-        }
-        case 'playback': {
-          const wasPlaying = isPlaying;
-          isPlaying = !!msg.isPlaying;
-          if (typeof msg.position === 'number' && isFinite(msg.position)) {
-            pausedTime = msg.position;
-          }
-          if (typeof msg.duration === 'number' && isFinite(msg.duration) && msg.duration > 0) {
-            songDuration = msg.duration;
-          }
-          syncPlayPauseVisual();
-          // The loop starters are idempotent, so duration/current-time refreshes
-          // cannot accumulate parallel RAF chains.
+      const visibilityAnimationController = window.createVisibilityAnimationController(
+        () => document.hidden,
+        () => {
+          stopSpectrumLoop()
+          stopPlayheadLoop()
+        },
+        () => {
           if (isPlaying) {
-            startPlayheadLoop();
-            startSpectrumLoop();
-          } else if (!isPlaying) {
-            stopPlayheadLoop();
-            stopSpectrumLoop();
-            // Render final paused position
-            if (songDuration > 0) {
-              const pct = (pausedTime / songDuration) * 100;
-              playheadLine.style.left = pct + '%';
-              playheadBadge.style.left = pct + '%';
-              playheadBadge.innerText = formatTime(pausedTime);
-            }
+            startSpectrumLoop()
+            startPlayheadLoop()
           }
-          break;
+        }
+      )
+      document.addEventListener('visibilitychange', () =>
+        visibilityAnimationController.onVisibilityChange()
+      )
+
+      function stopPlayheadLoop() {
+        if (playheadAnimationFrame === 0) return
+        cancelAnimationFrame(playheadAnimationFrame)
+        playheadAnimationFrame = 0
+      }
+
+      function formatTime(sec) {
+        if (!isFinite(sec) || sec < 0) sec = 0
+        const minutes = Math.floor(sec / 60)
+        const seconds = Math.floor(sec % 60)
+        return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`
+      }
+
+      function syncPlayPauseVisual() {
+        document.body.classList.toggle('is-playing', isPlaying)
+        if (isPlaying) {
+          btnPlayPause.classList.remove('paused')
+          svgPlay.style.display = 'none'
+          svgPause.style.display = 'block'
+        } else {
+          btnPlayPause.classList.add('paused')
+          svgPlay.style.display = 'block'
+          svgPause.style.display = 'none'
         }
       }
-    });
 
-    function applyTrackToUI(track) {
-      document.getElementById('display-title').innerText = track.title || '--';
-      syncTitleLineClass();
-      document.getElementById('display-album').innerText = `From: ${track.album || '--'}`;
-      document.getElementById('display-artist').innerText = track.artist || '--';
-      document.getElementById('display-quality').innerText = track.quality || '--';
-      updateBpmDisplay(track.bpm, track.bpm ? 'metadata' : 'analyzing');
-      document.getElementById('display-genre').innerText = track.genre || '--';
-      document.getElementById('display-duration').innerText = track.duration || '--';
-      document.getElementById('val-dynamic-range').innerText = track.dynamicRange || '--';
-      document.getElementById('val-loudness').innerText = track.loudness || '--';
+      function postHostControl(action, payload = {}) {
+        window.parent.postMessage({ kind: 'control', action, ...payload }, '*')
+      }
 
-      document.getElementById('meta-samplerate').innerText = track.samplerate || '--';
-      document.getElementById('meta-bitdepth').innerText = track.bitdepth || '--';
-      document.getElementById('meta-channels').innerText = track.channels || '--';
-      document.getElementById('meta-bitrate').innerText = track.bitrate || '--';
-      document.getElementById('meta-filesize').innerText = track.filesize || '--';
-      document.getElementById('meta-format').innerText = track.format || '--';
+      function isNumericSequence(value) {
+        return Array.isArray(value) || ArrayBuffer.isView(value)
+      }
 
-      // Timeline end markers (preserved)
-      const timelineLabelsRow = document.getElementById('timeline-time-labels');
-      const step = (track.durationSeconds || 0) / 5;
-      timelineLabelsRow.innerHTML = `
+      btnPlayPause.addEventListener('click', () => {
+        postHostControl('togglePlay')
+      })
+
+      document.getElementById('btn-prev').addEventListener('click', () => {
+        postHostControl('previous')
+      })
+
+      document.getElementById('btn-next').addEventListener('click', () => {
+        postHostControl('next')
+      })
+
+      scrubber.addEventListener('click', (event) => {
+        if (songDuration <= 0) return
+        const rect = scrubber.getBoundingClientRect()
+        const progress = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+        const position = progress * songDuration
+        pausedTime = position
+        playheadLine.style.left = progress * 100 + '%'
+        playheadBadge.style.left = progress * 100 + '%'
+        playheadBadge.innerText = formatTime(position)
+        postHostControl('seek', { position })
+      })
+
+      // --- HOST MESSAGE BRIDGE ---
+      // Receives spectrum data, track metadata, cover URL, and playback state
+      // from the parent Vue component (AudioVisualizerPanel.vue).
+      let albumCoverRequestId = 0
+
+      function updateAlbumCover(url) {
+        const mountedImage = document.getElementById('album-cover-img')
+        if (!mountedImage) return
+
+        const requestId = ++albumCoverRequestId
+        mountedImage.style.visibility = 'hidden'
+        mountedImage.removeAttribute('src')
+        if (typeof url !== 'string' || url.trim().length === 0) return
+
+        const candidate = new Image()
+        candidate.id = 'album-cover-img'
+        candidate.alt = ''
+        candidate.style.visibility = 'hidden'
+        candidate.onload = () => {
+          if (requestId !== albumCoverRequestId) return
+          const currentImage = document.getElementById('album-cover-img')
+          if (!currentImage) return
+          currentImage.replaceWith(candidate)
+          candidate.style.visibility = 'visible'
+          candidate.onload = null
+          candidate.onerror = null
+        }
+        candidate.onerror = () => {
+          if (requestId !== albumCoverRequestId) return
+          mountedImage.style.visibility = 'hidden'
+          mountedImage.removeAttribute('src')
+        }
+        candidate.src = url.trim()
+      }
+
+      window.addEventListener('message', (event) => {
+        const msg = event.data
+        if (!msg || typeof msg.kind !== 'string') return
+
+        switch (msg.kind) {
+          case 'spectrum': {
+            const incomingBars = isNumericSequence(msg.bars) ? msg.bars : null
+            const incoming = isNumericSequence(msg.data) ? msg.data : null
+            if (incomingBars && incomingBars.length > 0) {
+              retargetPrecomputedBars(incomingBars)
+            } else if (incoming && incoming.length > 0) {
+              if (dataArray.length !== incoming.length) {
+                dataArray = new Float32Array(incoming.length)
+              }
+              for (let i = 0; i < incoming.length; i++) {
+                const value =
+                  typeof incoming[i] === 'number' && isFinite(incoming[i])
+                    ? Math.max(0, Math.min(1, incoming[i]))
+                    : 0
+                dataArray[i] = value
+              }
+              usingPrecomputedBars = false
+            }
+            if (typeof msg.sampleRate === 'number' && msg.sampleRate > 0) {
+              hostSampleRate = msg.sampleRate
+            }
+            if (typeof msg.maxFrequency === 'number' && msg.maxFrequency > 0) {
+              hostMaxFrequency = msg.maxFrequency
+            } else if (hostSampleRate > 0) {
+              hostMaxFrequency = Math.min(20000, hostSampleRate / 2)
+            }
+            updateHzLabels()
+            nativePeakDb =
+              typeof msg.peakDb === 'number' && isFinite(msg.peakDb) ? msg.peakDb : null
+            nativeRmsDb = typeof msg.rmsDb === 'number' && isFinite(msg.rmsDb) ? msg.rmsDb : null
+            nativeLufsMomentary =
+              typeof msg.lufsMomentary === 'number' && isFinite(msg.lufsMomentary)
+                ? msg.lufsMomentary
+                : null
+            if (msg.active === false) {
+              if (isPlaying) {
+                dataArray.fill(0)
+                precomputedBars.fill(0)
+                previousPrecomputedBars.fill(0)
+                displayPrecomputedBars.fill(0)
+                startSpectrumLoop()
+              } else {
+                dataArray.fill(0)
+                precomputedBars.fill(0)
+                previousPrecomputedBars.fill(0)
+                displayPrecomputedBars.fill(0)
+                lastSpectrumHeights.fill(0)
+                stopSpectrumLoop()
+                renderSpectrumFrame(performance.now())
+              }
+            } else if (isPlaying) {
+              startSpectrumLoop()
+            }
+            // Update live waveform if provided alongside spectrum
+            if (isNumericSequence(msg.waveform) && msg.waveform.length > 0) {
+              liveWaveformPoints = msg.waveform
+              drawWaveform()
+            }
+            break
+          }
+          case 'track': {
+            if (msg.track && typeof msg.track === 'object') {
+              currentTrack = { ...defaultTrack, ...msg.track }
+              applyTrackToUI(currentTrack)
+            }
+            break
+          }
+          case 'bpm': {
+            updateBpmDisplay(msg.bpm, msg.source)
+            break
+          }
+          case 'cover': {
+            updateAlbumCover(msg.url)
+            break
+          }
+          case 'playback': {
+            const wasPlaying = isPlaying
+            isPlaying = !!msg.isPlaying
+            if (typeof msg.position === 'number' && isFinite(msg.position)) {
+              pausedTime = msg.position
+            }
+            if (typeof msg.duration === 'number' && isFinite(msg.duration) && msg.duration > 0) {
+              songDuration = msg.duration
+            }
+            syncPlayPauseVisual()
+            // The loop starters are idempotent, so duration/current-time refreshes
+            // cannot accumulate parallel RAF chains.
+            if (isPlaying) {
+              startPlayheadLoop()
+              startSpectrumLoop()
+            } else if (!isPlaying) {
+              stopPlayheadLoop()
+              stopSpectrumLoop()
+              // Render final paused position
+              if (songDuration > 0) {
+                const pct = (pausedTime / songDuration) * 100
+                playheadLine.style.left = pct + '%'
+                playheadBadge.style.left = pct + '%'
+                playheadBadge.innerText = formatTime(pausedTime)
+              }
+            }
+            break
+          }
+        }
+      })
+
+      function applyTrackToUI(track) {
+        document.getElementById('display-title').innerText = track.title || '--'
+        syncTitleLineClass()
+        document.getElementById('display-album').innerText = `From: ${track.album || '--'}`
+        document.getElementById('display-artist').innerText = track.artist || '--'
+        document.getElementById('display-quality').innerText = track.quality || '--'
+        updateBpmDisplay(track.bpm, track.bpm ? 'metadata' : 'analyzing')
+        document.getElementById('display-genre').innerText = track.genre || '--'
+        document.getElementById('display-duration').innerText = track.duration || '--'
+        document.getElementById('val-dynamic-range').innerText = track.dynamicRange || '--'
+        document.getElementById('val-loudness').innerText = track.loudness || '--'
+
+        document.getElementById('meta-samplerate').innerText = track.samplerate || '--'
+        document.getElementById('meta-bitdepth').innerText = track.bitdepth || '--'
+        document.getElementById('meta-channels').innerText = track.channels || '--'
+        document.getElementById('meta-bitrate').innerText = track.bitrate || '--'
+        document.getElementById('meta-filesize').innerText = track.filesize || '--'
+        document.getElementById('meta-format').innerText = track.format || '--'
+
+        // Timeline end markers (preserved)
+        const timelineLabelsRow = document.getElementById('timeline-time-labels')
+        const step = (track.durationSeconds || 0) / 5
+        timelineLabelsRow.innerHTML = `
         <span>0:00</span>
         <span>${formatTime(step)}</span>
         <span>${formatTime(step * 2)}</span>
         <span>${formatTime(step * 3)}</span>
         <span>${formatTime(step * 4)}</span>
         <span>${track.duration || '0:00'}</span>
-      `;
-    }
-
-    function updateBpmDisplay(value, source) {
-      source = source || 'analyzing';
-      const display = document.getElementById('display-bpm');
-      const bpmValue = typeof value === 'number' ? value : parseFloat(value);
-      if (!display) return;
-      if (isNaN(bpmValue)) {
-        display.innerText = source === 'analyzing' ? '--' : '--';
-        display.removeAttribute('title');
-      } else {
-        display.innerText = bpmValue.toFixed(1).replace(/\.0$/, '');
-        display.title = source === 'live' ? 'Live BPM' : 'Metadata BPM';
+      `
       }
 
-      // BPM meter graphic (preserved)
-      const blocks = document.querySelectorAll('.bpm-meter-block');
-      if (isNaN(bpmValue)) {
-        blocks.forEach(b => b.classList.remove('filled'));
-      } else {
-        blocks.forEach((b, index) => {
-          if (index < 4) b.classList.add('filled');
-          else b.classList.remove('filled');
-        });
+      function updateBpmDisplay(value, source) {
+        source = source || 'analyzing'
+        const display = document.getElementById('display-bpm')
+        const bpmValue = typeof value === 'number' ? value : parseFloat(value)
+        if (!display) return
+        if (isNaN(bpmValue)) {
+          display.innerText = source === 'analyzing' ? '--' : '--'
+          display.removeAttribute('title')
+        } else {
+          display.innerText = bpmValue.toFixed(1).replace(/\.0$/, '')
+          display.title = source === 'live' ? 'Live BPM' : 'Metadata BPM'
+        }
+
+        // BPM meter graphic (preserved)
+        const blocks = document.querySelectorAll('.bpm-meter-block')
+        if (isNaN(bpmValue)) {
+          blocks.forEach((b) => b.classList.remove('filled'))
+        } else {
+          blocks.forEach((b, index) => {
+            if (index < 4) b.classList.add('filled')
+            else b.classList.remove('filled')
+          })
+        }
       }
-    }
 
-    // --- INITIALIZATION ON LOAD ---
-    resizeCanvases();
-    renderSpectrumFrame(performance.now());
-    syncPlayPauseVisual();
-    window.addEventListener('pagehide', () => {
-      stopPlayheadLoop();
-      stopSpectrumLoop();
-      canvasResizeObserver.disconnect();
-    });
+      // --- INITIALIZATION ON LOAD ---
+      resizeCanvases()
+      renderSpectrumFrame(performance.now())
+      syncPlayPauseVisual()
+      window.addEventListener('pagehide', () => {
+        stopPlayheadLoop()
+        stopSpectrumLoop()
+        canvasResizeObserver.disconnect()
+      })
 
-    // Signal the host that the visualizer is ready to receive data.
-    window.parent.postMessage({ kind: 'ready' }, '*');
+      // Signal the host that the visualizer is ready to receive data.
+      window.parent.postMessage({ kind: 'ready' }, '*')
 
-    console.log("Twilight Echo audio visualizer ready. Waiting for host data.");
-  </script>
-</body>
+      console.log('Twilight Echo audio visualizer ready. Waiting for host data.')
+    </script>
+  </body>
 </html>

@@ -90,7 +90,9 @@ function assertTransactionalPaths(options: StagedPluginUpdateOptions): void {
     throw new Error('Plugin update staging and target directories must be on the same volume.')
   }
   if (!isStrictlyInside(candidateRoot, stagingRoot)) {
-    throw new Error('Plugin update candidate must be contained by its transaction staging directory.')
+    throw new Error(
+      'Plugin update candidate must be contained by its transaction staging directory.'
+    )
   }
   if (isStrictlyInside(targetRoot, stagingRoot) || isStrictlyInside(stagingRoot, targetRoot)) {
     throw new Error('Plugin update target and staging directories must not overlap.')

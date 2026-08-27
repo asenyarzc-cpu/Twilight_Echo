@@ -1,7 +1,4 @@
-import {
-  inspectJsonValueWithLimits,
-  type JsonValueLimitResult
-} from './jsonSafety.ts'
+import { inspectJsonValueWithLimits, type JsonValueLimitResult } from './jsonSafety.ts'
 
 export const MAX_UTILITY_PROCESS_CONTROL_MESSAGE_BYTES = 64 * 1024
 export const MAX_UTILITY_PROCESS_ERROR_TEXT_BYTES = 16 * 1024
@@ -83,9 +80,7 @@ export function inspectUtilityProcessPayload(
  * Parses only the stable response envelope. The separately configured payload
  * budget is checked by the client after it knows which request produced it.
  */
-export function parseUtilityProcessResponse(
-  message: unknown
-): UtilityProcessResponseParseResult {
+export function parseUtilityProcessResponse(message: unknown): UtilityProcessResponseParseResult {
   const record = asUtilityProcessMessageRecord(message)
   if (!record) return { ok: false, reason: 'invalid-envelope' }
 

@@ -9,7 +9,10 @@ test('renderer CSS packages the licensed built-in font style library and exclude
   const fonts = readFileSync(new URL('../assets/fonts.css', import.meta.url), 'utf8')
   const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
   const settings = readFileSync(new URL('./SettingsPage.vue', import.meta.url), 'utf8')
-  const settingsCss = readFileSync(new URL('./settings-page/SettingsPage.css', import.meta.url), 'utf8')
+  const settingsCss = readFileSync(
+    new URL('./settings-page/SettingsPage.css', import.meta.url),
+    'utf8'
+  )
   const combined = `${base}\n${fonts}\n${indexHtml}\n${settings}\n${settingsCss}`
 
   assert.match(fonts, /font-family: 'Inter'/)

@@ -11,7 +11,10 @@ test('provider store exposes provider health metadata from the host', () => {
 })
 
 test('streaming library surfaces provider health diagnostics to users', () => {
-  const streamingSource = readFileSync(new URL('../components/StreamingLibrary.vue', import.meta.url), 'utf8')
+  const streamingSource = readFileSync(
+    new URL('../components/StreamingLibrary.vue', import.meta.url),
+    'utf8'
+  )
 
   assert.match(streamingSource, /buildProviderHealthPresentation/)
   assert.match(streamingSource, /type ProviderHealthInput/)

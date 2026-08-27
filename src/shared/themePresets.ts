@@ -472,8 +472,7 @@ export const BUILT_IN_THEME_PRESETS: readonly ThemeProfileV2[] = Object.freeze([
         shadowColor: '#020410'
       },
       desktopLyrics: {
-        fontFamily:
-          "'Space Grotesk', 'MiSans', 'Microsoft YaHei UI', system-ui, sans-serif",
+        fontFamily: "'Space Grotesk', 'MiSans', 'Microsoft YaHei UI', system-ui, sans-serif",
         fontSize: 34,
         fontWeight: 600,
         color: '#e6ebff',
@@ -1046,8 +1045,7 @@ export const BUILT_IN_THEME_PRESETS: readonly ThemeProfileV2[] = Object.freeze([
         accentColor: '#ff3fa4',
         primaryTextColor: '#fdeefb',
         mutedTextColor: '#cbaed9',
-        fontFamily:
-          "'Space Grotesk', 'MiSans', 'Microsoft YaHei UI', system-ui, sans-serif",
+        fontFamily: "'Space Grotesk', 'MiSans', 'Microsoft YaHei UI', system-ui, sans-serif",
         surfaceOpacity: 84,
         glassBlur: 28,
         cornerRadius: 32,
@@ -1057,8 +1055,7 @@ export const BUILT_IN_THEME_PRESETS: readonly ThemeProfileV2[] = Object.freeze([
         shadowColor: '#2b0040'
       },
       desktopLyrics: {
-        fontFamily:
-          "'Space Grotesk', 'MiSans', 'Microsoft YaHei UI', system-ui, sans-serif",
+        fontFamily: "'Space Grotesk', 'MiSans', 'Microsoft YaHei UI', system-ui, sans-serif",
         fontSize: 34,
         fontWeight: 800,
         color: '#fdeefb',

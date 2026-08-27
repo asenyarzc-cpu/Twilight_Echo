@@ -10,7 +10,9 @@ const {
   inspectUtilityProcessPayload,
   isBoundedUtf8String,
   parseUtilityProcessResponse
-} = (await import(new URL('./utilityProcessSafety.ts', import.meta.url).href)) as typeof import('./utilityProcessSafety')
+} = (await import(
+  new URL('./utilityProcessSafety.ts', import.meta.url).href
+)) as typeof import('./utilityProcessSafety')
 
 test('accepts only ordinary utility-process message records', () => {
   assert.deepEqual(asUtilityProcessMessageRecord({ kind: 'response' }), { kind: 'response' })
@@ -19,7 +21,16 @@ test('accepts only ordinary utility-process message records', () => {
   assert.equal(asUtilityProcessMessageRecord([]), null)
   assert.equal(asUtilityProcessMessageRecord(new Date()), null)
   assert.equal(
-    asUtilityProcessMessageRecord(new Proxy({}, { getPrototypeOf: () => { throw new Error('blocked') } })),
+    asUtilityProcessMessageRecord(
+      new Proxy(
+        {},
+        {
+          getPrototypeOf: () => {
+            throw new Error('blocked')
+          }
+        }
+      )
+    ),
     null
   )
 })
@@ -40,10 +51,13 @@ test('bounds UTF-8 fields and JSON-compatible utility-process messages', () => {
   })
 
   assert.deepEqual(inspectUtilityProcessPayload(undefined, 0), { ok: true })
-  assert.deepEqual(inspectUtilityProcessPayload(() => undefined, 1024), {
-    ok: false,
-    reason: 'invalid'
-  })
+  assert.deepEqual(
+    inspectUtilityProcessPayload(() => undefined, 1024),
+    {
+      ok: false,
+      reason: 'invalid'
+    }
+  )
 })
 
 test('parses only bounded response envelopes', () => {

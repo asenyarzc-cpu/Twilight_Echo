@@ -33,7 +33,12 @@ test('provider write keys do not collide across changed payloads or targets', ()
   const otherMethod = coordinator.begin('ncm', 'followArtist', [42, true])
 
   assert.deepEqual(
-    [like.idempotencyKey, unlike.idempotencyKey, otherTrack.idempotencyKey, otherMethod.idempotencyKey],
+    [
+      like.idempotencyKey,
+      unlike.idempotencyKey,
+      otherTrack.idempotencyKey,
+      otherMethod.idempotencyKey
+    ],
     ['write-1', 'write-2', 'write-3', 'write-4']
   )
 })

@@ -977,22 +977,28 @@ html[data-te-shell-layout='custom'] #app {
   z-index: 2100;
 }
 
-/* The overlay starts below the native title strip, so it can never intercept
-   the settings/return and window-control buttons. Keep a solid base directly
-   on this dedicated stacking context; it must never inherit the home surface
-   or the transparent-window treatment. */
+/* The overlay owns the whole settings surface, wallpaper included. It spans the
+   full window (title strip included) and is the SINGLE painter of the settings
+   image: earlier per-element copies (title bar, page, body) each relied on
+   `background-attachment: fixed`, which Chromium silently re-anchors to the
+   element box on composited layers — splitting the wallpaper into mismatched
+   title/body bands. One static painter cannot drift. The title bar sits in a
+   higher stacking context (z-index 2100), so its controls still receive every
+   click while it stays transparent and lets this painter show through. */
 .settings-overlay-root--active {
   position: fixed;
-  inset: 32px 0 0;
+  inset: 0;
   z-index: 2000;
   overflow: hidden;
   isolation: isolate;
   background: #17181a !important;
 }
 
-/* Paint the settings-specific image above that solid base. The final image
-   layer is deliberately opaque, so even a transparent PNG or transparent
-   theme color can only reveal this settings backplate — never the homepage. */
+/* The single settings wallpaper painter. The overlay never scrolls, so the
+   layers stay viewport-pinned without `background-attachment: fixed`. The
+   final image layer is deliberately opaque, so even a transparent PNG or
+   transparent theme color can only reveal this settings backplate — never the
+   homepage. */
 .settings-overlay-root--active::before {
   position: absolute;
   inset: 0;
@@ -1007,7 +1013,6 @@ html[data-te-shell-layout='custom'] #app {
   background-position: center, center, center;
   background-size: cover, cover, cover;
   background-repeat: no-repeat, no-repeat, no-repeat;
-  background-attachment: fixed, fixed, fixed;
 }
 
 .settings-overlay-root--active .settings-preview-page {

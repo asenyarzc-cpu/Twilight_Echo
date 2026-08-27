@@ -77,7 +77,8 @@ test('lyrics management rejects a stale compare-and-swap write without replacing
     await assert.rejects(
       () => second.save({ ...DEFAULT_LYRICS_MANAGEMENT, globalOffsetMs: -100 }, 1),
       (error: unknown) =>
-        error instanceof PersistentDataRevisionConflictError && error.current?.data.globalOffsetMs === 100
+        error instanceof PersistentDataRevisionConflictError &&
+        error.current?.data.globalOffsetMs === 100
     )
     assert.equal((await first.load())?.data.globalOffsetMs, 100)
   } finally {

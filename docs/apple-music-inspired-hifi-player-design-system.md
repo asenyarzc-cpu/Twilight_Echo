@@ -2,7 +2,7 @@
 
 > **Status:** Engineering-ready v1.0 · **Audience:** Product, Design, iOS/macOS/Web Engineering · **Scope:** Player experience for a high-end HiFi music player
 >
-> **Document intent:** Convert the *design principles behind* Apple Music — not its pixel output — into explicit engineering constraints. Every rule in this document must be falsifiable by a developer without design support.
+> **Document intent:** Convert the _design principles behind_ Apple Music — not its pixel output — into explicit engineering constraints. Every rule in this document must be falsifiable by a developer without design support.
 
 ---
 
@@ -22,17 +22,17 @@
 
 ## Source Legend
 
-| Badge | Meaning |
-|---|---|
-| 🟢 **Official** | Apple HIG, Developer Documentation, WWDC25 Session 219 / 356, WWDC18 Session 803, Apple Newsroom, Apple Support |
-| 🟡 **Observed** | Behavior visible in shipped Apple Music product (publicly observable, not disclosed by Apple) |
+| Badge            | Meaning                                                                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🟢 **Official**  | Apple HIG, Developer Documentation, WWDC25 Session 219 / 356, WWDC18 Session 803, Apple Newsroom, Apple Support                              |
+| 🟡 **Observed**  | Behavior visible in shipped Apple Music product (publicly observable, not disclosed by Apple)                                                |
 | 🔵 **Inference** | Apple has not publicly disclosed this implementation. This spec defines our engineering standard, grounded in the official principles above. |
 
 ---
 
 # Chapter 1: Core Philosophy
 
-## 1.1 Why Apple Music *feels* expensive
+## 1.1 Why Apple Music _feels_ expensive
 
 Apple Music's premium feel does **not** come from glass, gradients, or blur. It comes from a consistent, repeatable answer to one question:
 
@@ -42,48 +42,48 @@ The observable system behind that answer has five pillars:
 
 ### 1.1.1 Information hierarchy — one hero per screen
 
-Every Apple Music surface has exactly one dominant element: the album artwork in Now Playing, the current lyric line in the lyrics view, the queue list in Up Next. Everything else is arranged on a strict visual budget. When Apple updated its design system, the instruction was explicit: *"Instead of relying on decoration, hierarchy should be expressed through layout and grouping."* 🟢 (WWDC25 Session 356)
+Every Apple Music surface has exactly one dominant element: the album artwork in Now Playing, the current lyric line in the lyrics view, the queue list in Up Next. Everything else is arranged on a strict visual budget. When Apple updated its design system, the instruction was explicit: _"Instead of relying on decoration, hierarchy should be expressed through layout and grouping."_ 🟢 (WWDC25 Session 356)
 
 **Engineering consequence:** a screen must be renderable as a single "hero rectangle" plus a constrained set of "supporting elements". If a screen cannot be described that way, it is over-designed and must be simplified before implementation.
 
 ### 1.1.2 Whitespace is structural, not empty
 
-Apple Music's Now Playing screen keeps transport controls at the bottom, metadata at a fixed distance, and lets the artwork breathe. Space is used to *separate interactive regions*, which is exactly how the HIG frames grouping: *"use negative space, background shapes, colors, materials, or separator lines to show when elements are related and to separate information into distinct areas."* 🟢 (HIG Layout)
+Apple Music's Now Playing screen keeps transport controls at the bottom, metadata at a fixed distance, and lets the artwork breathe. Space is used to _separate interactive regions_, which is exactly how the HIG frames grouping: _"use negative space, background shapes, colors, materials, or separator lines to show when elements are related and to separate information into distinct areas."_ 🟢 (HIG Layout)
 
 **Engineering consequence:** spacing is a token system (see §8.0). Two regions must never be separated by ad-hoc padding; separation values come from the scale (8/12/16/24/32) and must survive Dynamic Type, window resizing, and landscape.
 
 ### 1.1.3 Dynamic feedback — the interface must never feel late
 
-From WWDC18: *"Our tools depend on the latency… we work so hard to reduce latency"*; interfaces must support *interruption and redirection* and *spatial consistency*. 🟢 A button that waits 300 ms to react, or a lyrics line that snaps instead of gliding, reads as "cheap" even at 120 fps.
+From WWDC18: _"Our tools depend on the latency… we work so hard to reduce latency"_; interfaces must support _interruption and redirection_ and _spatial consistency_. 🟢 A button that waits 300 ms to react, or a lyrics line that snaps instead of gliding, reads as "cheap" even at 120 fps.
 
 **Engineering consequence:** every interactive element has a mandatory **press response ≤ 60 ms after touch-down** (visual feedback, not action). Every animation must be interruptible: when input changes mid-animation, the animation retargets from the current value — never restarts from the beginning.
 
 ### 1.1.4 Musical emotion is carried by content, not chrome
 
-Apple Music expresses the mood of a song through the **album artwork**, the **lyrics**, and the **background gradient derived from the artwork** — not through decorative UI. Controls stay monochromatic so they cannot compete. 🟢 HIG Color: *"If your app features colorful backgrounds or visually rich content, prefer a monochromatic appearance for toolbars and tab bars."*
+Apple Music expresses the mood of a song through the **album artwork**, the **lyrics**, and the **background gradient derived from the artwork** — not through decorative UI. Controls stay monochromatic so they cannot compete. 🟢 HIG Color: _"If your app features colorful backgrounds or visually rich content, prefer a monochromatic appearance for toolbars and tab bars."_
 
 **Engineering consequence:** the UI color palette is derived, not fixed. Background gradients and UI accent colors are computed from the current artwork's palette, with a mandatory luminance gate (§7.7). Hard-coded brand colors are banned inside the player surface.
 
 ### 1.1.5 Content-first principle
 
-The Liquid Glass system exists to *let content shine through*: *"Liquid Glass forms a distinct functional layer… floating above your content to bring structure and clarity, without ever stealing focus."* 🟢 (WWDC25 Session 356) Controls float above content; content is never buried under chrome.
+The Liquid Glass system exists to _let content shine through_: _"Liquid Glass forms a distinct functional layer… floating above your content to bring structure and clarity, without ever stealing focus."_ 🟢 (WWDC25 Session 356) Controls float above content; content is never buried under chrome.
 
 **Engineering consequence:** any element that overlaps artwork or lyrics must be (a) transient, (b) material-backed, or (c) dismissed automatically on idle. Persistent chrome is prohibited inside the Now Playing surface.
 
 ## 1.2 Principle → Example → Engineering Constraint
 
-| # | Principle | Example (Apple Music) | Engineering Constraint |
-|---|---|---|---|
-| P1 | Content is the hero | Album artwork dominates the Now Playing screen | Never place heavy UI above artwork. Controls must not exceed ~12% of screen area and must fade/recede at rest. |
-| P2 | One focal point per state | Lyrics view: current line is the only fully-opaque, scaled element | Exactly one lyric line at opacity 1.0 and scale >1.0 at any time. |
-| P3 | Silence is structural | Huge empty space between artwork and controls | Spacing only from the scale tokens (§8.0); no ad-hoc padding in code. |
-| P4 | Instant response | Play button flexes on touch-down | Press feedback ≤60 ms; haptics optional but must not be the only feedback (HIG Motion). |
-| P5 | Motion is interruptible | Scrubbing the progress bar retargets instantly | All animations use springs; interrupting an animation must continue from the current value (no reset). |
-| P6 | Emotion comes from the music | Background gradient + spectrum follow the song | UI color/animation parameters are functions of audio features (artwork palette, FFT energy, tempo), never random. |
-| P7 | Controls are servants | Transport bar is monochrome, floats over the artwork gradient | Use system monochrome symbols; accent color only for the play state and the primary action. |
-| P8 | Legibility always wins | Lyrics remain readable over any artwork | Contrast gate: UI surfaces must pass 4.5:1 for text, 3:1 for glyphs (WCAG AA), enforced by the palette engine. |
-| P9 | The music is the clock | Lyrics scroll and highlight exactly with the audio | UI timeline must be driven by the audio clock, not by scroll events or `Timer`s (§4.5). |
-| P10 | Restraint is a brand | Apple Music never celebrates its own UI | One animation per interaction, ≤ 500 ms for feedback; anything longer must be scrubbable or cancelable. |
+| #   | Principle                    | Example (Apple Music)                                              | Engineering Constraint                                                                                            |
+| --- | ---------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| P1  | Content is the hero          | Album artwork dominates the Now Playing screen                     | Never place heavy UI above artwork. Controls must not exceed ~12% of screen area and must fade/recede at rest.    |
+| P2  | One focal point per state    | Lyrics view: current line is the only fully-opaque, scaled element | Exactly one lyric line at opacity 1.0 and scale >1.0 at any time.                                                 |
+| P3  | Silence is structural        | Huge empty space between artwork and controls                      | Spacing only from the scale tokens (§8.0); no ad-hoc padding in code.                                             |
+| P4  | Instant response             | Play button flexes on touch-down                                   | Press feedback ≤60 ms; haptics optional but must not be the only feedback (HIG Motion).                           |
+| P5  | Motion is interruptible      | Scrubbing the progress bar retargets instantly                     | All animations use springs; interrupting an animation must continue from the current value (no reset).            |
+| P6  | Emotion comes from the music | Background gradient + spectrum follow the song                     | UI color/animation parameters are functions of audio features (artwork palette, FFT energy, tempo), never random. |
+| P7  | Controls are servants        | Transport bar is monochrome, floats over the artwork gradient      | Use system monochrome symbols; accent color only for the play state and the primary action.                       |
+| P8  | Legibility always wins       | Lyrics remain readable over any artwork                            | Contrast gate: UI surfaces must pass 4.5:1 for text, 3:1 for glyphs (WCAG AA), enforced by the palette engine.    |
+| P9  | The music is the clock       | Lyrics scroll and highlight exactly with the audio                 | UI timeline must be driven by the audio clock, not by scroll events or `Timer`s (§4.5).                           |
+| P10 | Restraint is a brand         | Apple Music never celebrates its own UI                            | One animation per interaction, ≤ 500 ms for feedback; anything longer must be scrubbable or cancelable.           |
 
 ## 1.3 Axioms for reviewers
 
@@ -118,16 +118,16 @@ Player Screen
 
 ## 2.2 Layer specification
 
-Layer values are the *contract*; implementations must honor the relative order and the interaction priority. `z` here is the conceptual order in a single view tree; on macOS/iPad (multi-column) the same order applies per column.
+Layer values are the _contract_; implementations must honor the relative order and the interaction priority. `z` here is the conceptual order in a single view tree; on macOS/iPad (multi-column) the same order applies per column.
 
-| Layer | z | Blur (background contribution) | Opacity (rest → active) | Interaction priority | Notes |
-|---|---|---|---|---|---|
-| Background | 0 | 40–80 pt on artwork-sourced gradient 🔵 | 1.0 → 0.85 when chrome expands | 0 — never intercepts | Renders at 1 fps ambient drift; **no** beat-synced pulsing (see §10 DON'T) |
-| Artwork | 10 | 0 (sharp); shadow soft 30–60 pt 🔵 | 1.0 | 1 — tap: cycle view mode; drag-down: dismiss; pinch: expand | Aspect preserved; no letterbox. GPU-cached (blurred copy for background, sharp copy for hero) |
-| Metadata | 20 | 0 (text sits on artwork or background) | 1.0 | 2 — tap title/artist: jump to album/artist | Max 3 lines; typography from §8.0 |
-| Lyrics | 30 | 0 — **never** glass-backed (🔵 rationale in §3.3) | current line 1.0, past 0.7, future 0.45 | 3 — vertical scroll, tap line = seek | Driven by audio clock (§4.5); scroll position is an output, never an input |
-| Control | 40 | Liquid Glass Regular (auto-adaptive) 🟢 | 0.9 at rest → 1.0 on interaction | 4 — transport, scrub, volume | Transient: auto-recedes after 3 s idle in immersive mode |
-| Gesture | 50 | n/a | n/a | 5 — system-gesture arbitration | Must never compete with system edge gestures (HIG: don't fight the system) |
+| Layer      | z   | Blur (background contribution)                    | Opacity (rest → active)                 | Interaction priority                                        | Notes                                                                                         |
+| ---------- | --- | ------------------------------------------------- | --------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Background | 0   | 40–80 pt on artwork-sourced gradient 🔵           | 1.0 → 0.85 when chrome expands          | 0 — never intercepts                                        | Renders at 1 fps ambient drift; **no** beat-synced pulsing (see §10 DON'T)                    |
+| Artwork    | 10  | 0 (sharp); shadow soft 30–60 pt 🔵                | 1.0                                     | 1 — tap: cycle view mode; drag-down: dismiss; pinch: expand | Aspect preserved; no letterbox. GPU-cached (blurred copy for background, sharp copy for hero) |
+| Metadata   | 20  | 0 (text sits on artwork or background)            | 1.0                                     | 2 — tap title/artist: jump to album/artist                  | Max 3 lines; typography from §8.0                                                             |
+| Lyrics     | 30  | 0 — **never** glass-backed (🔵 rationale in §3.3) | current line 1.0, past 0.7, future 0.45 | 3 — vertical scroll, tap line = seek                        | Driven by audio clock (§4.5); scroll position is an output, never an input                    |
+| Control    | 40  | Liquid Glass Regular (auto-adaptive) 🟢           | 0.9 at rest → 1.0 on interaction        | 4 — transport, scrub, volume                                | Transient: auto-recedes after 3 s idle in immersive mode                                      |
+| Gesture    | 50  | n/a                                               | n/a                                     | 5 — system-gesture arbitration                              | Must never compete with system edge gestures (HIG: don't fight the system)                    |
 
 ## 2.3 Interaction rules
 
@@ -151,16 +151,16 @@ Mini Player ──tap──▶ Now Playing (artwork)
                          └── drag-down ──▶ Mini Player (matched geometry)
 ```
 
-Every transition is a **matched geometry** animation (shared element: artwork frame, mini-player artwork). 🟢 HIG: *"When content is intentionally grouped, it should stay together, even as the layout adapts."*
+Every transition is a **matched geometry** animation (shared element: artwork frame, mini-player artwork). 🟢 HIG: _"When content is intentionally grouped, it should stay together, even as the layout adapts."_
 
 ## 2.5 Adaptive layout
 
-| Context | Artwork size | Metadata position | Controls |
-|---|---|---|---|
-| iPhone portrait (compact width) | 70–85% width, centered | below artwork | bottom, single row + volume |
-| iPhone landscape | left column, 45–55% height | right column, upper | right column, lower |
-| iPad / desktop (regular width) | center, up to 40% of column width | below, left-aligned | bottom bar; sidebar optional at ≥ 700 pt width |
-| Mac full-screen player | center-left; artwork up to 50% of viewport height | alongside, left-aligned | bottom + toolbar with Liquid Glass 🟢 |
+| Context                         | Artwork size                                      | Metadata position       | Controls                                       |
+| ------------------------------- | ------------------------------------------------- | ----------------------- | ---------------------------------------------- |
+| iPhone portrait (compact width) | 70–85% width, centered                            | below artwork           | bottom, single row + volume                    |
+| iPhone landscape                | left column, 45–55% height                        | right column, upper     | right column, lower                            |
+| iPad / desktop (regular width)  | center, up to 40% of column width                 | below, left-aligned     | bottom bar; sidebar optional at ≥ 700 pt width |
+| Mac full-screen player          | center-left; artwork up to 50% of viewport height | alongside, left-aligned | bottom + toolbar with Liquid Glass 🟢          |
 
 **Constraint:** layout is driven by size classes and Dynamic Type — never by device ID. `SafeArea` must be respected; on iPhone the status bar may hide only in immersive lyrics mode (HIG allows hiding for media depth). 🟢
 
@@ -170,57 +170,57 @@ Every transition is a **matched geometry** animation (shared element: artwork fr
 
 ## 3.1 What Liquid Glass is (and is not)
 
-🟢 Liquid Glass is a **dynamic material**, not a blur filter. Apple defines it as a *"new digital meta-material that dynamically bends and shapes light"* — it uses **lensing** (bending/concentrating light) rather than the scattering of older blur materials, and it adapts continuously to what is behind it: shadow strength over text, tint amount, light/dark appearance, and even geometry (morphing between shapes). (WWDC25 Session 219; HIG Materials)
+🟢 Liquid Glass is a **dynamic material**, not a blur filter. Apple defines it as a _"new digital meta-material that dynamically bends and shapes light"_ — it uses **lensing** (bending/concentrating light) rather than the scattering of older blur materials, and it adapts continuously to what is behind it: shadow strength over text, tint amount, light/dark appearance, and even geometry (morphing between shapes). (WWDC25 Session 219; HIG Materials)
 
 Three behaviors are non-negotiable engineering targets if you build a custom approximation:
 
 1. **Adaptivity** — the material's tint/shadow/luminosity must respond to the content scrolling underneath, and it must be able to switch between light and dark appearance based on background luminance. 🟢
-2. **Lensing over scattering** — edges should subtly *bend* the background (refraction feel) rather than uniformly blur it. 🟢 (Apple explicitly contrasts lensing with scattering)
-3. **Fluidity** — materialized elements modulate light in/out instead of fading with opacity; pressed elements *illuminate from within*, and shapes morph into each other during transitions. 🟢
+2. **Lensing over scattering** — edges should subtly _bend_ the background (refraction feel) rather than uniformly blur it. 🟢 (Apple explicitly contrasts lensing with scattering)
+3. **Fluidity** — materialized elements modulate light in/out instead of fading with opacity; pressed elements _illuminate from within_, and shapes morph into each other during transitions. 🟢
 
-> ⚠️ Apple has not published the exact numeric parameters (blur radius, refraction strength, shadow opacity) of Liquid Glass. 🔵 The parameter table below is our engineering standard, tuned to reproduce the *perceived* behavior with conventional platform materials where Liquid Glass APIs are unavailable (React Native, Flutter, Web).
+> ⚠️ Apple has not published the exact numeric parameters (blur radius, refraction strength, shadow opacity) of Liquid Glass. 🔵 The parameter table below is our engineering standard, tuned to reproduce the _perceived_ behavior with conventional platform materials where Liquid Glass APIs are unavailable (React Native, Flutter, Web).
 
 ## 3.2 Material parameter spec 🔵
 
 Wherever the platform provides Liquid Glass (`SwiftUI .glassEffect`, macOS/iOS system bars), **use the system material and do not override its parameters**. The table is for custom approximations and cross-platform ports.
 
-| Parameter | Resting (small controls, e.g. toolbar buttons) | Expanded (menus, sheets, sidebars) | Notes |
-|---|---|---|---|
-| Blur radius | 24–32 pt | 40–60 pt | Larger surface ⇒ thicker material, deeper blur (WWDC25: menus/sheets feel thicker) 🟢-informed |
-| Luminosity shift | −8% … +8% (adaptive to background) | −12% … +12% | Must follow background luminance; light/dark flip allowed only for elements < ~400 pt tall (nav bars, tab bars) 🟢 |
-| Tint | 0 (clear) … 30% of accent | accent 15–40% | Tint strength maps to content brightness underneath (colored-glass behavior) 🟢 |
-| Shadow | opacity 8–20%, blur 12–24 pt, offset 0–4 pt | opacity 15–30%, blur 24–48 pt, offset 4–8 pt | Shadow opacity must **rise when text scrolls underneath** 🟢 |
-| Corner radius | capsule (r = h/2) or fixed 14–18 pt | concentric: parent radius − padding (WWDC25 §356 shape system) 🟢 | Never mix radius families within one control |
-| Refraction | 1–3 pt edge displacement | 2–5 pt | Simulated with an inner stroke + displaced background copy when no real-time refraction is possible |
-| Specular highlight | top-edge 0.5–1 pt, white 20–40% | 1–2 pt | Must follow the geometry, not be a static gradient |
-| Press response | illuminate + flex within 60 ms 🟢 | — | Material lights from the touch point outward 🟢 |
+| Parameter          | Resting (small controls, e.g. toolbar buttons) | Expanded (menus, sheets, sidebars)                                | Notes                                                                                                              |
+| ------------------ | ---------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Blur radius        | 24–32 pt                                       | 40–60 pt                                                          | Larger surface ⇒ thicker material, deeper blur (WWDC25: menus/sheets feel thicker) 🟢-informed                     |
+| Luminosity shift   | −8% … +8% (adaptive to background)             | −12% … +12%                                                       | Must follow background luminance; light/dark flip allowed only for elements < ~400 pt tall (nav bars, tab bars) 🟢 |
+| Tint               | 0 (clear) … 30% of accent                      | accent 15–40%                                                     | Tint strength maps to content brightness underneath (colored-glass behavior) 🟢                                    |
+| Shadow             | opacity 8–20%, blur 12–24 pt, offset 0–4 pt    | opacity 15–30%, blur 24–48 pt, offset 4–8 pt                      | Shadow opacity must **rise when text scrolls underneath** 🟢                                                       |
+| Corner radius      | capsule (r = h/2) or fixed 14–18 pt            | concentric: parent radius − padding (WWDC25 §356 shape system) 🟢 | Never mix radius families within one control                                                                       |
+| Refraction         | 1–3 pt edge displacement                       | 2–5 pt                                                            | Simulated with an inner stroke + displaced background copy when no real-time refraction is possible                |
+| Specular highlight | top-edge 0.5–1 pt, white 20–40%                | 1–2 pt                                                            | Must follow the geometry, not be a static gradient                                                                 |
+| Press response     | illuminate + flex within 60 ms 🟢              | —                                                                 | Material lights from the touch point outward 🟢                                                                    |
 
-**Contrast gate:** text/symbols on glass must hold WCAG AA against *both* the material and the worst-case content beneath it. If the content behind a Clear element is bright, Apple requires a dark dimming layer at **35% opacity** (or localized dimming for small elements). 🟢 (HIG Materials)
+**Contrast gate:** text/symbols on glass must hold WCAG AA against _both_ the material and the worst-case content beneath it. If the content behind a Clear element is bright, Apple requires a dark dimming layer at **35% opacity** (or localized dimming for small elements). 🟢 (HIG Materials)
 
 ## 3.3 Where glass is allowed — and where it is forbidden
 
 ### Allowed
 
-| Surface | Variant | Why |
-|---|---|---|
-| Toolbar / navigation bars | Regular (auto) 🟢 | Functional navigation layer |
-| Floating transport controls | Regular, interactive | Controls are the functional layer over content |
-| Menus, popovers, action sheets | Regular, thicker when expanded 🟢 | Content containers that originate from their source element |
-| Sidebar (Mac/iPad) | Regular | Navigation layer |
-| Slider/toggle *while interacting* | Regular knob 🟢 | Transient interactivity emphasis |
-| Mini player | Clear over artwork, Regular over content lists | Media-rich background (Clear conditions met) 🟢 |
+| Surface                           | Variant                                        | Why                                                         |
+| --------------------------------- | ---------------------------------------------- | ----------------------------------------------------------- |
+| Toolbar / navigation bars         | Regular (auto) 🟢                              | Functional navigation layer                                 |
+| Floating transport controls       | Regular, interactive                           | Controls are the functional layer over content              |
+| Menus, popovers, action sheets    | Regular, thicker when expanded 🟢              | Content containers that originate from their source element |
+| Sidebar (Mac/iPad)                | Regular                                        | Navigation layer                                            |
+| Slider/toggle _while interacting_ | Regular knob 🟢                                | Transient interactivity emphasis                            |
+| Mini player                       | Clear over artwork, Regular over content lists | Media-rich background (Clear conditions met) 🟢             |
 
 ### Forbidden
 
-| Surface | Why |
-|---|---|
-| **Main content** (tables, cards, lists) | *"Don't use Liquid Glass in the content layer"* 🟢 |
-| **Album artwork** | Glass on the hero destroys the hero; artwork must stay sharp |
-| **Lyrics background** | Lyrics are content; glass behind text reduces legibility and competes with the current-line focus |
-| **Glass on glass** | *"Always avoid glass on glass"* 🟢 — top elements must use fills/transparency/vibrancy instead |
-| **Decorative accents** (borders, badges, non-functional shapes) | *"Use Liquid Glass effects sparingly"* 🟢 |
+| Surface                                                         | Why                                                                                               |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **Main content** (tables, cards, lists)                         | _"Don't use Liquid Glass in the content layer"_ 🟢                                                |
+| **Album artwork**                                               | Glass on the hero destroys the hero; artwork must stay sharp                                      |
+| **Lyrics background**                                           | Lyrics are content; glass behind text reduces legibility and competes with the current-line focus |
+| **Glass on glass**                                              | _"Always avoid glass on glass"_ 🟢 — top elements must use fills/transparency/vibrancy instead    |
+| **Decorative accents** (borders, badges, non-functional shapes) | _"Use Liquid Glass effects sparingly"_ 🟢                                                         |
 
-**One glass family per app.** Regular and Clear variants *"should never be mixed"* as a styling choice. 🟢 (WWDC25 219)
+**One glass family per app.** Regular and Clear variants _"should never be mixed"_ as a styling choice. 🟢 (WWDC25 219)
 
 ## 3.4 Scroll edge effects
 
@@ -241,14 +241,14 @@ Rules: exactly **one** edge effect per scroll view (per pane on iPad/macOS Split
 
 ## 3.6 Engineering constraints
 
-| # | Constraint | Rationale |
-|---|---|---|
-| G1 | Use system components/APIs where they exist (`glassEffect`, `GlassEffectContainer`, system bars) | 🟢 System components pick up Liquid Glass + accessibility automatically |
-| G2 | Combine custom glass effects in **one** `GlassEffectContainer` per screen; limit effects on screen | 🟢 Performance: containers let shapes morph and share rendering |
-| G3 | Apply the effect to the **control**, never to its inner views | 🟢 (WWDC25 356) |
-| G4 | Never implement glass as a static PNG or fixed gradient | Violates adaptivity; fails "settings" (Reduce Transparency) and dark/light contexts |
-| G5 | Support Reduce Transparency / Increase Contrast: glass degrades to opaque surfaces automatically | 🟢 HIG: materials adapt to accessibility settings |
-| G6 | Performance budget: glass is expensive. Keep live glass surfaces ≤ 4 per screen; pre-render blurred artwork backgrounds | 🔵 (pragmatic target) |
+| #   | Constraint                                                                                                              | Rationale                                                                           |
+| --- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| G1  | Use system components/APIs where they exist (`glassEffect`, `GlassEffectContainer`, system bars)                        | 🟢 System components pick up Liquid Glass + accessibility automatically             |
+| G2  | Combine custom glass effects in **one** `GlassEffectContainer` per screen; limit effects on screen                      | 🟢 Performance: containers let shapes morph and share rendering                     |
+| G3  | Apply the effect to the **control**, never to its inner views                                                           | 🟢 (WWDC25 356)                                                                     |
+| G4  | Never implement glass as a static PNG or fixed gradient                                                                 | Violates adaptivity; fails "settings" (Reduce Transparency) and dark/light contexts |
+| G5  | Support Reduce Transparency / Increase Contrast: glass degrades to opaque surfaces automatically                        | 🟢 HIG: materials adapt to accessibility settings                                   |
+| G6  | Performance budget: glass is expensive. Keep live glass surfaces ≤ 4 per screen; pre-render blurred artwork backgrounds | 🔵 (pragmatic target)                                                               |
 
 ---
 
@@ -282,17 +282,17 @@ Rules: exactly **one** edge effect per scroll view (per pane on iPad/macOS Split
 
 interface LyricWord {
   text: string
-  startTime: number      // seconds, relative to track start; audio-clock domain
-  endTime: number        // seconds; must be > startTime
-  confidence?: number    // 0..1; <0.6 → render as static, no karaoke fill
+  startTime: number // seconds, relative to track start; audio-clock domain
+  endTime: number // seconds; must be > startTime
+  confidence?: number // 0..1; <0.6 → render as static, no karaoke fill
 }
 
 interface LyricLine {
   words: LyricWord[]
-  startTime: number      // derived: words[0].startTime (validate)
-  endTime: number        // derived: words.at(-1).endTime (validate)
-  vocalTrack?: 'main' | 'backing' | 'duetLeft' | 'duetRight'  // Sing mode
-  translation?: string   // localized target-language line
+  startTime: number // derived: words[0].startTime (validate)
+  endTime: number // derived: words.at(-1).endTime (validate)
+  vocalTrack?: 'main' | 'backing' | 'duetLeft' | 'duetRight' // Sing mode
+  translation?: string // localized target-language line
   pronunciation?: string // phonetic line
 }
 
@@ -310,13 +310,13 @@ interface LyricDocument {
 
 **Validation rules** (enforced by a `LyricsValidator`, run offline and at load):
 
-| Rule | Tolerance | Action on failure |
-|---|---|---|
-| Line times monotonic, non-overlapping | 10 ms | Clamp/repair; quarantine line if unresolvable |
-| Word times within line | 10 ms | Extend line bounds |
-| Word gap | ≤ 800 ms | Insert hold segment (fill pauses the same way Apple Music keeps the fill steady during instrumental gaps 🟡) |
-| Track-duration bound | +500 ms | Drop trailing out-of-range words |
-| Missing word timings | — | Fall back to line-level highlight (whole-line fill) |
+| Rule                                  | Tolerance | Action on failure                                                                                            |
+| ------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------ |
+| Line times monotonic, non-overlapping | 10 ms     | Clamp/repair; quarantine line if unresolvable                                                                |
+| Word times within line                | 10 ms     | Extend line bounds                                                                                           |
+| Word gap                              | ≤ 800 ms  | Insert hold segment (fill pauses the same way Apple Music keeps the fill steady during instrumental gaps 🟡) |
+| Track-duration bound                  | +500 ms   | Drop trailing out-of-range words                                                                             |
+| Missing word timings                  | —         | Fall back to line-level highlight (whole-line fill)                                                          |
 
 ## 4.5 Rendering architecture
 
@@ -335,27 +335,27 @@ Text Renderer (attributed text, gradient mask or shader; layout is stable)
 
 ### Why the audio timeline must drive the lyrics — not scroll events
 
-| Approach | Failure mode |
-|---|---|
-| Scroll-driven (`onScroll` → compute line) | Scroll is initiated by the user or by inertia; it is **input**, not truth. Highlighting becomes a function of finger velocity, rubber-banding, and animation state — it desyncs from audio on every interruption, and makes "tap line to seek" ambiguous. |
-| `Timer`/`Timer.scheduledTimer` (wall clock) | Wall clocks drift from audio clocks (buffer underruns, A/V offset, playback rate ≠ 1.0 in HiFi gapless/bit-perfect modes). |
-| **Audio-clock-driven** (this spec) | The audio clock is the single source of truth. Scroll position is a **rendered output** of sync state. Scrubbing updates one number (time); the whole UI re-derives. No drift by construction. |
+| Approach                                    | Failure mode                                                                                                                                                                                                                                              |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scroll-driven (`onScroll` → compute line)   | Scroll is initiated by the user or by inertia; it is **input**, not truth. Highlighting becomes a function of finger velocity, rubber-banding, and animation state — it desyncs from audio on every interruption, and makes "tap line to seek" ambiguous. |
+| `Timer`/`Timer.scheduledTimer` (wall clock) | Wall clocks drift from audio clocks (buffer underruns, A/V offset, playback rate ≠ 1.0 in HiFi gapless/bit-perfect modes).                                                                                                                                |
+| **Audio-clock-driven** (this spec)          | The audio clock is the single source of truth. Scroll position is a **rendered output** of sync state. Scrubbing updates one number (time); the whole UI re-derives. No drift by construction.                                                            |
 
-This mirrors Apple's own motion principle: the UI must be *"aligned with the dynamism and continually changing nature"* of the underlying system — here, the music. 🟢 (WWDC25 219: Liquid Glass reacts to its environment; the same philosophy applies to a timeline-driven surface.)
+This mirrors Apple's own motion principle: the UI must be _"aligned with the dynamism and continually changing nature"_ of the underlying system — here, the music. 🟢 (WWDC25 219: Liquid Glass reacts to its environment; the same philosophy applies to a timeline-driven surface.)
 
 ## 4.6 Sync engine specification
 
-| Concern | Spec |
-|---|---|
-| Clock source | `CMTime` from the player at 1 kHz resolution; for bit-perfect/gapless HiFi output, use the **audio render frame counter** (`AVAudioTime.hostTime` mapping) when output latency > 20 ms |
-| Sync query | `func state(at t: TimeInterval) -> SyncState` — binary search over lines; pure, no side effects |
-| Seek handling | On `seek`, clamp t, emit single state change; highlight and scroll **retarget instantly** (no tween from old line) 🟡 Observed |
-| Latency budget | visual response to audio ≤ 1 frame (16.7 ms); measured, not assumed |
-| Hold behavior | During word gaps > 100 ms, fill stays frozen at its last value (Apple Music holds the fill during instrumental sections 🟡) |
-| Pause | On pause: freeze fill + scroll; resume: continue from clock (no rewind) |
-| Drift | If UI frame delivery lags audio clock by > 50 ms sustained, drop intermediate frames (skip-ahead), never re-animate |
-| Error states | No lyrics / partially timed / low-confidence words: degrade gracefully to static view or line-level highlight 🟢 (Apple Support: static lyrics shown when time-synced unavailable) |
-| Unit tests | Given a synthetic clock trace (normal, seeks, rate 0.5×, rate 1.0×, gap-heavy), the engine's emitted state must match a golden snapshot |
+| Concern        | Spec                                                                                                                                                                                   |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clock source   | `CMTime` from the player at 1 kHz resolution; for bit-perfect/gapless HiFi output, use the **audio render frame counter** (`AVAudioTime.hostTime` mapping) when output latency > 20 ms |
+| Sync query     | `func state(at t: TimeInterval) -> SyncState` — binary search over lines; pure, no side effects                                                                                        |
+| Seek handling  | On `seek`, clamp t, emit single state change; highlight and scroll **retarget instantly** (no tween from old line) 🟡 Observed                                                         |
+| Latency budget | visual response to audio ≤ 1 frame (16.7 ms); measured, not assumed                                                                                                                    |
+| Hold behavior  | During word gaps > 100 ms, fill stays frozen at its last value (Apple Music holds the fill during instrumental sections 🟡)                                                            |
+| Pause          | On pause: freeze fill + scroll; resume: continue from clock (no rewind)                                                                                                                |
+| Drift          | If UI frame delivery lags audio clock by > 50 ms sustained, drop intermediate frames (skip-ahead), never re-animate                                                                    |
+| Error states   | No lyrics / partially timed / low-confidence words: degrade gracefully to static view or line-level highlight 🟢 (Apple Support: static lyrics shown when time-synced unavailable)     |
+| Unit tests     | Given a synthetic clock trace (normal, seeks, rate 0.5×, rate 1.0×, gap-heavy), the engine's emitted state must match a golden snapshot                                                |
 
 ---
 
@@ -372,24 +372,24 @@ lineProgress(line, t) = clamp((t − line.startTime) / (line.endTime − line.st
 
 Timeline semantics (matching observed Apple Music behavior 🟡):
 
-| Segment | Rule |
-|---|---|
-| `t < word.startTime` | word at 0% (unfilled) |
-| `word.startTime ≤ t < word.endTime` | fill = linear progress, **applied per word** (words fill one-by-one, left-to-right) |
-| `t ≥ word.endTime`, next word pending | hold at 100% (word stays filled) |
-| gap between words (no active word) | hold fill steady — no advance, no reset 🟡 |
-| line finished, next line pending | entire line 100%; line itself fades to "past" state per §6.5 |
+| Segment                               | Rule                                                                                |
+| ------------------------------------- | ----------------------------------------------------------------------------------- |
+| `t < word.startTime`                  | word at 0% (unfilled)                                                               |
+| `word.startTime ≤ t < word.endTime`   | fill = linear progress, **applied per word** (words fill one-by-one, left-to-right) |
+| `t ≥ word.endTime`, next word pending | hold at 100% (word stays filled)                                                    |
+| gap between words (no active word)    | hold fill steady — no advance, no reset 🟡                                          |
+| line finished, next line pending      | entire line 100%; line itself fades to "past" state per §6.5                        |
 
 ## 5.2 Rendering strategies
 
 Four implementations, in ascending fidelity. All four must read the **same** `progress` values — the algorithm is renderer-agnostic.
 
-| Strategy | Mechanism | Pros | Cons | Choose when |
-|---|---|---|---|---|
-| **Gradient mask** | Two text layers; top layer is white, bottom layer is accent; a moving linear-gradient mask reveals the bottom layer | Works everywhere (SwiftUI, RN, Flutter, Web); cheap; sub-line smoothness | Fill is continuous across word boundaries unless you mask per-word | Default |
-| **Text clipping** | Per-word `Text` clips to a fill rect (or uses `foregroundStyle` ranges) | True word-level step behavior; crisp edges | Needs per-word layout metrics; more views | Word-level step + translation modes |
-| **Attributed ranges (native)** | `AttributedString` with per-range fill color/opacity, updated by renderer | Most native feel; Dynamic Type-safe | High-frequency updates require careful coalescing | SwiftUI/UIKit with Metal-backed text |
-| **Shader (GPU)** | Fragment shader receives progress per word rect; draws fill inside glyph coverage | Cheapest at scale; 120 Hz; smooth | Requires glyph layout data (CoreText/Skia); most complex | High-end HiFi app on desktop/ProMotion |
+| Strategy                       | Mechanism                                                                                                           | Pros                                                                     | Cons                                                               | Choose when                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------ | -------------------------------------- |
+| **Gradient mask**              | Two text layers; top layer is white, bottom layer is accent; a moving linear-gradient mask reveals the bottom layer | Works everywhere (SwiftUI, RN, Flutter, Web); cheap; sub-line smoothness | Fill is continuous across word boundaries unless you mask per-word | Default                                |
+| **Text clipping**              | Per-word `Text` clips to a fill rect (or uses `foregroundStyle` ranges)                                             | True word-level step behavior; crisp edges                               | Needs per-word layout metrics; more views                          | Word-level step + translation modes    |
+| **Attributed ranges (native)** | `AttributedString` with per-range fill color/opacity, updated by renderer                                           | Most native feel; Dynamic Type-safe                                      | High-frequency updates require careful coalescing                  | SwiftUI/UIKit with Metal-backed text   |
+| **Shader (GPU)**               | Fragment shader receives progress per word rect; draws fill inside glyph coverage                                   | Cheapest at scale; 120 Hz; smooth                                        | Requires glyph layout data (CoreText/Skia); most complex           | High-end HiFi app on desktop/ProMotion |
 
 ## 5.3 Animation curve
 
@@ -400,7 +400,7 @@ fill(t) = progress(word, t)                      // linear, no easing on the fil
 state transitions (line focus/scroll) = spring   // §6.5
 ```
 
-Do **not** ease the fill (easing makes the highlight drift ahead of the vocalist). The perceived smoothness comes from the *line transitions* and from 120 Hz frame delivery, not from the fill curve. 🟡 Observed / 🔵
+Do **not** ease the fill (easing makes the highlight drift ahead of the vocalist). The perceived smoothness comes from the _line transitions_ and from 120 Hz frame delivery, not from the fill curve. 🟡 Observed / 🔵
 
 ## 5.4 SwiftUI implementation
 
@@ -528,9 +528,10 @@ function KaraokeWord({ text, progress }: { text: string; progress: number }) {
 
   const width = font.measureText(text).width
   const gradient = Skia.Shader.MakeLinearGradient(
-    { x: 0, y: 0 }, { x: width, y: 0 },
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
     ['white', 'white', 'transparent', 'transparent'],
-    [0, progress, progress, 1],
+    [0, progress, progress, 1]
   )
 
   return (
@@ -586,13 +587,13 @@ For word-stepped fills, render each word as its own `KaraokeWord` inside a `Row`
 
 ## 5.7 Performance budget (all platforms)
 
-| Metric | Budget |
-|---|---|
-| Sync engine evaluation | ≤ 0.05 ms per frame (binary search; memoize line lookup) |
-| Text re-layout | 0 — layout is stable; only masks/colors change |
-| Frame delivery | 60 fps minimum; 120 fps on ProMotion; frame-skip beyond 50 ms lag |
-| Memory | lyric text + 2 render layers per visible line; virtualize offscreen lines (`LazyVStack`/`RecyclerView` equivalent) |
-| Reduce Motion | fill animation disabled → line-level instantaneous highlight (HIG Motion: motion must be optional) 🟢 |
+| Metric                 | Budget                                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Sync engine evaluation | ≤ 0.05 ms per frame (binary search; memoize line lookup)                                                           |
+| Text re-layout         | 0 — layout is stable; only masks/colors change                                                                     |
+| Frame delivery         | 60 fps minimum; 120 fps on ProMotion; frame-skip beyond 50 ms lag                                                  |
+| Memory                 | lyric text + 2 render layers per visible line; virtualize offscreen lines (`LazyVStack`/`RecyclerView` equivalent) |
+| Reduce Motion          | fill animation disabled → line-level instantaneous highlight (HIG Motion: motion must be optional) 🟢              |
 
 ---
 
@@ -603,44 +604,44 @@ For word-stepped fills, render each word as its own `KaraokeWord` inside a `Row`
 Motion derives from three official sources:
 
 1. **Responsiveness & redirection** — every interaction responds instantly and can be interrupted mid-flight (WWDC18 Session 803). 🟢
-2. **Purpose over spectacle** — *"Add motion purposefully… Don't add motion for the sake of adding motion"*; feedback should be *brief and precise* (HIG Motion). 🟢
+2. **Purpose over spectacle** — _"Add motion purposefully… Don't add motion for the sake of adding motion"_; feedback should be _brief and precise_ (HIG Motion). 🟢
 3. **Physicality** — Liquid Glass flexes, illuminates, and morphs; motion and material were designed as one (WWDC25 219). 🟢
 
 ## 6.2 Motion tokens
 
 Springs are preferred over fixed-duration easing for interactive motion (they are inherently interruptible). Duration tokens are for non-interactive sequences only.
 
-| Token | Value | Used for |
-|---|---|---|
-| `press` | response 0.25 s, damping 0.8 | Button/slider press feedback, glass illumination |
-| `snappy` | response 0.30 s, damping 0.82 | Mini-player expand/collapse, artwork focus |
-| `standard` | response 0.45 s, damping 0.85 | Page transitions, sheet presentation, lyrics line focus |
-| `gentle` | response 0.65 s, damping 0.88 | Full-screen immersive transitions, artwork parallax settle |
-| `fade-in` | 0.25 s ease-out | Component entry (opacity only, non-interactive) |
-| `fade-out` | 0.18 s ease-in | Component exit, auto-hide chrome |
+| Token      | Value                         | Used for                                                   |
+| ---------- | ----------------------------- | ---------------------------------------------------------- |
+| `press`    | response 0.25 s, damping 0.8  | Button/slider press feedback, glass illumination           |
+| `snappy`   | response 0.30 s, damping 0.82 | Mini-player expand/collapse, artwork focus                 |
+| `standard` | response 0.45 s, damping 0.85 | Page transitions, sheet presentation, lyrics line focus    |
+| `gentle`   | response 0.65 s, damping 0.88 | Full-screen immersive transitions, artwork parallax settle |
+| `fade-in`  | 0.25 s ease-out               | Component entry (opacity only, non-interactive)            |
+| `fade-out` | 0.18 s ease-in                | Component exit, auto-hide chrome                           |
 
 **Interruption rule:** springs retarget from current value on new input; duration-based animations must expose `cancel()` and jump to target state instantly.
 
 ## 6.3 Component enter
 
-| Property | Value | Notes |
-|---|---|---|
-| Opacity | 0 → 1 | 0.25 s, ease-out |
-| Scale | 0.96 → 1.0 | spring `standard`; children never scale independently |
-| Translation | +8 pt upward → 0 | only for bottom-anchored controls |
+| Property              | Value                              | Notes                                                           |
+| --------------------- | ---------------------------------- | --------------------------------------------------------------- |
+| Opacity               | 0 → 1                              | 0.25 s, ease-out                                                |
+| Scale                 | 0.96 → 1.0                         | spring `standard`; children never scale independently           |
+| Translation           | +8 pt upward → 0                   | only for bottom-anchored controls                               |
 | Blur (only for glass) | via material morphing, not opacity | 🟢 Liquid Glass materializes by modulating light, not by fading |
-| Stagger | siblings offset ≤ 40 ms | never > 80 ms; a 12-item list is not a 12-act play |
+| Stagger               | siblings offset ≤ 40 ms            | never > 80 ms; a 12-item list is not a 12-act play              |
 
 ## 6.4 Page transitions — matched geometry
 
 All navigation in the player uses **shared-element / matched geometry** transitions (SwiftUI `matchedGeometryEffect`; React Native `react-native-reanimated` shared transition; Flutter `Hero`):
 
-| Transition | Source → Destination | Behavior |
-|---|---|---|
-| Mini-player → Now Playing | artwork frame grows; metadata cross-fades upward | Scale-from-source, spring `standard`; text fades at 50% of duration |
-| Now Playing → Lyrics | artwork slides up + scales to 0.86; lyrics fade/slide in | same spring; artwork remains visible at reduced size (Apple Music behavior 🟡) |
-| Lyrics → Now Playing | exact reverse | Reverse must be *spatially symmetric* (WWDC18 spatial consistency 🟢) |
-| Dismiss | artwork shrink → mini-player | drag-driven: gesture controls progress 1:1; release decides settle (spring) or cancel |
+| Transition                | Source → Destination                                     | Behavior                                                                              |
+| ------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Mini-player → Now Playing | artwork frame grows; metadata cross-fades upward         | Scale-from-source, spring `standard`; text fades at 50% of duration                   |
+| Now Playing → Lyrics      | artwork slides up + scales to 0.86; lyrics fade/slide in | same spring; artwork remains visible at reduced size (Apple Music behavior 🟡)        |
+| Lyrics → Now Playing      | exact reverse                                            | Reverse must be _spatially symmetric_ (WWDC18 spatial consistency 🟢)                 |
+| Dismiss                   | artwork shrink → mini-player                             | drag-driven: gesture controls progress 1:1; release decides settle (spring) or cancel |
 
 **Constraint:** matched transitions must interpolate **geometry and opacity only**. Never interpolate blur radius on a matched element (it reads as glass and costs GPU).
 
@@ -648,44 +649,44 @@ All navigation in the player uses **shared-element / matched geometry** transiti
 
 Exactly as specified by the product brief, with engineering rationale:
 
-| State | Scale | Opacity | Blur | Spring |
-|---|---|---|---|---|
-| **Current line** | 1.05 | 1.0 | 0 | `standard`, retarget on line change |
-| **Future lines** | 1.0 | 0.45 | 0 | none (opacity animates 0.2 s) |
-| **Past lines** | 1.0 | 0.7 | 0 | none |
-| **Word fill** | — | — | — | none — linear with audio (§5.3) |
+| State            | Scale | Opacity | Blur | Spring                              |
+| ---------------- | ----- | ------- | ---- | ----------------------------------- |
+| **Current line** | 1.05  | 1.0     | 0    | `standard`, retarget on line change |
+| **Future lines** | 1.0   | 0.45    | 0    | none (opacity animates 0.2 s)       |
+| **Past lines**   | 1.0   | 0.7     | 0    | none                                |
+| **Word fill**    | —     | —       | —    | none — linear with audio (§5.3)     |
 
 **Why current line scales instead of just brightening:** scale is a legibility affordance that works across artwork contrast; blur is banned on lyrics (legibility + cost). Opacity alone is insufficient for line focus under bright backgrounds — scale gives a second cue. 🔵
 
 **Engineering notes:**
 
-- `blur: 0` is a *specification*, not an omission: past/future lines must be legible, so they are dimmed by opacity only.
+- `blur: 0` is a _specification_, not an omission: past/future lines must be legible, so they are dimmed by opacity only.
 - The current line's scale change must not reflow the layout — scale via transform, not font size (stable layout = no text re-measure, §5.7).
 - On line change, scroll the line to viewport center with `scrollPosition`/`ScrollViewReader`, spring `standard`; the scroll animation must be interruptible by user scroll and by rapid line changes.
 
 ## 6.6 Cross-platform mapping
 
-| SwiftUI | React Native | Flutter | Web (CSS) |
-|---|---|---|---|
-| `.spring(response:dampingFraction:)` | `withSpring(value, { damping: 14, stiffness: 170 })` (reanimated) | `SpringSimulation(damping, stiffness)` | `cubic-bezier(0.34, 1.2, 0.64, 1)` — spring-like, duration-bounded |
-| `matchedGeometryEffect` | `sharedTransitionTag` (reanimated) | `Hero(tag:)` | FLIP technique |
-| `TimelineView(.animation)` | `useFrameCallback` | `AnimationController` + `Ticker` | `requestAnimationFrame` |
-| `withAnimation(.interactiveSpring())` | `withSpring(..., damping: 8)` | `AnimationController` + `Curves.easeOutBack` | — |
-| `accessibilityReduceMotion` | `AccessibilityInfo.isReduceMotionEnabled` | `MediaQuery.disableAnimations` | `prefers-reduced-motion` |
+| SwiftUI                               | React Native                                                      | Flutter                                      | Web (CSS)                                                          |
+| ------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------ |
+| `.spring(response:dampingFraction:)`  | `withSpring(value, { damping: 14, stiffness: 170 })` (reanimated) | `SpringSimulation(damping, stiffness)`       | `cubic-bezier(0.34, 1.2, 0.64, 1)` — spring-like, duration-bounded |
+| `matchedGeometryEffect`               | `sharedTransitionTag` (reanimated)                                | `Hero(tag:)`                                 | FLIP technique                                                     |
+| `TimelineView(.animation)`            | `useFrameCallback`                                                | `AnimationController` + `Ticker`             | `requestAnimationFrame`                                            |
+| `withAnimation(.interactiveSpring())` | `withSpring(..., damping: 8)`                                     | `AnimationController` + `Curves.easeOutBack` | —                                                                  |
+| `accessibilityReduceMotion`           | `AccessibilityInfo.isReduceMotionEnabled`                         | `MediaQuery.disableAnimations`               | `prefers-reduced-motion`                                           |
 
-**Motion accessibility:** when Reduce Motion is enabled, all spring/scale transitions collapse to a ≤ 0.15 s cross-fade; karaoke fill becomes instantaneous. Motion must never be the *only* carrier of information (HIG Motion 🟢).
+**Motion accessibility:** when Reduce Motion is enabled, all spring/scale transitions collapse to a ≤ 0.15 s cross-fade; karaoke fill becomes instantaneous. Motion must never be the _only_ carrier of information (HIG Motion 🟢).
 
 ---
 
 # Chapter 7: Audio-Reactive UI
 
-> ⚠️ **Apple has not publicly disclosed the implementation of audio-reactive UI** (waveforms, spectrum, beat-sync, or artwork color extraction). The pipeline below is 🔵 Inference grounded in Apple's own stated principle that Liquid Glass/UI *responds to its environment* (WWDC25 219) and that content is the hero.
+> ⚠️ **Apple has not publicly disclosed the implementation of audio-reactive UI** (waveforms, spectrum, beat-sync, or artwork color extraction). The pipeline below is 🔵 Inference grounded in Apple's own stated principle that Liquid Glass/UI _responds to its environment_ (WWDC25 219) and that content is the hero.
 
 ## 7.1 Design intent
 
 Audio-reactive UI in a HiFi player has exactly one purpose: **make the music legible**. It must:
 
-- translate the *structure* of audio (beats, energy, spectral shape) into subtle motion;
+- translate the _structure_ of audio (beats, energy, spectral shape) into subtle motion;
 - never outshine the artwork or lyrics;
 - remain calm at rest — a HiFi player at 2 a.m. with a slow ballad must not look like a nightclub.
 
@@ -693,12 +694,12 @@ Audio-reactive UI in a HiFi player has exactly one purpose: **make the music leg
 
 ## 7.2 Data sources
 
-| Source | Produces | Used for |
-|---|---|---|
-| Decoded PCM buffer (AVAudioFile / decoded asset) | waveform peaks at multiple zoom levels | scrubber waveform, album-art background rhythm |
-| Real-time FFT (vDSP / Accelerate; Web Audio AnalyserNode; RN `react-native-audio-api`) | magnitude spectrum in dB | spectrum bars/rings, spectral centroid |
-| Onset/tempo detection | beat phase, tempo (BPM), energy envelope | karaoke "dance" timing, background pulse |
-| Artwork pixels | dominant color, palette, luminance | background gradient, accent color (§7.7) |
+| Source                                                                                 | Produces                                 | Used for                                       |
+| -------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------- |
+| Decoded PCM buffer (AVAudioFile / decoded asset)                                       | waveform peaks at multiple zoom levels   | scrubber waveform, album-art background rhythm |
+| Real-time FFT (vDSP / Accelerate; Web Audio AnalyserNode; RN `react-native-audio-api`) | magnitude spectrum in dB                 | spectrum bars/rings, spectral centroid         |
+| Onset/tempo detection                                                                  | beat phase, tempo (BPM), energy envelope | karaoke "dance" timing, background pulse       |
+| Artwork pixels                                                                         | dominant color, palette, luminance       | background gradient, accent color (§7.7)       |
 
 ## 7.3 Pipeline
 
@@ -719,13 +720,13 @@ UI Motion (update-rate throttled to ≤ 30 fps for visuals; 60 fps only during a
 
 **Engineering constraints:**
 
-| # | Constraint |
-|---|---|
-| A1 | Analysis runs on the audio/render thread (or a dedicated DSP thread); UI never blocks it. |
-| A2 | All reactive parameters pass through **attack/release smoothing** (attack 10–30 ms, release 150–400 ms). Raw FFT values are never sent to UI. |
-| A3 | Update-rate throttle: reactive visuals 30 fps max; interaction-driven visuals 60 fps. |
-| A4 | Determinism: identical audio ⇒ identical parameters. No randomness anywhere in the pipeline. |
-| A5 | Power: FFT analysis pauses when the reactive surface is not visible. |
+| #   | Constraint                                                                                                                                    |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | Analysis runs on the audio/render thread (or a dedicated DSP thread); UI never blocks it.                                                     |
+| A2  | All reactive parameters pass through **attack/release smoothing** (attack 10–30 ms, release 150–400 ms). Raw FFT values are never sent to UI. |
+| A3  | Update-rate throttle: reactive visuals 30 fps max; interaction-driven visuals 60 fps.                                                         |
+| A4  | Determinism: identical audio ⇒ identical parameters. No randomness anywhere in the pipeline.                                                  |
+| A5  | Power: FFT analysis pauses when the reactive surface is not visible.                                                                          |
 
 ## 7.4 Waveform
 
@@ -750,25 +751,25 @@ tempo     = autocorrelation of onset envelope (60–180 BPM window)
 beatPhase = (t − lastBeat) / beatInterval               // 0..1
 ```
 
-| Parameter | Value |
-|---|---|
-| Window W | 512 ms |
-| Threshold | 1.35× local mean (adaptive) |
+| Parameter           | Value                                                      |
+| ------------------- | ---------------------------------------------------------- |
+| Window W            | 512 ms                                                     |
+| Threshold           | 1.35× local mean (adaptive)                                |
 | False-positive gate | require 2 onsets within 1.5× median interval to lock tempo |
-| Output smoothing | beatPhase through one-pole filter, α = 0.4 |
+| Output smoothing    | beatPhase through one-pole filter, α = 0.4                 |
 
-Use beat data for: lyric line *arrival* anticipation (line fades in at beat-aligned offset), ambient background drift, and optional (opt-in) subtle pulse. **Never** pulse the artwork, the controls, or the lyrics text itself. 🟡 (Apple Music does not pulse its UI to the beat)
+Use beat data for: lyric line _arrival_ anticipation (line fades in at beat-aligned offset), ambient background drift, and optional (opt-in) subtle pulse. **Never** pulse the artwork, the controls, or the lyrics text itself. 🟡 (Apple Music does not pulse its UI to the beat)
 
 ## 7.6 Spectrum visualization
 
-| Property | Spec 🔵 |
-|---|---|
-| Bands | 16–32 log-spaced (20 Hz–20 kHz); bar or ring layout |
-| Max height/amplitude | 6 pt ambient; 24 pt when user selects "spectrum" view |
-| Color | monochrome accent from palette; gradient from accent → transparent |
-| Opacity | 0.25 ambient; 0.5 focused |
-| Frequency | 30 fps; bars use energy, not raw bin values |
-| Safety | no strobing; luminance delta per frame ≤ 0.3; amplitude attack cap |
+| Property             | Spec 🔵                                                            |
+| -------------------- | ------------------------------------------------------------------ |
+| Bands                | 16–32 log-spaced (20 Hz–20 kHz); bar or ring layout                |
+| Max height/amplitude | 6 pt ambient; 24 pt when user selects "spectrum" view              |
+| Color                | monochrome accent from palette; gradient from accent → transparent |
+| Opacity              | 0.25 ambient; 0.5 focused                                          |
+| Frequency            | 30 fps; bars use energy, not raw bin values                        |
+| Safety               | no strobing; luminance delta per frame ≤ 0.3; amplitude attack cap |
 
 ## 7.7 Album color extraction
 
@@ -780,12 +781,12 @@ The background gradient and accent colors are derived from the artwork. Pipeline
 4. Output: `backgroundGradient` (top/bottom colors), `accent` (highest-saturation viable bucket), `legibilityTone` (light/dark).
 5. Apply **luminance gate**: if artwork is uniformly bright, the gradient darkens toward the bottom by up to 35% opacity of black (mirrors Apple's Clear-glass dimming guidance 🟢 HIG Materials); if uniformly dark, text stays white with elevated shadow.
 
-| Output | Rule |
-|---|---|
-| Gradient | vertical, top = artwork top color, bottom = artwork bottom color darkened 15–35% |
-| Accent | used only for: play state, selected tab, primary action — never for body text |
-| Text tone | `legibilityTone` decides light/dark labels; enforce WCAG AA per §3.2 |
-| Cache | palette computed once per track (on artwork load), invalidated on artwork change only |
+| Output    | Rule                                                                                  |
+| --------- | ------------------------------------------------------------------------------------- |
+| Gradient  | vertical, top = artwork top color, bottom = artwork bottom color darkened 15–35%      |
+| Accent    | used only for: play state, selected tab, primary action — never for body text         |
+| Text tone | `legibilityTone` decides light/dark labels; enforce WCAG AA per §3.2                  |
+| Cache     | palette computed once per track (on artwork load), invalidated on artwork change only |
 
 ## 7.8 Perceived-quality guardrails
 
@@ -802,49 +803,49 @@ The background gradient and accent colors are derived from the artwork. Pipeline
 
 ### Spacing scale
 
-| Token | Value | Use |
-|---|---|---|
-| `space-4` | 4 pt | inline gaps (word spacing) |
-| `space-8` | 8 pt | icon-to-label, badge padding |
-| `space-12` | 12 pt | control groups, list rows |
+| Token      | Value | Use                                      |
+| ---------- | ----- | ---------------------------------------- |
+| `space-4`  | 4 pt  | inline gaps (word spacing)               |
+| `space-8`  | 8 pt  | icon-to-label, badge padding             |
+| `space-12` | 12 pt | control groups, list rows                |
 | `space-16` | 16 pt | standard screen margin (safe-area inset) |
-| `space-24` | 24 pt | section separation |
-| `space-32` | 32 pt | artwork-to-metadata |
-| `space-48` | 48 pt | hero separation, lyrics line spacing |
-| `space-64` | 64 pt | full-screen mode breathing room |
+| `space-24` | 24 pt | section separation                       |
+| `space-32` | 32 pt | artwork-to-metadata                      |
+| `space-48` | 48 pt | hero separation, lyrics line spacing     |
+| `space-64` | 64 pt | full-screen mode breathing room          |
 
 ### Corner radii (concentric system 🟢 WWDC25 356)
 
-| Token | Value | Use |
-|---|---|---|
-| `radius-10` | 10 pt | artwork small (mini player) |
-| `radius-14` | 14 pt | artwork medium, buttons |
-| `radius-18` | 18 pt | artwork hero, cards |
-| `radius-capsule` | h/2 | transport buttons, sliders, pill controls |
-| Nested rule | inner = parent radius − padding | any nested container |
+| Token            | Value                           | Use                                       |
+| ---------------- | ------------------------------- | ----------------------------------------- |
+| `radius-10`      | 10 pt                           | artwork small (mini player)               |
+| `radius-14`      | 14 pt                           | artwork medium, buttons                   |
+| `radius-18`      | 18 pt                           | artwork hero, cards                       |
+| `radius-capsule` | h/2                             | transport buttons, sliders, pill controls |
+| Nested rule      | inner = parent radius − padding | any nested container                      |
 
 ### Typography (iOS Large / default scale, SF Pro 🟢 HIG)
 
-| Style | Weight | Size | Leading |
-|---|---|---|---|
-| Hero title (Large Title) | Regular | 34 | 41 |
-| Track title (Title 2) | Regular | 22 | 28 |
-| Artist (Headline) | Semibold | 17 | 22 |
-| Album (Subhead) | Regular | 15 | 20 |
-| Lyrics line (Headline, custom scale) | Semibold | 17–34 (fontScale) | ×1.25 |
-| Caption (quality badge) | Regular | 12 | 16 |
+| Style                                | Weight   | Size              | Leading |
+| ------------------------------------ | -------- | ----------------- | ------- |
+| Hero title (Large Title)             | Regular  | 34                | 41      |
+| Track title (Title 2)                | Regular  | 22                | 28      |
+| Artist (Headline)                    | Semibold | 17                | 22      |
+| Album (Subhead)                      | Regular  | 15                | 20      |
+| Lyrics line (Headline, custom scale) | Semibold | 17–34 (fontScale) | ×1.25   |
+| Caption (quality badge)              | Regular  | 12                | 16      |
 
 Constraints: all text scales with Dynamic Type; use system styles or `relativeTo:`; avoid Ultralight/Thin/Light weights at < 17 pt (HIG Typography 🟢); lyric font scale is a user setting (Settings > Apps > Music > Larger Text precedent 🟢).
 
 ### Color
 
-| Role | Rule |
-|---|---|
-| Background gradient | from artwork palette (§7.7) |
-| Primary text | legibilityTone-derived; white/black per luminance gate |
-| Secondary text | primary at 0.7 opacity |
-| Accent | palette-derived; reserved for play state + primary action |
-| Success / error | system semantic colors only (e.g. red for download errors) — never hard-coded hex 🟢 |
+| Role                | Rule                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------ |
+| Background gradient | from artwork palette (§7.7)                                                          |
+| Primary text        | legibilityTone-derived; white/black per luminance gate                               |
+| Secondary text      | primary at 0.7 opacity                                                               |
+| Accent              | palette-derived; reserved for play state + primary action                            |
+| Success / error     | system semantic colors only (e.g. red for download errors) — never hard-coded hex 🟢 |
 
 ## 8.1 Player Controller
 
@@ -867,16 +868,16 @@ interface PlayerControllerProps {
 
 ### Behavior contract
 
-| Aspect | Spec |
-|---|---|
-| Layout | one row: skip-back · play/pause (primary, glass, accent-filled) · skip-forward; below: progress scrubber; volume as a secondary slider (expandable) |
-| Play button | 56 pt hit area (44 pt minimum, HIG touch guidance); press → illuminate within 60 ms; state change animated with spring `press` |
-| Progress | waveform scrubber (§7.4); timestamp chip while scrubbing; time labels secondary |
-| Volume | horizontal slider, knob becomes glass while interacting 🟢 (HIG Materials: transient interactive elements) |
-| Quality badge | caption text + chevron; tap opens quality sheet with current selection; monochrome unless active |
-| Idle behavior | chrome auto-recedes after 3 s of no input in immersive mode (opacity → 0.15, 0.5 s); any touch restores instantly |
+| Aspect        | Spec                                                                                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Layout        | one row: skip-back · play/pause (primary, glass, accent-filled) · skip-forward; below: progress scrubber; volume as a secondary slider (expandable)   |
+| Play button   | 56 pt hit area (44 pt minimum, HIG touch guidance); press → illuminate within 60 ms; state change animated with spring `press`                        |
+| Progress      | waveform scrubber (§7.4); timestamp chip while scrubbing; time labels secondary                                                                       |
+| Volume        | horizontal slider, knob becomes glass while interacting 🟢 (HIG Materials: transient interactive elements)                                            |
+| Quality badge | caption text + chevron; tap opens quality sheet with current selection; monochrome unless active                                                      |
+| Idle behavior | chrome auto-recedes after 3 s of no input in immersive mode (opacity → 0.15, 0.5 s); any touch restores instantly                                     |
 | Accessibility | every icon has a label; play/pause exposed as a button with combined label; VoiceOver announces time changes only on scrub release (not continuously) |
-| Haptics | optional; never the sole feedback 🟢 (HIG Motion) |
+| Haptics       | optional; never the sole feedback 🟢 (HIG Motion)                                                                                                     |
 
 ## 8.2 Lyrics View
 
@@ -889,31 +890,31 @@ interface LyricsViewProps {
   fontScale: 0.85 | 1.0 | 1.15 | 1.3
   showTranslation?: boolean
   showPronunciation?: boolean
-  vocalLayout?: 'single' | 'duet' | 'backing'   // Sing parity 🟢 (Newsroom)
+  vocalLayout?: 'single' | 'duet' | 'backing' // Sing parity 🟢 (Newsroom)
   onLineTap?(lineIndex: number): void
 }
 ```
 
 ### Modes
 
-| Mode | Behavior |
-|---|---|
-| `off` | Lyrics hidden; artwork mode |
-| `line` | line-level highlight only (no word fill) — fallback for low-confidence timings |
-| `word` | per-word fill, linear with audio (§5) |
+| Mode      | Behavior                                                                                                                   |
+| --------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `off`     | Lyrics hidden; artwork mode                                                                                                |
+| `line`    | line-level highlight only (no word fill) — fallback for low-confidence timings                                             |
+| `word`    | per-word fill, linear with audio (§5)                                                                                      |
 | `karaoke` | word fill + vocal-track separation: backing vocals dimmed/independent, duet splits left/right (Apple Music Sing parity 🟢) |
 
 ### Behavior contract
 
-| Aspect | Spec |
-|---|---|
-| Sync | audio-clock driven; scroll position is output (§4.5) |
-| Current line | scale 1.05, opacity 1.0, spring `standard` (§6.5) |
-| Past/future | 0.7 / 0.45 opacity, no blur, no scale |
-| Line tap | seek to line start (AudioClock domain) |
-| Hold-to-report | long-press a line → share sheet with "Report a Concern" (Apple Support parity 🟢) |
+| Aspect                    | Spec                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------- |
+| Sync                      | audio-clock driven; scroll position is output (§4.5)                                        |
+| Current line              | scale 1.05, opacity 1.0, spring `standard` (§6.5)                                           |
+| Past/future               | 0.7 / 0.45 opacity, no blur, no scale                                                       |
+| Line tap                  | seek to line start (AudioClock domain)                                                      |
+| Hold-to-report            | long-press a line → share sheet with "Report a Concern" (Apple Support parity 🟢)           |
 | Translation/Pronunciation | sub-line rendering beneath original; fontScale applies per-script (Apple Support parity 🟢) |
-| Dynamic Type | lyrics scale with user fontScale, never clipped; lines wrap freely |
+| Dynamic Type              | lyrics scale with user fontScale, never clipped; lines wrap freely                          |
 
 ## 8.3 Album Artwork
 
@@ -922,9 +923,9 @@ interface LyricsViewProps {
 ```typescript
 interface AlbumArtworkProps {
   image: ImageSource
-  blur: 0 | 12 | 24 | 48        // only for background copies, never the hero
-  reflection?: boolean           // subtle floor reflection, HiFi-desk mode
-  depth?: 0 | 1 | 2              // elevation: shadow scale + parallax amount
+  blur: 0 | 12 | 24 | 48 // only for background copies, never the hero
+  reflection?: boolean // subtle floor reflection, HiFi-desk mode
+  depth?: 0 | 1 | 2 // elevation: shadow scale + parallax amount
   onTap?(): void
   onDragDown?(progress: number): void
 }
@@ -953,14 +954,14 @@ interface AlbumArtworkProps {
 
 ## 8.4 Supporting components
 
-| Component | Key spec |
-|---|---|
-| Mini Player | artwork 40–56 pt, title/artist single line, play/pause + next; tap → matched expand (§6.4); Clear glass over artwork, Regular over lists 🟢 |
-| Queue (Up Next) | list rows: index/artwork/title/duration; current row accent-dot; drag-to-reorder with spring `snappy`; source = now-playing (inline presentation 🟢 WWDC25 356) |
-| Transport Menu (more) | glass sheet anchored to its source button 🟢; icons in menu items; "single source of truth" for actions |
-| Volume | see §8.1; mute state uses system icon set |
-| Quality Sheet | list of formats with current-state checkmark; mono/brand color per HIG tinting rules; formats: lossless / hi-res / spatial / gapless badge |
-| AirPlay / Cast | system picker where available; never custom-recreate system sheets (HIG: use system controls) |
+| Component             | Key spec                                                                                                                                                        |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mini Player           | artwork 40–56 pt, title/artist single line, play/pause + next; tap → matched expand (§6.4); Clear glass over artwork, Regular over lists 🟢                     |
+| Queue (Up Next)       | list rows: index/artwork/title/duration; current row accent-dot; drag-to-reorder with spring `snappy`; source = now-playing (inline presentation 🟢 WWDC25 356) |
+| Transport Menu (more) | glass sheet anchored to its source button 🟢; icons in menu items; "single source of truth" for actions                                                         |
+| Volume                | see §8.1; mute state uses system icon set                                                                                                                       |
+| Quality Sheet         | list of formats with current-state checkmark; mono/brand color per HIG tinting rules; formats: lossless / hi-res / spatial / gapless badge                      |
+| AirPlay / Cast        | system picker where available; never custom-recreate system sheets (HIG: use system controls)                                                                   |
 
 ---
 
@@ -1201,7 +1202,7 @@ const currentLine = useSharedValue(0)
 
 useFrameCallback(() => {
   'worklet'
-  const t = audioClock.currentTime()          // audio-clock domain
+  const t = audioClock.currentTime() // audio-clock domain
   const s = syncEngine.stateAt(t)
   progress.value = s.wordProgress
   currentLine.value = withSpring(s.lineIndex, { damping: 14, stiffness: 170 }) // interruptible
@@ -1311,21 +1312,21 @@ Use as the acceptance gate for every player-surface feature. All items are testa
 
 ## Official (🟢)
 
-| Source | Used for |
-|---|---|
-| HIG — Materials | Liquid Glass vs standard materials, Regular/Clear variants, dimming layer, vibrancy |
-| HIG — Motion | purposefulness, brevity, cancelability, 0.2 Hz warning |
-| HIG — Typography | text styles, sizes, weights, Dynamic Type, tracking |
-| HIG — Layout | grouping, hierarchy, safe areas, size classes, adaptation |
-| HIG — Color | semantic colors, tinting rules, P3, monochrome-over-colorful guidance |
-| Liquid Glass — Technology Overview / Adopting Liquid Glass | lensing, adaptivity, adoption scope, scroll edge effects, performance |
-| SwiftUI — Glass, glassEffect, GlassEffectContainer, Applying Liquid Glass to custom views | material APIs, morphing, container constraints |
-| WWDC25 Session 219 — Meet Liquid Glass | lensing, fluidity, variants, glass-on-glass prohibition, tinting, materialization |
-| WWDC25 Session 356 — Get to know the new design system | concentric shapes, functional layer, action-sheet origin, scroll edge effects, continuity |
-| WWDC18 Session 803 — Designing Fluid Interfaces | latency/response, interruption & redirection, spatial consistency, lightweight interaction |
-| Apple Newsroom — Apple Music Sing (Dec 6, 2022) | beat-by-beat lyrics, background vocals, duet view |
-| Apple Support — See lyrics and sing in Apple Music (105076) | line-by-line lyrics, tap-to-jump, translation/pronunciation, report flow |
-| Apple Design Resources | SF Symbols, templates, Icon Composer, color guides |
+| Source                                                                                    | Used for                                                                                   |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| HIG — Materials                                                                           | Liquid Glass vs standard materials, Regular/Clear variants, dimming layer, vibrancy        |
+| HIG — Motion                                                                              | purposefulness, brevity, cancelability, 0.2 Hz warning                                     |
+| HIG — Typography                                                                          | text styles, sizes, weights, Dynamic Type, tracking                                        |
+| HIG — Layout                                                                              | grouping, hierarchy, safe areas, size classes, adaptation                                  |
+| HIG — Color                                                                               | semantic colors, tinting rules, P3, monochrome-over-colorful guidance                      |
+| Liquid Glass — Technology Overview / Adopting Liquid Glass                                | lensing, adaptivity, adoption scope, scroll edge effects, performance                      |
+| SwiftUI — Glass, glassEffect, GlassEffectContainer, Applying Liquid Glass to custom views | material APIs, morphing, container constraints                                             |
+| WWDC25 Session 219 — Meet Liquid Glass                                                    | lensing, fluidity, variants, glass-on-glass prohibition, tinting, materialization          |
+| WWDC25 Session 356 — Get to know the new design system                                    | concentric shapes, functional layer, action-sheet origin, scroll edge effects, continuity  |
+| WWDC18 Session 803 — Designing Fluid Interfaces                                           | latency/response, interruption & redirection, spatial consistency, lightweight interaction |
+| Apple Newsroom — Apple Music Sing (Dec 6, 2022)                                           | beat-by-beat lyrics, background vocals, duet view                                          |
+| Apple Support — See lyrics and sing in Apple Music (105076)                               | line-by-line lyrics, tap-to-jump, translation/pronunciation, report flow                   |
+| Apple Design Resources                                                                    | SF Symbols, templates, Icon Composer, color guides                                         |
 
 ## Observed (🟡)
 
@@ -1337,4 +1338,4 @@ Use as the acceptance gate for every player-surface feature. All items are testa
 
 ---
 
-*End of spec — ship the restraint, not the glass.*
+_End of spec — ship the restraint, not the glass._

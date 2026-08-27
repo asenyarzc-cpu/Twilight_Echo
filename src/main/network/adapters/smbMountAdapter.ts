@@ -14,10 +14,7 @@ export interface MountCommandResult {
   stderr: string
 }
 
-export type MountCommandRunner = (
-  command: string,
-  args: string[]
-) => Promise<MountCommandResult>
+export type MountCommandRunner = (command: string, args: string[]) => Promise<MountCommandResult>
 
 interface MountAdapterDeps {
   platform?: NodeJS.Platform
@@ -99,7 +96,10 @@ function createMountAdapterForProtocol(
     if (/network name cannot be found|not found|no such/i.test(stderr)) {
       throw new NetworkSourceFailure('notFound', 'SMB 共享不存在')
     }
-    throw new NetworkSourceFailure('network', `SMB ${action} 失败：${stderr.trim() || `exit ${result.code}`}`)
+    throw new NetworkSourceFailure(
+      'network',
+      `SMB ${action} 失败：${stderr.trim() || `exit ${result.code}`}`
+    )
   }
 
   return {
@@ -132,19 +132,19 @@ function createMountAdapterForProtocol(
         ? (remotePath: string) => {
             const key =
               protocol === 'nfs'
-                ? mountPoint ?? ''
+                ? (mountPoint ?? '')
                 : platform === 'win32'
                   ? uncFor(profile)
-                  : mountPoint ?? gioUri(profile)
+                  : (mountPoint ?? gioUri(profile))
             return deps.localMap!(key, remotePath)
           }
         : (remotePath: string) => {
             const key =
               protocol === 'nfs'
-                ? mountPoint ?? ''
+                ? (mountPoint ?? '')
                 : platform === 'win32'
                   ? uncFor(profile)
-                  : mountPoint ?? gioUri(profile)
+                  : (mountPoint ?? gioUri(profile))
             return defaultLocalMap(key)(remotePath)
           }
 
@@ -172,7 +172,8 @@ function createMountAdapterForProtocol(
         } else if (platform === 'win32') {
           const unc = uncFor(profile)
           const password = auth.kind === 'password' ? auth.password : ''
-          const user = auth.kind === 'password' ? auth.username ?? profile.username ?? 'guest' : 'guest'
+          const user =
+            auth.kind === 'password' ? (auth.username ?? profile.username ?? 'guest') : 'guest'
           const result = await runCommand('net', ['use', unc, password, `/user:${user}`])
           throwForMountResult(result, '挂载')
         } else {
@@ -193,7 +194,7 @@ function createMountAdapterForProtocol(
 
       function toEntry(remotePath: string, isDirectory: boolean, size: number): NetworkEntry {
         const path = normalizeRemotePath(remotePath)
-        const name = path === '/' ? '/' : path.split('/').pop() ?? path
+        const name = path === '/' ? '/' : (path.split('/').pop() ?? path)
         return {
           id: buildNetworkEntryId(profile.protocol, profile.id, path),
           profileId: profile.id,
@@ -271,7 +272,9 @@ function createMountAdapterForProtocol(
               mountPoint = null
             }
           } else if (platform === 'win32') {
-            await runCommand('net', ['use', uncFor(profile), '/delete', '/y']).catch(() => undefined)
+            await runCommand('net', ['use', uncFor(profile), '/delete', '/y']).catch(
+              () => undefined
+            )
           } else {
             await runCommand('gio', ['mount', '-u', gioUri(profile)]).catch(() => undefined)
           }
@@ -293,7 +296,10 @@ async function defaultRunCommand(command: string, args: string[]): Promise<Mount
         resolve({
           stdout,
           stderr,
-          code: typeof error === 'object' && error !== null ? (error as { code?: number }).code ?? 1 : 0
+          code:
+            typeof error === 'object' && error !== null
+              ? ((error as { code?: number }).code ?? 1)
+              : 0
         })
       }
     )

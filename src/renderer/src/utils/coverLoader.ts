@@ -55,11 +55,7 @@ function isProtocolLocalCoverHandle(handle: string): boolean {
 function isDisplayableCoverHandle(handle: string): boolean {
   // Protocol-local handles are NOT immediately safe for <img> after cold start —
   // they must be materialized first. data/blob/twilight-media can paint now.
-  return (
-    /^data:/i.test(handle) ||
-    /^blob:/i.test(handle) ||
-    isTwilightMediaImageHandle(handle)
-  )
+  return /^data:/i.test(handle) || /^blob:/i.test(handle) || isTwilightMediaImageHandle(handle)
 }
 
 function bareLocalCoverHandle(handle: string): string {
@@ -85,8 +81,7 @@ export async function resolveCover(
       ? durableSource.trim()
       : null
 
-  const trimmedHandle =
-    typeof handle === 'string' && handle.trim() ? handle.trim() : null
+  const trimmedHandle = typeof handle === 'string' && handle.trim() ? handle.trim() : null
 
   // Local disk art always wins over durable remote origin. Provider enrichment
   // may attach coverSource while the track still has a correct cover:// handle;
@@ -187,10 +182,7 @@ async function materializeLocalCoverForDisplay(handle: string): Promise<string |
   return request
 }
 
-async function coverBytesToDataUrl(
-  value: unknown,
-  handle: string
-): Promise<string | null> {
+async function coverBytesToDataUrl(value: unknown, handle: string): Promise<string | null> {
   let bytes: Uint8Array | null = null
   if (value instanceof ArrayBuffer) bytes = new Uint8Array(value)
   else if (ArrayBuffer.isView(value)) {
@@ -297,10 +289,8 @@ export function useCover(
     () => [handleRef.value, sourceRef?.value] as const,
     ([handle, source], previous) => {
       const id = ++requestId
-      const trimmed =
-        typeof handle === 'string' && handle.trim() ? handle.trim() : null
-      const inputsChanged =
-        !previous || previous[0] !== handle || previous[1] !== source
+      const trimmed = typeof handle === 'string' && handle.trim() ? handle.trim() : null
+      const inputsChanged = !previous || previous[0] !== handle || previous[1] !== source
 
       // Always clear on input change so Chromium cannot keep the previous bitmap
       // while async materialize / re-grant runs (protocol-local handles included).

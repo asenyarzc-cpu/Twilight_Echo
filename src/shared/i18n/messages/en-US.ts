@@ -247,6 +247,19 @@ export const EN_US_MESSAGES: Record<string, string> = {
   'audio.reason.dsd_converted_to_pcm.fix':
     'Set DSD output mode to "auto" and select an exclusive device that supports DSD.',
 
+  'audio.reason.dsd_probe_failed.label': 'The DSD source probe failed; fell back to PCM',
+  'audio.reason.dsd_probe_failed.explain':
+    'The engine could not read this DSD file\u2019s stream info before playback (damaged container or unreadable path), so neither native DSD nor DoP was attempted.',
+  'audio.reason.dsd_probe_failed.fix':
+    'Verify the file opens in another player; if it does, collect the engine logs and report it.',
+
+  'audio.reason.dsd_backend_cannot_carry.label':
+    'The active output backend cannot carry DSD; fell back to PCM',
+  'audio.reason.dsd_backend_cannot_carry.explain':
+    'The active backend (e.g. WASAPI shared mode) cannot transport bit-exact audio, so neither native DSD nor DoP can be established.',
+  'audio.reason.dsd_backend_cannot_carry.fix':
+    'Switch the audio output to ASIO or WASAPI exclusive mode (with a DSD-capable device).',
+
   'audio.reason.dsd_source_unsupported.label': 'This DSD source or mode is unsupported',
   'audio.reason.dsd_source_unsupported.explain':
     "This DSD source's container or encoding cannot be played directly right now.",
@@ -279,6 +292,13 @@ export const EN_US_MESSAGES: Record<string, string> = {
     'The ASIO driver exposes no DSD-specific data callback, so the engine cannot feed it as a bitstream and fell back to another transport.',
   'audio.reason.native_dsd_typed_callback_missing.fix':
     'Update the ASIO driver to a DSD-capable version, or use DoP instead.',
+
+  'audio.reason.native_dsd_buffer_unit_mismatch.label':
+    'The driver counts DSD buffers in a different unit than the engine',
+  'audio.reason.native_dsd_buffer_unit_mismatch.explain':
+    'The measured callback cadence shows this ASIO driver counts DSD buffer sizes in 1-bit samples instead of packed byte-frames, so continuing the passthrough would write past the buffers. Native DSD was marked unusable and reported honestly.',
+  'audio.reason.native_dsd_buffer_unit_mismatch.fix':
+    'Switch to DoP transport, or report the buffer-unit behavior to the driver vendor (the engine trace log can be attached).',
 
   'audio.reason.sacd_iso_unsupported.label': 'The SACD ISO has no playable uncompressed DSD area',
   'audio.reason.sacd_iso_unsupported.explain':
@@ -457,6 +477,8 @@ export const EN_US_MESSAGES: Record<string, string> = {
     'This report contains no audio content, no full local paths and no URL query parameters — paths and addresses are reduced to a type, an extension and a one-way fingerprint.',
   'diagnostics.export.rawHeading': 'Raw data (for developers)',
   'diagnostics.export.eventCount': '{count} recorded event(s)',
+  'diagnostics.export.timelineHeading': 'Event timeline (warnings/errors + DSD route decisions)',
+  'diagnostics.export.timelineEmpty': 'No warning or error events in the timeline.',
   'diagnostics.export.savedNotice': 'Audio diagnostic report exported',
   'diagnostics.export.failed': 'Failed to export the audio diagnostic log'
 }

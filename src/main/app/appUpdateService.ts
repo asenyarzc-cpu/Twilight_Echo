@@ -108,7 +108,9 @@ async function resolveChecksum(
 async function fetchReleaseList(signal?: AbortSignal): Promise<GithubRelease[]> {
   const response = await fetch(GITHUB_API_RELEASES_URL, {
     headers: GITHUB_HEADERS,
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000)
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+      : AbortSignal.timeout(10_000)
   })
   if (!response.ok) throw new Error(`GitHub Releases API HTTP ${response.status}`)
   const releases = await response.json()
@@ -119,7 +121,9 @@ async function fetchReleaseList(signal?: AbortSignal): Promise<GithubRelease[]> 
 async function fetchLatestRelease(signal?: AbortSignal): Promise<GithubRelease | null> {
   const response = await fetch(GITHUB_API_LATEST_RELEASE_URL, {
     headers: GITHUB_HEADERS,
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000)
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+      : AbortSignal.timeout(10_000)
   })
   if (response.ok) return (await response.json()) as GithubRelease
   if (response.status === 404) {

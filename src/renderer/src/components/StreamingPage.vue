@@ -618,13 +618,7 @@ async function searchProviderSongs(
   offset?: number,
   options?: { signal?: AbortSignal }
 ): Promise<{ tracks: Track[]; total: number }> {
-  const result = await mediaProviders.searchSongs(
-    providerId,
-    keywords,
-    limit,
-    offset,
-    options
-  )
+  const result = await mediaProviders.searchSongs(providerId, keywords, limit, offset, options)
   return { tracks: result.items, total: result.total }
 }
 
@@ -635,13 +629,7 @@ async function searchProviderPlaylists(
   offset?: number,
   options?: { signal?: AbortSignal }
 ): Promise<{ playlists: MediaProviderPlaylistSummary[]; total: number }> {
-  const result = await mediaProviders.searchPlaylists(
-    providerId,
-    keywords,
-    limit,
-    offset,
-    options
-  )
+  const result = await mediaProviders.searchPlaylists(providerId, keywords, limit, offset, options)
   return { playlists: result.items, total: result.total }
 }
 
@@ -652,13 +640,7 @@ async function searchProviderArtists(
   offset?: number,
   options?: { signal?: AbortSignal }
 ): Promise<{ artists: MediaProviderArtistSummary[]; total: number }> {
-  const result = await mediaProviders.searchArtists(
-    providerId,
-    keywords,
-    limit,
-    offset,
-    options
-  )
+  const result = await mediaProviders.searchArtists(providerId, keywords, limit, offset, options)
   return { artists: result.items, total: result.total }
 }
 
@@ -1880,10 +1862,7 @@ function goBack(): void {
 // detail level first, then an active search. Gated on `active` because this
 // page stays mounted (v-show) while hidden behind local mode.
 useBackHandler(
-  computed(
-    () =>
-      props.active !== false && (detailStack.value.length > 0 || isSearching.value)
-  ),
+  computed(() => props.active !== false && (detailStack.value.length > 0 || isSearching.value)),
   () => {
     if (detailStack.value.length > 0) goBack()
     else clearSearch()

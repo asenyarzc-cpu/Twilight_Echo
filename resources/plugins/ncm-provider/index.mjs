@@ -888,7 +888,8 @@ async function fetchPagedItems({ makePath, getItems, limit = 100, maxPages = 100
         appendPage(page.items, page.offset) === 0 ||
         page.hasMore === false ||
         (page.items.length < limit && page.hasMore !== true)
-      ) break
+      )
+        break
       offset += pageSize
     }
     return items

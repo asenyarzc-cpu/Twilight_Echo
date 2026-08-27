@@ -130,18 +130,12 @@ test('absolute TTL and publisher-key deadlines suppress stale trust without wait
   const ttlDeadline = Date.parse(officialStatus.expiresAt!)
   const keyDeadline = Date.parse(officialEntry.verification.revalidateAt!)
 
-  assert.equal(
-    presentPluginTrust(officialEntry, officialStatus, ttlDeadline - 1).label,
-    '官方验证'
-  )
+  assert.equal(presentPluginTrust(officialEntry, officialStatus, ttlDeadline - 1).label, '官方验证')
   assert.equal(
     presentPluginTrust(officialEntry, officialStatus, ttlDeadline).label,
     '发布者签名有效'
   )
-  assert.equal(
-    presentPluginTrust(officialEntry, officialStatus, keyDeadline).label,
-    '索引声明'
-  )
+  assert.equal(presentPluginTrust(officialEntry, officialStatus, keyDeadline).label, '索引声明')
   assert.equal(presentPluginTrust(officialEntry, officialStatus, Number.NaN).label, '索引声明')
 })
 

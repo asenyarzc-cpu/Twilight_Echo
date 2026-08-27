@@ -24,7 +24,18 @@ test('web project includes the preload public types without exposing runtime mod
     'tsconfig.web.json must include the preload type surface imported by renderer stores'
   )
 
-  const preloadTypes = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload', 'types.ts'), 'utf8')
-  assert.doesNotMatch(preloadTypes, /from\s+['"](?:electron|node:|fs|path)['"]/, 'preload types must not expose runtime modules to the renderer')
-  assert.doesNotMatch(preloadTypes, /import\s+(?!type\b)/, 'preload types must only import type-only shared contracts')
+  const preloadTypes = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'preload', 'types.ts'),
+    'utf8'
+  )
+  assert.doesNotMatch(
+    preloadTypes,
+    /from\s+['"](?:electron|node:|fs|path)['"]/,
+    'preload types must not expose runtime modules to the renderer'
+  )
+  assert.doesNotMatch(
+    preloadTypes,
+    /import\s+(?!type\b)/,
+    'preload types must only import type-only shared contracts'
+  )
 })

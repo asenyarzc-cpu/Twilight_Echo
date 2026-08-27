@@ -28,7 +28,11 @@ export function isSensitiveStorageKey(key: string): boolean {
 export function isSecureValueEnvelope(value: unknown): value is SecureValueEnvelope {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const record = value as Record<string, unknown>
-  return record.__twilightSecure === true && record.version === 1 && typeof record.ciphertext === 'string'
+  return (
+    record.__twilightSecure === true &&
+    record.version === 1 &&
+    typeof record.ciphertext === 'string'
+  )
 }
 
 export function protectString(value: string, scope: string): SecureValueEnvelope {

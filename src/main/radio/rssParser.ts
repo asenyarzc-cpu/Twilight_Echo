@@ -63,9 +63,7 @@ function parseRssFeed(xml: string): ParsedPodcastFeed {
       firstAttr(item, 'media:content', 'url') ||
       optionalText(item, 'link', MAX_PODCAST_URL_LENGTH)
     if (!mediaUrl || !isHttpUrl(mediaUrl)) continue
-    const guidRaw =
-      optionalText(item, 'guid', MAX_PODCAST_GUID_LENGTH) ||
-      mediaUrl
+    const guidRaw = optionalText(item, 'guid', MAX_PODCAST_GUID_LENGTH) || mediaUrl
     const episodeTitle = decodeXmlEntities(textOfFirst(item, 'title') || 'Episode').slice(
       0,
       MAX_PODCAST_TITLE_LENGTH
@@ -77,7 +75,9 @@ function parseRssFeed(xml: string): ParsedPodcastFeed {
       optionalText(item, 'pubDate', 64) || optionalText(item, 'dc:date', 64) || undefined
     const episodeDescription = optionalText(item, 'description', MAX_PODCAST_DESCRIPTION_LENGTH)
     const episodeCover =
-      firstAttr(item, 'itunes:image', 'href') || firstAttr(item, 'media:thumbnail', 'url') || undefined
+      firstAttr(item, 'itunes:image', 'href') ||
+      firstAttr(item, 'media:thumbnail', 'url') ||
+      undefined
 
     episodes.push({
       guid: guidRaw.slice(0, MAX_PODCAST_GUID_LENGTH),
@@ -102,24 +102,34 @@ function parseRssFeed(xml: string): ParsedPodcastFeed {
 
 function parseAtomFeed(xml: string): ParsedPodcastFeed {
   const feed = extractTagBlock(xml, 'feed') ?? xml
-  const title = decodeXmlEntities(textOfFirst(feed, 'title') || 'Podcast').slice(0, MAX_PODCAST_TITLE_LENGTH)
+  const title = decodeXmlEntities(textOfFirst(feed, 'title') || 'Podcast').slice(
+    0,
+    MAX_PODCAST_TITLE_LENGTH
+  )
   const description =
     optionalText(feed, 'subtitle', MAX_PODCAST_DESCRIPTION_LENGTH) ||
     optionalText(feed, 'summary', MAX_PODCAST_DESCRIPTION_LENGTH)
   const authorBlock = extractTagBlock(feed, 'author')
   const author = authorBlock ? optionalText(authorBlock, 'name', 200) : undefined
-  const coverUrl = firstAttr(feed, 'logo', 'href') || optionalText(feed, 'logo', MAX_PODCAST_URL_LENGTH)
-  const homepage = firstAttr(feed, 'link', 'href') || optionalText(feed, 'id', MAX_PODCAST_URL_LENGTH)
+  const coverUrl =
+    firstAttr(feed, 'logo', 'href') || optionalText(feed, 'logo', MAX_PODCAST_URL_LENGTH)
+  const homepage =
+    firstAttr(feed, 'link', 'href') || optionalText(feed, 'id', MAX_PODCAST_URL_LENGTH)
 
   const entries = extractAllTagBlocks(feed, 'entry').slice(0, MAX_PODCAST_EPISODES_PER_FEED)
   const episodes: PodcastEpisode[] = []
   for (const entry of entries) {
     const mediaUrl =
-      firstAttr(entry, 'link', 'href', (attrs) => /audio|video|enclosure/i.test(attrs.rel || attrs.type || '')) ||
+      firstAttr(entry, 'link', 'href', (attrs) =>
+        /audio|video|enclosure/i.test(attrs.rel || attrs.type || '')
+      ) ||
       firstAttr(entry, 'link', 'href') ||
       optionalText(entry, 'id', MAX_PODCAST_URL_LENGTH)
     if (!mediaUrl || !isHttpUrl(mediaUrl)) continue
-    const guid = (optionalText(entry, 'id', MAX_PODCAST_GUID_LENGTH) || mediaUrl).slice(0, MAX_PODCAST_GUID_LENGTH)
+    const guid = (optionalText(entry, 'id', MAX_PODCAST_GUID_LENGTH) || mediaUrl).slice(
+      0,
+      MAX_PODCAST_GUID_LENGTH
+    )
     const episodeTitle = decodeXmlEntities(textOfFirst(entry, 'title') || 'Episode').slice(
       0,
       MAX_PODCAST_TITLE_LENGTH
@@ -162,7 +172,10 @@ function extractTagBlock(xml: string, tag: string, greedy = false): string | nul
 }
 
 function extractAllTagBlocks(xml: string, tag: string): string[] {
-  const pattern = new RegExp(`<${escapeRegExp(tag)}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${escapeRegExp(tag)}>`, 'gi')
+  const pattern = new RegExp(
+    `<${escapeRegExp(tag)}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${escapeRegExp(tag)}>`,
+    'gi'
+  )
   const blocks: string[] = []
   let match: RegExpExecArray | null
   while ((match = pattern.exec(xml)) !== null) {

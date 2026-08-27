@@ -17,7 +17,10 @@ if (!layout.ok) {
   process.exit(1)
 }
 
-const preflight = prepareMingwCmakeEnvironment({ buildDir: layout.buildDir, env: toolchainEnvironment })
+const preflight = prepareMingwCmakeEnvironment({
+  buildDir: layout.buildDir,
+  env: toolchainEnvironment
+})
 if (!preflight.ok) {
   console.error(preflight.message)
   process.exit(1)
@@ -32,7 +35,9 @@ const command =
       ? ['ctest', ['--test-dir', layout.buildDir, '--output-on-failure']]
       : null
 if (action === 'build') {
-  console.log(`Building with ${buildJobs} parallel compile job(s) (override with TAE_MINGW_BUILD_JOBS)`)
+  console.log(
+    `Building with ${buildJobs} parallel compile job(s) (override with TAE_MINGW_BUILD_JOBS)`
+  )
 }
 if (!command) {
   console.error('Usage: node scripts/run-audio-engine-mingw.cjs <build|test>')

@@ -231,7 +231,10 @@ test('metadata enrichment deduplicates an active query while retaining each trac
   const coverOnly = queue.enqueue([localTrack], { cover: true, lyrics: false, metadata: false })
   await waitFor(() => searches === 1)
   const lyricsOnly = queue.enqueue([secondTrack], { cover: false, lyrics: true, metadata: false })
-  ;(resolveSearch as ((value: { items: Track[]; total: number }) => void) | null)?.({ items: [createProviderTrack(localTrack)], total: 1 })
+  ;(resolveSearch as ((value: { items: Track[]; total: number }) => void) | null)?.({
+    items: [createProviderTrack(localTrack)],
+    total: 1
+  })
   await Promise.all([coverOnly, lyricsOnly])
 
   assert.equal(searches, 1)
@@ -292,7 +295,10 @@ test('metadata enrichment cancellation drops late provider results', async () =>
   const run = queue.enqueue([localTrack])
   await waitFor(() => started)
   assert.equal(queue.cancel(), true)
-  ;(resolveSearch as ((value: { items: Track[]; total: number }) => void) | null)?.({ items: [createProviderTrack(localTrack)], total: 1 })
+  ;(resolveSearch as ((value: { items: Track[]; total: number }) => void) | null)?.({
+    items: [createProviderTrack(localTrack)],
+    total: 1
+  })
   await run
   await Promise.resolve()
 

@@ -5,10 +5,7 @@ import {
   type PlaylistPersistenceNotice
 } from '../../stores/useMusicStore.ts'
 import type { Track } from '../../types/music.ts'
-import {
-  playlistExportFilename,
-  playlistExportMimeType
-} from '../../utils/playlistExport.ts'
+import { playlistExportFilename, playlistExportMimeType } from '../../utils/playlistExport.ts'
 import {
   assertPlaylistCoverDimensions,
   assertPlaylistCoverFile,
@@ -36,9 +33,7 @@ async function readPlaylistCover(file: File): Promise<string> {
     const reader = new FileReader()
     reader.onerror = () => reject(new Error('读取封面文件失败'))
     reader.onload = () =>
-      typeof reader.result === 'string'
-        ? resolve(reader.result)
-        : reject(new Error('封面数据无效'))
+      typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('封面数据无效'))
     reader.readAsDataURL(file)
   })
   const image = await createImageBitmap(file)

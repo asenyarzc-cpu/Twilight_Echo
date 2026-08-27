@@ -50,7 +50,10 @@ test('re-scanning the same root replaces stale entries without duplicates', asyn
       makeEntry('/music/a.flac'),
       makeEntry('/music/old.flac')
     ])
-    await library.addEntries('p1', '/music', [makeEntry('/music/a.flac'), makeEntry('/music/b.flac')])
+    await library.addEntries('p1', '/music', [
+      makeEntry('/music/a.flac'),
+      makeEntry('/music/b.flac')
+    ])
     const entries = await library.listEntries('p1')
     assert.equal(entries.length, 2)
     assert.ok(entries.some((entry) => entry.path === '/music/a.flac'))
@@ -98,7 +101,6 @@ test('updateEntries merges metadata onto existing entries by id', async () => {
     await rm(dir, { recursive: true, force: true })
   }
 })
-
 
 test('rejects an excessively nested network media-library document', async () => {
   const { dir, library } = await makeLibrary()

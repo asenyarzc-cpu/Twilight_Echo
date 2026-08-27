@@ -92,6 +92,7 @@
 3. 是否有其他播放路径（渲染层 HTMLAudio 兜底）与原生引擎同时播放。
 
 建议下一步：
+
 - 让用户用**最新代码**完整重跑测试 2（确认加载的是本次修复：settings.json 能更新到目标值），并记录：滑块显示值、实际听感、日志（diagnostics + `%TEMP%\twilight-native.log`）。
 - 若仍为“引擎 0.15、听感最大”，请用户检查系统音量混音器与默认输出设备，或换打包版（release 引擎）对比。
 - 排查时保留 `[DEBUG-vol2]` 标签日志（见 §6）。
@@ -100,23 +101,23 @@
 
 ### A. 音量问题（本交接主题）
 
-| 文件 | 改动 |
-|---|---|
-| `src/main/audio/engineIpc.ts` | **主进程侧音量持久化**（setVolume IPC 落盘 + before-quit flush）；含注释说明隐藏窗口定时器节流 |
-| `src/main/audio/playbackController.ts` | setVolume 去重守卫改为“已同步才去重”；新增 host 接口 `isNativeVolumeSynced / markNativeVolumeSynced / canVerifyNativeVolume`；play 合并时保留应用层音量 + 播放后重发 SetVolume |
-| `src/main/audioEngineManager.ts` | 服务就绪恢复不再跳过音量/倍速/队列；`nativeVolumeSynced` 标记；崩溃重置 |
-| `src/main/audioEngineManager.test.ts` | 新增 2 个回归测试（先红后绿验证过） |
-| `src/renderer/src/stores/usePlayerStore.ts` | 曾加 `[DEBUG-vol2]` 日志，已移除（无净改动） |
-| `src/main/audio/state.ts` | 曾加 `[DEBUG-vol2]` 日志，已移除（无净改动） |
+| 文件                                        | 改动                                                                                                                                                                           |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/main/audio/engineIpc.ts`               | **主进程侧音量持久化**（setVolume IPC 落盘 + before-quit flush）；含注释说明隐藏窗口定时器节流                                                                                 |
+| `src/main/audio/playbackController.ts`      | setVolume 去重守卫改为“已同步才去重”；新增 host 接口 `isNativeVolumeSynced / markNativeVolumeSynced / canVerifyNativeVolume`；play 合并时保留应用层音量 + 播放后重发 SetVolume |
+| `src/main/audioEngineManager.ts`            | 服务就绪恢复不再跳过音量/倍速/队列；`nativeVolumeSynced` 标记；崩溃重置                                                                                                        |
+| `src/main/audioEngineManager.test.ts`       | 新增 2 个回归测试（先红后绿验证过）                                                                                                                                            |
+| `src/renderer/src/stores/usePlayerStore.ts` | 曾加 `[DEBUG-vol2]` 日志，已移除（无净改动）                                                                                                                                   |
+| `src/main/audio/state.ts`                   | 曾加 `[DEBUG-vol2]` 日志，已移除（无净改动）                                                                                                                                   |
 
 ### B. 小窗圆角（独立问题，与音量无关）
 
-| 文件 | 改动 |
-|---|---|
-| `src/main/integrations/miniPlayer.ts` | 窗口 shape 半径改为 CSS 圆角 -2（OS 阶梯藏在透明边缘外，可见圆角交给 CSS 抗锯齿） |
-| `src/renderer/src/mini-player/MiniPlayer.css` | 移除 `clip-path`，保留 `border-radius` + `overflow: hidden` |
-| `src/main/integrations/miniPlayerWindow.test.ts` | 新增 shape 严格位于 CSS 圆角外侧的断言 |
-| `src/renderer/src/mini-player/styles.test.ts` | 同步断言 |
+| 文件                                             | 改动                                                                              |
+| ------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `src/main/integrations/miniPlayer.ts`            | 窗口 shape 半径改为 CSS 圆角 -2（OS 阶梯藏在透明边缘外，可见圆角交给 CSS 抗锯齿） |
+| `src/renderer/src/mini-player/MiniPlayer.css`    | 移除 `clip-path`，保留 `border-radius` + `overflow: hidden`                       |
+| `src/main/integrations/miniPlayerWindow.test.ts` | 新增 shape 严格位于 CSS 圆角外侧的断言                                            |
+| `src/renderer/src/mini-player/styles.test.ts`    | 同步断言                                                                          |
 
 ## 6. 调试日志（已清理）
 

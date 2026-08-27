@@ -77,9 +77,7 @@ function assertRendererBudgets(rendererDir) {
       /^(Inter|PlusJakartaSans)-latin(-ext)?-wght-normal\.woff2$/i.test(rel) ||
       /^(Lora|JetBrainsMono|SpaceGrotesk)-latin-wght-normal\.woff2$/i.test(rel) ||
       /^OFL-(Inter|PlusJakartaSans|Lora|JetBrainsMono|SpaceGrotesk)\.txt$/i.test(rel) ||
-      /^misans\/(MiSans-(Regular|Medium|Bold|Heavy)\.[\w-]+\.woff2|misans\.css|LICENSE)$/i.test(
-        rel
-      )
+      /^misans\/(MiSans-(Regular|Medium|Bold|Heavy)\.[\w-]+\.woff2|misans\.css|LICENSE)$/i.test(rel)
     assert.ok(ok, `Unexpected public font asset: ${rel}`)
   }
   return { files: files.length, fontBytes, manifest, budgets: BUDGETS }

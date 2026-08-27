@@ -26,10 +26,14 @@ mkdirSync(buildDir, { recursive: true })
 const result = spawnSync(
   'cmake',
   [
-    '-S', sourceDir,
-    '-B', buildDir,
-    '-G', 'Visual Studio 17 2022',
-    '-A', 'x64',
+    '-S',
+    sourceDir,
+    '-B',
+    buildDir,
+    '-G',
+    'Visual Studio 17 2022',
+    '-A',
+    'x64',
     `-DCMAKE_GENERATOR_INSTANCE=${installRoot}`,
     `-DTAE_VST3_SDK_ROOT=${sdkRoot}`
   ],

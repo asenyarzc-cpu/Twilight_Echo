@@ -68,12 +68,18 @@ export function isRadioStation(value: unknown): value is RadioStation {
   if (isInsecureHttpUrl(record.streamUrl) && !record.allowInsecureHttp) return false
   if (typeof record.createdAt !== 'string' || typeof record.updatedAt !== 'string') return false
   if (record.homepage !== undefined && record.homepage !== null) {
-    if (typeof record.homepage !== 'string' || !isHttpOrHttpsUrl(record.homepage, MAX_RADIO_HOMEPAGE_LENGTH)) {
+    if (
+      typeof record.homepage !== 'string' ||
+      !isHttpOrHttpsUrl(record.homepage, MAX_RADIO_HOMEPAGE_LENGTH)
+    ) {
       return false
     }
   }
   if (record.favicon !== undefined && record.favicon !== null) {
-    if (typeof record.favicon !== 'string' || !isHttpOrHttpsUrl(record.favicon, MAX_RADIO_HOMEPAGE_LENGTH)) {
+    if (
+      typeof record.favicon !== 'string' ||
+      !isHttpOrHttpsUrl(record.favicon, MAX_RADIO_HOMEPAGE_LENGTH)
+    ) {
       return false
     }
   }
@@ -81,7 +87,8 @@ export function isRadioStation(value: unknown): value is RadioStation {
     if (!Array.isArray(record.tags) || record.tags.length > MAX_RADIO_TAGS) return false
     if (
       !record.tags.every(
-        (tag) => typeof tag === 'string' && tag.trim().length > 0 && tag.length <= MAX_RADIO_TAG_LENGTH
+        (tag) =>
+          typeof tag === 'string' && tag.trim().length > 0 && tag.length <= MAX_RADIO_TAG_LENGTH
       )
     ) {
       return false

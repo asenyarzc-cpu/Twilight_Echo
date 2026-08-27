@@ -40,7 +40,8 @@ const MAX_LIMIT = 50
 const DEFAULT_LIMIT = 20
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const FETCH_TIMEOUT_MS = 8_000
-const USER_AGENT = 'TwilightEcho/1.0 (radio-browser client; +https://github.com/asenyarzc-cpu/Twilight_Echo)'
+const USER_AGENT =
+  'TwilightEcho/1.0 (radio-browser client; +https://github.com/asenyarzc-cpu/Twilight_Echo)'
 
 export async function searchRadioBrowserStations(
   options: RadioBrowserSearchOptions
@@ -51,9 +52,7 @@ export async function searchRadioBrowserStations(
   const offset = clampInt(options.offset ?? 0, 0, 10_000)
   const path = `/json/stations/byname/${encodeURIComponent(query)}?limit=${limit}&offset=${offset}&hidebroken=true&order=votes&reverse=true`
   const fetchJson = options.fetchJson ?? defaultFetchJson
-  const bases = options.baseUrl
-    ? [options.baseUrl.replace(/\/$/, '')]
-    : [...DEFAULT_MIRRORS]
+  const bases = options.baseUrl ? [options.baseUrl.replace(/\/$/, '')] : [...DEFAULT_MIRRORS]
 
   let lastError: Error | null = null
   for (const base of bases) {
@@ -105,7 +104,8 @@ function normalizeStations(raw: unknown): RadioBrowserStation[] {
       tags,
       countryCode:
         typeof row.countrycode === 'string' ? row.countrycode.trim().slice(0, 8) : undefined,
-      bitrate: typeof row.bitrate === 'number' && Number.isFinite(row.bitrate) ? row.bitrate : undefined,
+      bitrate:
+        typeof row.bitrate === 'number' && Number.isFinite(row.bitrate) ? row.bitrate : undefined,
       codec: typeof row.codec === 'string' ? row.codec.trim().slice(0, 32) : undefined,
       votes: typeof row.votes === 'number' && Number.isFinite(row.votes) ? row.votes : undefined
     })

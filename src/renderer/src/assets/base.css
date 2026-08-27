@@ -2293,14 +2293,45 @@ html[data-theme='dark'] body.te-settings-surface {
 }
 
 /* --- Settings page: page-level background & hardcoded text --- */
+/* The page itself must stay transparent in every theme: the settings overlay
+   root is the single wallpaper painter, and any second copy of the image here
+   re-introduces the split-band drift this structure removed. */
 html[data-theme='dark'] .settings-preview-page {
-  background-color: var(--te-settings-backplate, #17181a);
-  background-image:
-    var(--te-settings-bg-image, none), linear-gradient(var(--te-settings-bg), var(--te-settings-bg));
-  background-position: center, center;
-  background-size: cover, cover;
-  background-repeat: no-repeat, no-repeat;
   color: rgba(248, 250, 252, 0.95);
+}
+
+/* Liquid-glass ambients moved off the page onto the single overlay painter:
+   static layers here keep the glow viewport-pinned without relying on
+   `background-attachment: fixed`, which composited layers silently unpin. */
+html[data-theme='pureWhite'][data-te-surface-material='liquidGlass']
+  .settings-overlay-root--active::before {
+  background-color: #f5f7fb;
+  background-image:
+    var(--te-settings-bg-image, none),
+    radial-gradient(88% 74% at 8% -10%, rgba(116, 164, 245, 0.14) 0%, transparent 67%),
+    radial-gradient(72% 68% at 103% 92%, rgba(236, 164, 190, 0.09) 0%, transparent 70%),
+    linear-gradient(142deg, rgba(255, 255, 255, 0.72) 0%, rgba(241, 244, 250, 0.64) 100%),
+    linear-gradient(var(--te-settings-bg), var(--te-settings-bg)) !important;
+  background-position: center, center, center, center, center;
+  background-size: cover, cover, cover, cover, cover;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+}
+
+/* Dark settings previously sampled a flat #17181a backplate, which made every
+   large pane read as the same opaque charcoal block. These muted lights provide
+   depth for glass to reveal without becoming a coloured or neon theme. */
+html[data-theme='dark'][data-te-surface-material='liquidGlass']
+  .settings-overlay-root--active::before {
+  background-color: #13161e;
+  background-image:
+    var(--te-settings-bg-image, none),
+    radial-gradient(96% 82% at 6% -14%, rgba(62, 98, 168, 0.22) 0%, transparent 68%),
+    radial-gradient(82% 78% at 106% 100%, rgba(122, 63, 120, 0.14) 0%, transparent 72%),
+    linear-gradient(145deg, rgba(32, 39, 53, 0.86), rgba(16, 18, 24, 0.9)),
+    linear-gradient(var(--te-settings-bg), var(--te-settings-bg)) !important;
+  background-position: center, center, center, center, center;
+  background-size: cover, cover, cover, cover, cover;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
 }
 
 html[data-theme='dark'] .settings-preview-page::-webkit-scrollbar-thumb {
@@ -2756,14 +2787,15 @@ html[data-window-transparent='on'] .main-content::after {
   display: none !important;
 }
 
-/* 2. Page-filling surfaces → translucent so blur reads through them. */
+/* 2. Page-filling surfaces → translucent so blur reads through them. The
+      settings page is excluded on purpose: the overlay root below it is the
+      single settings painter and must not get a second image copy here. */
 html[data-window-transparent='on']
   :is(
     .dashboard-wrapper,
     .song-list,
     .settings-page,
     .settings-preview-layout,
-    .settings-preview-page,
     .streaming-page,
     .login-page,
     .eq-page,
@@ -2776,11 +2808,9 @@ html[data-window-transparent='on']
   background-image: var(--te-app-bg-image) !important;
 }
 
-/* Settings retains its own backdrop even when the window chrome is transparent. */
-html[data-window-transparent='on'] body.te-settings-surface,
-/* Match the most-specific transparent-window surface selector above, so the
-   settings page itself stays opaque rather than merely relying on its root. */
-html[data-window-transparent='on'] .settings-preview-page.settings-preview-page {
+/* Settings retains its own backdrop even when the window chrome is transparent;
+   the overlay painter provides it, so the page itself stays transparent. */
+html[data-window-transparent='on'] body.te-settings-surface {
   background-color: var(--te-settings-backplate, #17181a) !important;
   background-image:
     var(--te-settings-bg-image, none), linear-gradient(var(--te-settings-bg), var(--te-settings-bg)) !important;
@@ -2797,20 +2827,6 @@ html[data-window-transparent='on'] .title-bar-background {
   -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
   border-bottom-color: transparent !important;
-}
-
-/* The generic transparent-window rule above deliberately excludes no title
-   variants. Re-apply the settings surface after it so the title controls stay
-   on the settings backdrop instead of the home page. */
-html[data-window-transparent='on'] .title-bar.title-bar-settings,
-html[data-window-transparent='on'] .title-bar.title-bar-settings .title-bar-background {
-  background-color: var(--te-settings-backplate, #17181a) !important;
-  background-image:
-    var(--te-settings-bg-image, none), linear-gradient(var(--te-settings-bg), var(--te-settings-bg)) !important;
-  background-position: center, center;
-  background-size: cover, cover;
-  background-repeat: no-repeat, no-repeat;
-  background-attachment: fixed, fixed;
 }
 
 /* 3. Floating chrome (player bar, panels, drawers, plugin sidebar). */
@@ -2979,13 +2995,8 @@ html[data-te-background-treatment='cover-blur']
   background-image: none !important;
 }
 
-/* Cover-blur is a homepage treatment. The settings overlay keeps its own image. */
-html[data-te-background-treatment='cover-blur'] .settings-preview-page {
-  background-color: var(--te-settings-backplate, #f5f6f8) !important;
-  background-image:
-    var(--te-settings-bg-image, none), linear-gradient(var(--te-settings-bg), var(--te-settings-bg)) !important;
-}
-
+/* Cover-blur is a homepage treatment. The settings overlay keeps its own image
+   on the single overlay painter; the page itself stays transparent here too. */
 html[data-te-background-treatment='cover-blur'] .settings-preview-layout {
   background: transparent !important;
 }

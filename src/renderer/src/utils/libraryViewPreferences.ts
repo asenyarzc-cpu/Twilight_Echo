@@ -237,7 +237,9 @@ function compareAlbumOrder(left: DecoratedTrack, right: DecoratedTrack): number 
 }
 
 function sortIndex(value: number | undefined): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : Number.MAX_SAFE_INTEGER
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : Number.MAX_SAFE_INTEGER
 }
 
 function normalizeViewState(value: unknown, fallback: LibraryViewState): LibraryViewState {
@@ -248,9 +250,10 @@ function normalizeViewState(value: unknown, fallback: LibraryViewState): Library
       ? (candidate.filters as Partial<LibraryViewFilters>)
       : {}
   return {
-    sortKey: typeof candidate.sortKey === 'string' && SORT_KEYS.has(candidate.sortKey as LibrarySortKey)
-      ? (candidate.sortKey as LibrarySortKey)
-      : fallback.sortKey,
+    sortKey:
+      typeof candidate.sortKey === 'string' && SORT_KEYS.has(candidate.sortKey as LibrarySortKey)
+        ? (candidate.sortKey as LibrarySortKey)
+        : fallback.sortKey,
     sortDirection: candidate.sortDirection === 'desc' ? 'desc' : 'asc',
     filters: {
       lossless: filters.lossless === true,

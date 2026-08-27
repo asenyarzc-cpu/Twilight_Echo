@@ -39,7 +39,11 @@ for (const k of usesReason) console.log('  ' + k)
 console.log('\nplaceholder disagreement zh vs en:')
 let bad = 0
 for (const k of audio) {
-  const ph = (s) => [...(s || '').matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',')
+  const ph = (s) =>
+    [...(s || '').matchAll(/\{(\w+)\}/g)]
+      .map((m) => m[1])
+      .sort()
+      .join(',')
   if (ph(zh.get(k)) !== ph(en.get(k))) {
     console.log(`  ${k}: zh=[${ph(zh.get(k))}] en=[${ph(en.get(k))}]`)
     bad += 1

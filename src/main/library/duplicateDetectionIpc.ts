@@ -1,9 +1,8 @@
-import type { DuplicateCandidate, DuplicateDetectionResult } from '../../shared/duplicateDetection.ts'
-import {
-  contentHash,
-  detectDuplicates,
-  toDuplicateCandidate
-} from './duplicateDetection.ts'
+import type {
+  DuplicateCandidate,
+  DuplicateDetectionResult
+} from '../../shared/duplicateDetection.ts'
+import { contentHash, detectDuplicates, toDuplicateCandidate } from './duplicateDetection.ts'
 
 export const MAX_DUPLICATE_DETECTION_TRACKS = 50_000
 

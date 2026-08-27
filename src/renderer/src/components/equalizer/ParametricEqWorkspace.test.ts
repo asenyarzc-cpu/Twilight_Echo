@@ -107,10 +107,7 @@ test('analyzer keeps a flat signal palette with explicit light and dark instrume
   assert.match(source, /class="analyzer-footer"/)
   assert.match(source, /class="meter-peak"/)
   assert.match(source, /class="meter-rms"/)
-  assert.match(
-    source,
-    /\.floating-band-inspector \{[\s\S]*?background:\s*var\(--eq-surface-soft\)/
-  )
+  assert.match(source, /\.floating-band-inspector \{[\s\S]*?background:\s*var\(--eq-surface-soft\)/)
 })
 
 test('flat design contract: no shadows or decorative gradients in the workspace styles', () => {

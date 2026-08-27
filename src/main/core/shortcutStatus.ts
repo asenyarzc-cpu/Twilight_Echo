@@ -22,7 +22,9 @@ export function buildPlayerShortcutStatuses<Action extends string>(
     return {
       ...shortcut,
       registered,
-      error: registered ? null : `快捷键注册失败，可能已被系统或其他应用占用：${shortcut.accelerator}`
+      error: registered
+        ? null
+        : `快捷键注册失败，可能已被系统或其他应用占用：${shortcut.accelerator}`
     }
   })
 }

@@ -26,12 +26,7 @@ export function compareSemver(a: string, b: string): number {
 /**
  * Clamp a number to [min, max] range, returning fallback if invalid.
  */
-export function clampNumber(
-  value: unknown,
-  min: number,
-  max: number,
-  fallback: number
-): number {
+export function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(n)) return fallback
   return Math.min(max, Math.max(min, n))

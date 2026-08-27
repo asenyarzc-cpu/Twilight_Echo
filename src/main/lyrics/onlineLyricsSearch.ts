@@ -144,7 +144,8 @@ function scoreCandidate(query: OnlineLyricsQuery, hit: LrclibHit): number {
     else if (artistH.includes(artistQ) || artistQ.includes(artistH)) score += 18
   }
 
-  const duration = typeof hit.duration === 'number' && Number.isFinite(hit.duration) ? hit.duration : null
+  const duration =
+    typeof hit.duration === 'number' && Number.isFinite(hit.duration) ? hit.duration : null
   if (duration != null && query.durationSeconds != null && Number.isFinite(query.durationSeconds)) {
     const delta = Math.abs(duration - query.durationSeconds)
     if (delta <= 3) score += 20
@@ -159,7 +160,11 @@ function scoreCandidate(query: OnlineLyricsQuery, hit: LrclibHit): number {
   if (query.album) {
     const albumQ = normalizeText(query.album)
     const albumH = normalizeText(hit.albumName ?? '')
-    if (albumQ && albumH && (albumQ === albumH || albumH.includes(albumQ) || albumQ.includes(albumH))) {
+    if (
+      albumQ &&
+      albumH &&
+      (albumQ === albumH || albumH.includes(albumQ) || albumQ.includes(albumH))
+    ) {
       score += 6
     }
   }
@@ -209,7 +214,9 @@ export function normalizeOnlineLyricsQuery(input: unknown): OnlineLyricsQuery {
   if (!title || !artist) throw new Error('Online lyrics query requires title and artist')
   if (title.length > 512 || artist.length > 512) throw new Error('Online lyrics query is too long')
   const album =
-    typeof record.album === 'string' && record.album.trim() ? record.album.trim().slice(0, 512) : undefined
+    typeof record.album === 'string' && record.album.trim()
+      ? record.album.trim().slice(0, 512)
+      : undefined
   const durationSeconds =
     typeof record.durationSeconds === 'number' && Number.isFinite(record.durationSeconds)
       ? Math.max(0, Math.round(record.durationSeconds))
@@ -276,7 +283,9 @@ export async function searchOnlineLyrics(
   }
 }
 
-export function pickOnlineLyricsText(candidate: OnlineLyricsCandidate | null | undefined): string | null {
+export function pickOnlineLyricsText(
+  candidate: OnlineLyricsCandidate | null | undefined
+): string | null {
   if (!candidate) return null
   return candidate.syncedLyrics ?? candidate.plainLyrics ?? null
 }

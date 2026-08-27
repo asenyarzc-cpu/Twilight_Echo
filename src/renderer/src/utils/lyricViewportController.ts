@@ -403,14 +403,10 @@ export function createLyricViewportController(options: LyricViewportControllerOp
       element,
       posY: new LyricSpring(existing?.posY.getCurrentPosition() ?? 0, LYRIC_POS_Y_SPRING),
       scale: new LyricSpring(
-          existing?.scale.getCurrentPosition() ?? 100,
+        existing?.scale.getCurrentPosition() ?? 100,
         isBackground ? LYRIC_BG_SCALE_SPRING : LYRIC_SCALE_SPRING
       ),
-      height: Math.max(
-        element.offsetHeight,
-        element.scrollHeight ?? 0,
-        existing?.height ?? 0
-      ),
+      height: Math.max(element.offsetHeight, element.scrollHeight ?? 0, existing?.height ?? 0),
       isBackground,
       lastTop: null,
       lastScale: null,

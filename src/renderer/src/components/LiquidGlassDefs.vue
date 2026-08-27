@@ -146,7 +146,9 @@ const expandedSpecularStrength = computed(() =>
  * the primitives are omitted rather than rendered as a no-op. An empty URL means
  * canvas was unavailable, in which case there is nothing to composite either.
  */
-const cardSpecularActive = computed(() => specularStrength.value > 0 && Boolean(cardSpecularUrl.value))
+const cardSpecularActive = computed(
+  () => specularStrength.value > 0 && Boolean(cardSpecularUrl.value)
+)
 const playbarSpecularActive = computed(
   () => specularStrength.value > 0 && Boolean(playbarSpecularUrl.value)
 )
@@ -219,10 +221,7 @@ function onTuningChanged(): void {
  * surface is absent or has no layout box yet. The fallbacks match the shipped
  * CSS, so a filter bound before first paint is already close.
  */
-function measureSelector(
-  selector: string,
-  fallback: DisplacementGeometry
-): DisplacementGeometry {
+function measureSelector(selector: string, fallback: DisplacementGeometry): DisplacementGeometry {
   const element = document.querySelector(selector)
   return (element && measureSurfaceGeometry(element)) || fallback
 }
@@ -1083,11 +1082,7 @@ watch(
         />
         <feBlend in="GREEN_CHANNEL" in2="BLUE_CHANNEL" mode="screen" result="GB_COMBINED" />
         <feBlend in="RED_CHANNEL" in2="GB_COMBINED" mode="screen" result="RGB_COMBINED" />
-        <feGaussianBlur
-          in="RGB_COMBINED"
-          :stdDeviation="homeAberrationBlur"
-          result="REFRACTED"
-        />
+        <feGaussianBlur in="RGB_COMBINED" :stdDeviation="homeAberrationBlur" result="REFRACTED" />
 
         <!-- Shape-following specular, on the dashboard's independent profile. -->
         <template v-if="homeSpecularActive">

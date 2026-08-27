@@ -608,6 +608,17 @@ html[data-theme='dark'] .deck .deck-card {
   font-size: 10px;
 }
 
+/* The engine's raw one-line cause: monospace evidence under the human copy,
+   muted so it reads as supporting detail rather than a second verdict. */
+.deck-note.engine-detail {
+  font-family: var(--d-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.75;
+}
+
 /* ===== Unity ===== */
 .deck-unity {
   display: flex;

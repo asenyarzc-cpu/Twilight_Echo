@@ -96,7 +96,10 @@ test('release strip skips optional VST3 helpers when a release did not stage the
     clearDebugDirectory: () => {}
   })
   assert.equal(result.stripped.length, REQUIRED_NATIVE_RUNTIME_FILES.length)
-  assert.equal(result.missing.length, NATIVE_RUNTIME_FILES.length - REQUIRED_NATIVE_RUNTIME_FILES.length)
+  assert.equal(
+    result.missing.length,
+    NATIVE_RUNTIME_FILES.length - REQUIRED_NATIVE_RUNTIME_FILES.length
+  )
   assert.equal(calls.length, REQUIRED_NATIVE_RUNTIME_FILES.length)
 })
 

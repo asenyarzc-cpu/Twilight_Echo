@@ -31,7 +31,11 @@ function resolveVst3MsvcBuildDirectory(env = process.env, root = process.cwd()) 
     : join(resolve(root), 'audio-engine', 'build', 'vst3-msvc-x64')
 }
 
-function validateVst3MsvcToolchain({ env = process.env, exists = existsSync, readDirectories = readdirSync } = {}) {
+function validateVst3MsvcToolchain({
+  env = process.env,
+  exists = existsSync,
+  readDirectories = readdirSync
+} = {}) {
   const sdkRoot = env.TAE_VST3_SDK_ROOT ? resolve(env.TAE_VST3_SDK_ROOT) : ''
   const installRoot = env.TAE_VST3_MSVC_INSTALL_ROOT ? resolve(env.TAE_VST3_MSVC_INSTALL_ROOT) : ''
   const missing = []
@@ -44,13 +48,19 @@ function validateVst3MsvcToolchain({ env = process.env, exists = existsSync, rea
   } else {
     const msvcRoot = join(installRoot, 'VC', 'Tools', 'MSVC')
     const hasMsvc =
-      exists(msvcRoot) && readDirectories(msvcRoot, { withFileTypes: true }).some((entry) => entry.isDirectory())
+      exists(msvcRoot) &&
+      readDirectories(msvcRoot, { withFileTypes: true }).some((entry) => entry.isDirectory())
     if (!hasMsvc) missing.push(`No MSVC toolset found under ${msvcRoot}.`)
   }
 
   return missing.length === 0
     ? { ok: true, message: '', sdkRoot, installRoot }
-    : { ok: false, message: `VST3 MSVC toolchain preflight failed:\n- ${missing.join('\n- ')}`, sdkRoot, installRoot }
+    : {
+        ok: false,
+        message: `VST3 MSVC toolchain preflight failed:\n- ${missing.join('\n- ')}`,
+        sdkRoot,
+        installRoot
+      }
 }
 
 module.exports = {

@@ -87,11 +87,18 @@ export interface OnlineProviderStore {
   checkQrLogin: (id: string, key: string) => Promise<{ code: number; message?: string }>
   logout: (id: string) => Promise<void>
   callProvider: <T>(providerId: string, method: string, args?: unknown[]) => Promise<T>
-  fetchUserLibrary: (id: string, force?: boolean) => Promise<{
+  fetchUserLibrary: (
+    id: string,
+    force?: boolean
+  ) => Promise<{
     likedPlaylist: MediaProviderPlaylistSummary | null
     playlists: MediaProviderPlaylistSummary[]
   }>
-  fetchPlaylistTracks: (id: string, playlistId: string | number, force?: boolean) => Promise<Track[]>
+  fetchPlaylistTracks: (
+    id: string,
+    playlistId: string | number,
+    force?: boolean
+  ) => Promise<Track[]>
 }
 
 const providers = ref<ProviderInfo[]>([])
@@ -144,7 +151,11 @@ function ensurePluginChangeListener(): void {
   startProviderHealthPolling()
 }
 
-async function callProvider<T>(providerId: string, method: string, args: unknown[] = []): Promise<T> {
+async function callProvider<T>(
+  providerId: string,
+  method: string,
+  args: unknown[] = []
+): Promise<T> {
   return (await window.api.providers.call(providerId, method as never, args)) as T
 }
 

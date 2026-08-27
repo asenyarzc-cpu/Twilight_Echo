@@ -61,7 +61,9 @@ export function buildProviderHealthPresentation({
   const detail = [
     `登录状态 ${loggedIn ? '已登录' : '未登录'}`,
     `成功率 ${formatProviderSuccessRate(health.successRate)}`,
-    playbackUrlHealth ? `播放 URL 成功率 ${formatProviderSuccessRate(playbackUrlHealth.successRate)}` : '',
+    playbackUrlHealth
+      ? `播放 URL 成功率 ${formatProviderSuccessRate(playbackUrlHealth.successRate)}`
+      : '',
     `插件状态 ${health.pluginStatus}`,
     `调用 ${health.successfulCalls}/${health.totalCalls}`,
     playbackUrlHealth
@@ -70,12 +72,17 @@ export function buildProviderHealthPresentation({
     health.lastError ? `最近错误 ${health.lastError}` : '',
     playbackUrlHealth?.lastError ? `播放 URL 最近错误 ${playbackUrlHealth.lastError}` : '',
     health.lastCheckedAt ? `最后检查 ${formatProviderCheckedAt(health.lastCheckedAt)}` : ''
-  ].filter(Boolean).join(' · ')
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   return { state, reason, label, detail }
 }
 
-function providerHealthReason(health: ProviderHealthInput, loggedIn: boolean): ProviderHealthReason {
+function providerHealthReason(
+  health: ProviderHealthInput,
+  loggedIn: boolean
+): ProviderHealthReason {
   if (health.pluginStatus === 'disabled') return 'plugin-disabled'
   if (health.pluginStatus === 'invalid') return 'plugin-invalid'
   if (health.pluginStatus !== 'enabled') return 'plugin-failed'
@@ -83,13 +90,13 @@ function providerHealthReason(health: ProviderHealthInput, loggedIn: boolean): P
   if (!health.available) return 'network-or-api-failed'
   if (!loggedIn) return 'not-logged-in'
   const playbackUrlHealth = health.methodStats?.getPlaybackUrl
-  if (playbackUrlHealth && (playbackUrlHealth.failedCalls > 0 || playbackUrlHealth.successRate < 0.95)) {
+  if (
+    playbackUrlHealth &&
+    (playbackUrlHealth.failedCalls > 0 || playbackUrlHealth.successRate < 0.95)
+  ) {
     return 'playback-url-degraded'
   }
-  if (
-    health.failedCalls > 0 ||
-    health.successRate < 0.95
-  ) {
+  if (health.failedCalls > 0 || health.successRate < 0.95) {
     return 'api-degraded'
   }
   return 'ok'

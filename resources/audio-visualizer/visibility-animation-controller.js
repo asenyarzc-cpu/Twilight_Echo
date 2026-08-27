@@ -1,4 +1,4 @@
-(function (root) {
+;(function (root) {
   function createVisibilityAnimationController(isHidden, stop, resume) {
     return {
       onVisibilityChange: function () {

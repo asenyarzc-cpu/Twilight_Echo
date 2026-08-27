@@ -864,10 +864,7 @@ html[data-te-preset-layout='obsidian-glass'] .player-bar .player-cover-placehold
 }
 
 html[data-te-preset-layout='obsidian-glass'] .player-bar .player-cover-slot:hover .player-cover,
-html[data-te-preset-layout='obsidian-glass']
-  .player-bar
-  .player-cover-slot:hover
-  img.player-cover {
+html[data-te-preset-layout='obsidian-glass'] .player-bar .player-cover-slot:hover img.player-cover {
   transform: none;
   box-shadow: none;
 }

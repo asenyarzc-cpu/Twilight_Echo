@@ -57,10 +57,7 @@ export interface RadioMediaServiceOptions {
   userDataPath?: string
   now?: () => string
   fetchText?: (url: string) => Promise<string>
-  fetchFeed?: (
-    url: string,
-    request?: PodcastFeedRequest
-  ) => Promise<PodcastFeedResponse>
+  fetchFeed?: (url: string, request?: PodcastFeedRequest) => Promise<PodcastFeedResponse>
   refreshIntervalMs?: number
 }
 
@@ -118,7 +115,11 @@ export class RadioMediaService {
         console.warn('[radio] scheduled podcast refresh failed:', error)
       })
     }, this.refreshIntervalMs)
-    if (typeof this.refreshTimer === 'object' && this.refreshTimer && 'unref' in this.refreshTimer) {
+    if (
+      typeof this.refreshTimer === 'object' &&
+      this.refreshTimer &&
+      'unref' in this.refreshTimer
+    ) {
       this.refreshTimer.unref()
     }
   }
@@ -162,7 +163,10 @@ export class RadioMediaService {
     if (!isPodcastSubscriptionsDocument(document)) {
       throw new Error('Podcast subscriptions have an invalid structure')
     }
-    return await this.podcastStore.save(clonePodcastSubscriptionsDocument(document), expectedRevision)
+    return await this.podcastStore.save(
+      clonePodcastSubscriptionsDocument(document),
+      expectedRevision
+    )
   }
 
   createStationInput(input: {
@@ -194,7 +198,8 @@ export class RadioMediaService {
       id: `radio_${randomUUID()}`,
       name: name.slice(0, MAX_RADIO_NAME_LENGTH),
       streamUrl,
-      homepage: input.homepage && isHttpOrHttpsUrl(input.homepage) ? input.homepage.trim() : undefined,
+      homepage:
+        input.homepage && isHttpOrHttpsUrl(input.homepage) ? input.homepage.trim() : undefined,
       favicon: input.favicon && isHttpOrHttpsUrl(input.favicon) ? input.favicon.trim() : undefined,
       tags,
       allowInsecureHttp: insecure ? true : allowInsecureHttp,
@@ -287,7 +292,9 @@ export class RadioMediaService {
     const results = await mapWithConcurrency(
       subscriptions,
       FEED_REFRESH_CONCURRENCY,
-      async (subscription): Promise<{
+      async (
+        subscription
+      ): Promise<{
         subscription: PodcastSubscription
         refreshed?: PodcastSubscription
         error?: string

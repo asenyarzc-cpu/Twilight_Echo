@@ -8,7 +8,9 @@ const {
   isInsecureHttpUrl,
   isRadioStation,
   isRadioStationsDocument
-} = (await import(new URL('./radioStations.ts', import.meta.url).href)) as typeof import('./radioStations')
+} = (await import(
+  new URL('./radioStations.ts', import.meta.url).href
+)) as typeof import('./radioStations')
 
 test('radio station URL helpers accept http/https and reject credentials', () => {
   assert.equal(isHttpOrHttpsUrl('https://stream.example/live'), true)

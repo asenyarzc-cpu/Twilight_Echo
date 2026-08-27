@@ -35,10 +35,10 @@ test('orders enabled plugins by dependencies', () => {
     plugin('com.example.base')
   ])
 
-  assert.deepEqual(plan.ordered.map((entry) => entry.id), [
-    'com.example.base',
-    'com.example.feature'
-  ])
+  assert.deepEqual(
+    plan.ordered.map((entry) => entry.id),
+    ['com.example.base', 'com.example.feature']
+  )
   assert.equal(plan.failures.size, 0)
 })
 
@@ -60,7 +60,10 @@ test('fails plugins with missing, disabled, or incompatible dependencies', () =>
   assert.match(plan.failures.get('com.example.missing') ?? '', /缺少依赖插件/)
   assert.match(plan.failures.get('com.example.disabled-consumer') ?? '', /未启用/)
   assert.match(plan.failures.get('com.example.incompatible-consumer') ?? '', /不满足/)
-  assert.deepEqual(plan.ordered.map((entry) => entry.id), ['com.example.old'])
+  assert.deepEqual(
+    plan.ordered.map((entry) => entry.id),
+    ['com.example.old']
+  )
 })
 
 test('fails cyclic plugin dependencies and dependents', () => {

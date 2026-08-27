@@ -107,11 +107,7 @@ test('rejects over-nested persisted JSON before accepting or recovering it', asy
   assert.equal(error.backupError, 'file is missing')
   assert.equal(await readFile(error.corruptCopyPath!, 'utf8'), deeplyNested)
 
-  await writeFile(
-    filePath,
-    JSON.stringify({ version: 1, value: '['.repeat(128) }),
-    'utf8'
-  )
+  await writeFile(filePath, JSON.stringify({ version: 1, value: '['.repeat(128) }), 'utf8')
   assert.deepEqual(loadJsonFileWithBackup(filePath, options), {
     status: 'loaded',
     value: { version: 1, value: '['.repeat(128) }

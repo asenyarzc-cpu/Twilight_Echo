@@ -310,7 +310,10 @@ test('specular map strength clamps out-of-range and non-finite input', () => {
   assert.equal(resolveSpecularMapStrength(-20), 0)
   assert.equal(resolveSpecularMapStrength(500), LIQUID_GLASS_SPECULAR_MAP_CEILING)
   assert.equal(resolveSpecularMapStrength(Number.NaN), 0)
-  assert.equal(resolveSpecularMapStrength(Number.POSITIVE_INFINITY), LIQUID_GLASS_SPECULAR_MAP_CEILING)
+  assert.equal(
+    resolveSpecularMapStrength(Number.POSITIVE_INFINITY),
+    LIQUID_GLASS_SPECULAR_MAP_CEILING
+  )
 })
 
 test('specular map strength rises monotonically with the setting', () => {

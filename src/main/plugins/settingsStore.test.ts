@@ -4,12 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
-const {
-  deletePluginSetting,
-  getPluginSetting,
-  pluginSettingsPath,
-  setPluginSetting
-} = (await import(new URL('./settingsStore.ts', import.meta.url).href)) as typeof import('./settingsStore')
+const { deletePluginSetting, getPluginSetting, pluginSettingsPath, setPluginSetting } =
+  (await import(
+    new URL('./settingsStore.ts', import.meta.url).href
+  )) as typeof import('./settingsStore')
 const { protectString, redactSensitiveText } = (await import(
   new URL('../security/secureStorage.ts', import.meta.url).href
 )) as typeof import('../security/secureStorage')
@@ -62,7 +60,10 @@ test('encrypts sensitive plugin settings on disk and decrypts for plugins', asyn
   await setPluginSetting(storagePath, 'refreshToken', 'refresh-token')
   await setPluginSetting(storagePath, 'apiKey', 'amdw_live_private-key')
 
-  assert.equal(await getPluginSetting(storagePath, 'cookie'), 'MUSIC_U=test-token;__csrf=csrf-token')
+  assert.equal(
+    await getPluginSetting(storagePath, 'cookie'),
+    'MUSIC_U=test-token;__csrf=csrf-token'
+  )
   assert.equal(await getPluginSetting(storagePath, 'refreshToken'), 'refresh-token')
   assert.equal(await getPluginSetting(storagePath, 'apiKey'), 'amdw_live_private-key')
 
@@ -122,7 +123,6 @@ test('redacts login secrets from plugin-visible logs', () => {
   assert.match(redacted, /Authorization: Bearer \[REDACTED\]/)
   assert.match(redacted, /X-Signature: \[REDACTED\]/)
 })
-
 
 test('rejects an excessively nested plugin settings document as a whole', async () => {
   const storagePath = await mkdtemp(join(tmpdir(), 'twilight-plugin-settings-deep-file-'))

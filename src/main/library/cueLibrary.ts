@@ -36,9 +36,7 @@ export function deriveCueTracks(
       const cueInfo = statSync(cuePath)
       if (!cueInfo.isFile() || cueInfo.size <= 0) continue
       if (cueInfo.size > MAX_CUE_BYTES) {
-        console.warn(
-          `[library] CUE skipped (${basename(cuePath)}): exceeds ${MAX_CUE_BYTES} bytes`
-        )
+        console.warn(`[library] CUE skipped (${basename(cuePath)}): exceeds ${MAX_CUE_BYTES} bytes`)
         continue
       }
       const bytes = readFileSync(cuePath)

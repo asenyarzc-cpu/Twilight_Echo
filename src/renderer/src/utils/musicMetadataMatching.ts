@@ -96,9 +96,7 @@ export function enrichLocalTrackMetadata(
     ...localTrack,
     artist: policy.metadata ? localTrack.artist || metadata.artist : localTrack.artist,
     album: policy.metadata ? localTrack.album || metadata.album : localTrack.album,
-    genre: policy.metadata
-      ? localTrack.genre || metadata.genre || null
-      : localTrack.genre,
+    genre: policy.metadata ? localTrack.genre || metadata.genre || null : localTrack.genre,
     cover: policy.cover ? (localTrack.cover ?? metadata.cover ?? null) : localTrack.cover,
     lyrics: nextLyrics,
     translatedLyrics: nextTranslatedLyrics,

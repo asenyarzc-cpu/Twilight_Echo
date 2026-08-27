@@ -174,7 +174,9 @@ test('upstream requests are rate limited by a global token bucket', async () => 
 
   try {
     mock.timers.enable({ apis: ['Date', 'setTimeout'] })
-    const pending = Promise.all(Array.from({ length: 6 }, (_, index) => provider.searchSongs(`k${index}`)))
+    const pending = Promise.all(
+      Array.from({ length: 6 }, (_, index) => provider.searchSongs(`k${index}`))
+    )
     await new Promise((resolve) => setImmediate(resolve))
     await new Promise((resolve) => setImmediate(resolve))
     assert.equal(requestTimes.length, 5, 'burst capacity admits five requests immediately')
@@ -2133,7 +2135,10 @@ test('playlist covers request higher-resolution NetEase thumbnails', async () =>
     assert.equal(page.items[0].cover, 'https://p1.music.126.net/abc/cover.jpg?param=600y600')
     assert.equal(page.items[0].coverSmall, 'https://p1.music.126.net/abc/cover.jpg?param=140y140')
     assert.equal(page.items[1].cover, 'https://p2.music.126.net/abc/original.jpg?param=600y600')
-    assert.equal(page.items[1].coverSmall, 'https://p2.music.126.net/abc/original.jpg?param=140y140')
+    assert.equal(
+      page.items[1].coverSmall,
+      'https://p2.music.126.net/abc/original.jpg?param=140y140'
+    )
   } finally {
     ncmProvider.deactivate()
   }

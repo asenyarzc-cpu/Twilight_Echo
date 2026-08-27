@@ -115,7 +115,11 @@ export type LocalLibraryScanWorkerRequest =
 
 export type LocalLibraryScanWorkerMessage =
   | { kind: 'ready' }
-  | { kind: 'progress'; requestId: string; progress: Omit<LocalLibraryScanProgress, 'jobId' | 'mode'> }
+  | {
+      kind: 'progress'
+      requestId: string
+      progress: Omit<LocalLibraryScanProgress, 'jobId' | 'mode'>
+    }
   | { kind: 'response'; requestId: string; ok: true; value: LocalLibraryWorkerScanResult }
   | { kind: 'response'; requestId: string; ok: false; error: string }
 

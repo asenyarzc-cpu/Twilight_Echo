@@ -100,11 +100,7 @@ export async function commitLocalLibraryRemoval({
     if (trashJournal) await trashJournal.markSucceeded(item)
   }
 
-  const mutation = applySuccessfulLibraryRemoval(
-    document,
-    successfulItems,
-    mode === 'library'
-  )
+  const mutation = applySuccessfulLibraryRemoval(document, successfulItems, mode === 'library')
   if (mutation.removedFilePaths.length > 0) {
     await persist(mutation.document)
   }
@@ -210,11 +206,7 @@ export function recoverLocalLibraryRemoval(
     recoverablePaths.has(normalizeLibraryFilePath(item.filePath))
   )
   const loadedLibrary = loadMusicLibraryDocument(libraryFilePath)
-  const mutation = applySuccessfulLibraryRemoval(
-    loadedLibrary.document,
-    recoverableItems,
-    false
-  )
+  const mutation = applySuccessfulLibraryRemoval(loadedLibrary.document, recoverableItems, false)
   if (mutation.removedFilePaths.length > 0) {
     mutation.document.revision = Math.max(
       loadedLibrary.document.revision + 1,

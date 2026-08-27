@@ -18,7 +18,10 @@ test('builds disabled shortcut status without trying to register accelerators', 
 
   assert.equal(registerCalls, 0)
   assert.equal(statuses.length, shortcuts.length)
-  assert.equal(statuses.every((status) => !status.registered && status.error === null), true)
+  assert.equal(
+    statuses.every((status) => !status.registered && status.error === null),
+    true
+  )
 })
 
 test('records registered and failed shortcut accelerators', () => {

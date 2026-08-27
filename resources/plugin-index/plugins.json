@@ -8,30 +8,18 @@
       "description": "在流媒体页的 Bilibili 入口中搜索视频并播放收藏夹音频。支持搜索、多 P 展开、Cookie 静默刷新与 DASH 高音质播放。",
       "author": "Px_asen",
       "license": "Apache-2.0",
-      "type": [
-        "provider",
-        "ui"
-      ],
+      "type": ["provider", "ui"],
       "main": "index.mjs",
       "engines": {
         "twilightEcho": ">=0.20.0"
       },
       "apiVersion": 1,
-      "permissions": [
-        "network",
-        "settings",
-        "ui:inject",
-        "library:read"
-      ],
+      "permissions": ["network", "settings", "ui:inject", "library:read"],
       "repository": "https://github.com/asenyarzc-cpu/Twilight-Echo-plugins",
       "homepage": "https://github.com/asenyarzc-cpu/Twilight-Echo-plugins",
       "sourceUrl": "https://raw.githubusercontent.com/asenyarzc-cpu/Twilight-Echo-plugins/main/packages/com.twilightecho.provider.bilibili-0.1.9.tep",
       "checksumSha256": "cc7b00161f31b1430c64521acc6326f9bd9d33f416459183e43584fec3bf50e7",
-      "tags": [
-        "provider",
-        "ui",
-        "bilibili"
-      ],
+      "tags": ["provider", "ui", "bilibili"],
       "verified": true
     },
     {
@@ -41,30 +29,18 @@
       "description": "在 Twilight Echo 流媒体区搜索和播放 YouTube Music 曲库。基于 ytmusicapi 解析逻辑重构，支持搜索、播放、歌词、歌单和用户媒体库。",
       "author": "Px_asen",
       "license": "Apache-2.0",
-      "type": [
-        "provider",
-        "ui"
-      ],
+      "type": ["provider", "ui"],
       "main": "index.mjs",
       "engines": {
         "twilightEcho": ">=0.20.0"
       },
       "apiVersion": 1,
-      "permissions": [
-        "network",
-        "settings",
-        "ui:inject",
-        "library:read"
-      ],
+      "permissions": ["network", "settings", "ui:inject", "library:read"],
       "repository": "https://github.com/asenyarzc-cpu/Twilight-Echo-plugins",
       "homepage": "https://github.com/asenyarzc-cpu/Twilight-Echo-plugins",
       "sourceUrl": "https://raw.githubusercontent.com/asenyarzc-cpu/Twilight-Echo-plugins/main/packages/com.twilightecho.provider.ytmusic-1.0.5.tep",
       "checksumSha256": "eeef0584cfb5aad1bda7eabdd2e17422b383de456d93060e2e9d6d4970ff4ff2",
-      "tags": [
-        "provider",
-        "ui",
-        "youtube-music"
-      ],
+      "tags": ["provider", "ui", "youtube-music"],
       "verified": true
     }
   ]

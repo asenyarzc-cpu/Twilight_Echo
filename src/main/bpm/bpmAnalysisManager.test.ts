@@ -141,7 +141,12 @@ test('BpmAnalysisManager cancellation aborts the isolated worker and drops late 
   const result = await pending
   assert.deepEqual(cancelled, [filePath])
   assert.deepEqual(result, { status: 'skipped', reason: 'cancelled' })
-  assert.equal(await manager.requestAnalysis({ trackId: 'local:cancel', filePath }).then((item) => item.status), 'completed')
+  assert.equal(
+    await manager
+      .requestAnalysis({ trackId: 'local:cancel', filePath })
+      .then((item) => item.status),
+    'completed'
+  )
   await rm(dir, { recursive: true, force: true })
 })
 

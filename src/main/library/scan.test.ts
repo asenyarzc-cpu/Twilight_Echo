@@ -66,9 +66,7 @@ const {
   getLocalLibraryRemovalJournalPath,
   recoverLocalLibraryRemoval,
   recoverLocalLibraryRemovalResult
-} = (await import(
-  new URL('./removal.ts', import.meta.url).href
-)) as typeof import('./removal.ts')
+} = (await import(new URL('./removal.ts', import.meta.url).href)) as typeof import('./removal.ts')
 
 test('local library scan normalizes common bpm metadata into Track bpm', () => {
   const source = readFileSync(new URL('./scan.ts', import.meta.url), 'utf8')
@@ -97,11 +95,11 @@ test('local library scan only stores albumArtist from a real ALBUMARTIST tag', (
   const scanSource = readFileSync(new URL('./scan.ts', import.meta.url), 'utf8')
   const serviceSource = readFileSync(new URL('./libraryScanService.ts', import.meta.url), 'utf8')
 
-  assert.match(scanSource, /\.\.\.\(common\.albumartist \? \{ albumArtist: common\.albumartist \} : \{\}\)/)
-  assert.doesNotMatch(
+  assert.match(
     scanSource,
-    /albumArtist:\s*common\.albumartist\s*\|\|\s*artist/
+    /\.\.\.\(common\.albumartist \? \{ albumArtist: common\.albumartist \} : \{\}\)/
   )
+  assert.doesNotMatch(scanSource, /albumArtist:\s*common\.albumartist\s*\|\|\s*artist/)
   assert.match(
     serviceSource,
     /\.\.\.\(metadata\.common\.albumartist \? \{ albumArtist: metadata\.common\.albumartist \} : \{\}\)/
@@ -181,11 +179,13 @@ test('excluded tracks are filtered during create, save, load, and restart', () =
   }
   const tracks = [createTrack('excluded', excludedPath), createTrack('kept', keptPath)]
   try {
-    const created = createMusicLibraryDocument(
-      { revision: 3, tracks, folders: [root] },
-      [exclusion]
+    const created = createMusicLibraryDocument({ revision: 3, tracks, folders: [root] }, [
+      exclusion
+    ])
+    assert.deepEqual(
+      created.tracks.map((track) => (track as { id: string }).id),
+      ['kept']
     )
-    assert.deepEqual(created.tracks.map((track) => (track as { id: string }).id), ['kept'])
 
     persistMusicLibraryDocument(libraryFile, {
       version: 2,
@@ -195,7 +195,10 @@ test('excluded tracks are filtered during create, save, load, and restart', () =
       exclusions: [exclusion]
     })
     const savedBytes = JSON.parse(readFileSync(libraryFile, 'utf8')) as LocalMusicLibraryDocument
-    assert.deepEqual(savedBytes.tracks.map((track) => (track as { id: string }).id), ['kept'])
+    assert.deepEqual(
+      savedBytes.tracks.map((track) => (track as { id: string }).id),
+      ['kept']
+    )
 
     writeFileSync(
       libraryFile,
@@ -210,16 +213,18 @@ test('excluded tracks are filtered during create, save, load, and restart', () =
     )
     const loaded = loadMusicLibraryDocument(libraryFile)
     assert.equal(loaded.migrated, true)
-    assert.deepEqual(loaded.document.tracks.map((track) => (track as { id: string }).id), [
-      'kept'
-    ])
+    assert.deepEqual(
+      loaded.document.tracks.map((track) => (track as { id: string }).id),
+      ['kept']
+    )
     persistMusicLibraryDocument(libraryFile, loaded.document)
 
     const restarted = loadMusicLibraryDocument(libraryFile)
     assert.equal(restarted.migrated, false)
-    assert.deepEqual(restarted.document.tracks.map((track) => (track as { id: string }).id), [
-      'kept'
-    ])
+    assert.deepEqual(
+      restarted.document.tracks.map((track) => (track as { id: string }).id),
+      ['kept']
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -250,7 +255,10 @@ test('legacy array removal uses persisted membership and survives restart', asyn
     assert.equal(result.library.exclusions.length, 1)
     const restarted = loadMusicLibraryDocument(libraryFile)
     assert.equal(restarted.document.tracks.length, 0)
-    assert.deepEqual(restarted.document.exclusions.map((item) => item.filePath), [filePath])
+    assert.deepEqual(
+      restarted.document.exclusions.map((item) => item.filePath),
+      [filePath]
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -272,7 +280,10 @@ test('full directory scans omit persisted exclusion paths', async () => {
       (filePath) => normalizeLibraryFilePath(filePath) === excludedKey
     )
 
-    assert.deepEqual(files.map((file) => file.fullPath), [keptPath])
+    assert.deepEqual(
+      files.map((file) => file.fullPath),
+      [keptPath]
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -318,7 +329,10 @@ test('managed exclusions can be restored without dropping unrelated entries', ()
   const restored = restoreLibraryExclusions(document, [firstPath])
 
   assert.deepEqual(restored.restoredFilePaths, [firstPath])
-  assert.deepEqual(restored.document.exclusions.map((item) => item.filePath), [secondPath])
+  assert.deepEqual(
+    restored.document.exclusions.map((item) => item.filePath),
+    [secondPath]
+  )
 })
 
 test('trash failures keep failed records and never persist when every item fails', async () => {
@@ -359,8 +373,7 @@ test('stale library revisions are rejected before a mutation can write', () => {
   assert.doesNotThrow(() => assertMusicLibraryRevision(7, 7))
   assert.throws(
     () => assertMusicLibraryRevision(6, 7),
-    (error: unknown) =>
-      error instanceof Error && error.name === 'MusicLibraryRevisionConflictError'
+    (error: unknown) => error instanceof Error && error.name === 'MusicLibraryRevisionConflictError'
   )
 })
 
@@ -452,11 +465,10 @@ test('trash journal recovers partial successes after the library commit fails', 
     )
     assert.equal(existsSync(getLocalLibraryRemovalJournalPath(libraryFile)), true)
 
-    const recoveryResult = recoverLocalLibraryRemovalResult(
-      libraryFile,
-      initial,
-      [createSelection('success', successPath), createSelection('failed', failedPath)]
-    )
+    const recoveryResult = recoverLocalLibraryRemovalResult(libraryFile, initial, [
+      createSelection('success', successPath),
+      createSelection('failed', failedPath)
+    ])
     assert.ok(recoveryResult)
     assert.deepEqual(recoveryResult.removedTrackIds, ['success'])
     assert.equal(recoveryResult.library.revision, 5)
@@ -484,9 +496,7 @@ test('5000 removals perform one transaction write and create managed exclusions'
   const startedAt = performance.now()
   const result = await commitLocalLibraryRemoval({
     document: initial,
-    items: tracks.map((track) =>
-      createSelection(track.id as string, track.filePath as string)
-    ),
+    items: tracks.map((track) => createSelection(track.id as string, track.filePath as string)),
     mode: 'library',
     trashItem: async () => {
       throw new Error('library-only removal must not call trashItem')

@@ -57,11 +57,7 @@ export function goBack(): boolean {
 // owning scope unmounts. Register deeper states after their page's base
 // handler so they land on top of the stack:
 //   useBackHandler(isDetail, popDetail, '返回推荐')
-export function useBackHandler(
-  active: Ref<boolean>,
-  run: () => void,
-  label?: string
-): void {
+export function useBackHandler(active: Ref<boolean>, run: () => void, label?: string): void {
   let dispose: (() => void) | null = null
   watch(
     active,
@@ -97,5 +93,12 @@ export function useBackStack(): {
   useBackHandler: typeof useBackHandler
   useBackHandlerWhileMounted: typeof useBackHandlerWhileMounted
 } {
-  return { canGoBack, backHint, goBack, pushBackHandler, useBackHandler, useBackHandlerWhileMounted }
+  return {
+    canGoBack,
+    backHint,
+    goBack,
+    pushBackHandler,
+    useBackHandler,
+    useBackHandlerWhileMounted
+  }
 }

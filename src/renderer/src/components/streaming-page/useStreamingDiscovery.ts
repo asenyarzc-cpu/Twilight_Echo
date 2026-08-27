@@ -176,17 +176,10 @@ export function useStreamingDiscovery({
     const requestId = ++latestRequestId
     loadingMore.value = true
     try {
-      const page = await fetchHighQualityPlaylists(
-        selectedTag.value,
-        DISCOVERY_PAGE_SIZE,
-        hqBefore
-      )
+      const page = await fetchHighQualityPlaylists(selectedTag.value, DISCOVERY_PAGE_SIZE, hqBefore)
       if (requestId !== latestRequestId) return
       const seen = new Set(playlists.value.map((item) => item.id))
-      playlists.value = [
-        ...playlists.value,
-        ...page.items.filter((item) => !seen.has(item.id))
-      ]
+      playlists.value = [...playlists.value, ...page.items.filter((item) => !seen.has(item.id))]
       total.value = page.total
       hasMore.value = page.hasMore
       hqBefore = page.lasttime

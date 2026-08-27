@@ -63,7 +63,10 @@ describe('cloud transfer ownership and exclusivity', () => {
 
   it('only allows a transfer owner to cancel', () => {
     const reasons: unknown[] = []
-    const transfer = { ownerId: 7, controller: { abort: (reason?: unknown) => reasons.push(reason) } }
+    const transfer = {
+      ownerId: 7,
+      controller: { abort: (reason?: unknown) => reasons.push(reason) }
+    }
     assert.equal(cancelOwnedTransfer(transfer, 8, new Error('foreign')), false)
     assert.equal(reasons.length, 0)
     assert.equal(cancelOwnedTransfer(transfer, 7, new Error('cancelled')), true)
@@ -75,7 +78,10 @@ describe('cloud transfer URL policy', () => {
   it('accepts HTTP(S) URLs without embedded credentials only', () => {
     assert.equal(normalizeTransferUrl('https://cdn.example/song.flac', '地址').protocol, 'https:')
     assert.throws(() => normalizeTransferUrl('file:///tmp/song.flac', '地址'), /协议无效/)
-    assert.throws(() => normalizeTransferUrl('https://user:pass@example/song.flac', '地址'), /URL 凭据/)
+    assert.throws(
+      () => normalizeTransferUrl('https://user:pass@example/song.flac', '地址'),
+      /URL 凭据/
+    )
   })
 
   it('resolves safe redirects and rejects HTTPS downgrade', () => {
@@ -173,11 +179,7 @@ describe('cloud download file commit', () => {
         operations.push(`remove:${path}`)
       }
     })
-    assert.deepEqual(operations, [
-      'rename:target:backup',
-      'rename:temp:target',
-      'remove:backup'
-    ])
+    assert.deepEqual(operations, ['rename:target:backup', 'rename:temp:target', 'remove:backup'])
   })
 
   it('restores an existing target when committing the temporary file fails', async () => {

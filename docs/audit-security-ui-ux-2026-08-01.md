@@ -17,11 +17,11 @@
 
 ## 1. 审查范围与方法
 
-| 面 | 覆盖内容 |
-|---|---|
+| 面   | 覆盖内容                                                                                                            |
+| ---- | ------------------------------------------------------------------------------------------------------------------- |
 | 安全 | 主进程窗口配置、IPC 校验、路径授权、远程控制 HTTP 服务、NCM 登录/API、插件系统、更新流程、CSP、密钥存储、zip 包校验 |
-| UI | 全部 `.vue`/`.css` 中 `box-shadow`、`transform`、`position`、`z-index`、`!important` 使用 |
-| 交互 | 导航/快捷键逻辑、播放栏抽屉、音量、歌单选择、关闭窗口持久化、引导流程 |
+| UI   | 全部 `.vue`/`.css` 中 `box-shadow`、`transform`、`position`、`z-index`、`!important` 使用                           |
+| 交互 | 导航/快捷键逻辑、播放栏抽屉、音量、歌单选择、关闭窗口持久化、引导流程                                               |
 
 ---
 
@@ -209,24 +209,24 @@
 
 > 以下为建议执行顺序。**确认哪些做、哪些不做（或调整）后，我再逐项实施并附验证。**
 
-| 编号 | 级别 | 建议动作 | 涉及文件 | 验证方式 |
-|---|---|---|---|---|
-| S7 | **P1** | **升级 Electron 至 39.8.10（或直接升 40+/41+/42+）修复 CVE-2026-5858** | `package.json` → `pnpm install` | `pnpm audit --prod` 确认无 high/critical + `test:app` 回归 |
-| S1 | P1 | NCM 登录分区改内存 / 登录后清理 Cookie 落盘 | `src/main/ncm/api.ts` | 单测 + 检查 userData 无残留目录 |
-| S8 | P2 | body-parser 升 ≥2.3.0（override 或升级 API 包，需重验 patch） | `package.json` / `pnpm-workspace.yaml` | `pnpm audit --prod` 归零 |
-| S2 | P2 | `/media/*` 去 CORS；配对接口收紧 Origin | `src/main/remote/httpServer.ts` | 现有 httpServer 测试补 CORS 断言 |
-| S3 | P2 | SSE 连接数上限 | `src/main/remote/httpServer.ts` | 单测 |
-| S4 | P3 | `shell:openExternal` 默认仅 `https:` | `shellIpc.ts`、`window.ts`、`ncm/api.ts` | 单测 |
-| U1 | P1 | 去掉播放行位移/缩放/大阴影，改背景+指示条高亮 | `SongList.css` | 截图对比 + 现有渲染测试 |
-| U2 | P1 | 密集行 hover 只留背景/细描边 | `SongList.css` | 截图对比 |
-| U3 | P2 | 封面列移除写死 `translateX(32px)` | `PlayingMusic.vue` | 多窗口宽度截图 |
-| U4 | P2 | HiFi 小卡片阴影收敛/去除 | `PlayerBar.css` | 截图对比 |
-| U5 | P3 | 逐步清理 `!important`，新样式禁用 | `base.css` 等 | lint 规则 |
-| U6 | P3 | 阴影统一走令牌 | 各 css | 主题回归测试 |
-| I1 | P1 | 音量图标点击 = 静音；抽屉保留为显式入口 | `PlayerBar.vue` + `useFloatingPanels.ts` | 交互测试/手动 |
-| I2 | P2 | 滚轮不弹抽屉/悬停延迟展开 | `PlayerBar.vue` | 手动 |
-| I3 | P2 | 增加“仍然退出”逃生选项 | `window.ts`、`closePersistence.ts` | 单测 |
-| I4 | P3 | 统一菜单键语义 | `useAppNavigation.ts` | 单测 |
+| 编号 | 级别   | 建议动作                                                               | 涉及文件                                 | 验证方式                                                   |
+| ---- | ------ | ---------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------- |
+| S7   | **P1** | **升级 Electron 至 39.8.10（或直接升 40+/41+/42+）修复 CVE-2026-5858** | `package.json` → `pnpm install`          | `pnpm audit --prod` 确认无 high/critical + `test:app` 回归 |
+| S1   | P1     | NCM 登录分区改内存 / 登录后清理 Cookie 落盘                            | `src/main/ncm/api.ts`                    | 单测 + 检查 userData 无残留目录                            |
+| S8   | P2     | body-parser 升 ≥2.3.0（override 或升级 API 包，需重验 patch）          | `package.json` / `pnpm-workspace.yaml`   | `pnpm audit --prod` 归零                                   |
+| S2   | P2     | `/media/*` 去 CORS；配对接口收紧 Origin                                | `src/main/remote/httpServer.ts`          | 现有 httpServer 测试补 CORS 断言                           |
+| S3   | P2     | SSE 连接数上限                                                         | `src/main/remote/httpServer.ts`          | 单测                                                       |
+| S4   | P3     | `shell:openExternal` 默认仅 `https:`                                   | `shellIpc.ts`、`window.ts`、`ncm/api.ts` | 单测                                                       |
+| U1   | P1     | 去掉播放行位移/缩放/大阴影，改背景+指示条高亮                          | `SongList.css`                           | 截图对比 + 现有渲染测试                                    |
+| U2   | P1     | 密集行 hover 只留背景/细描边                                           | `SongList.css`                           | 截图对比                                                   |
+| U3   | P2     | 封面列移除写死 `translateX(32px)`                                      | `PlayingMusic.vue`                       | 多窗口宽度截图                                             |
+| U4   | P2     | HiFi 小卡片阴影收敛/去除                                               | `PlayerBar.css`                          | 截图对比                                                   |
+| U5   | P3     | 逐步清理 `!important`，新样式禁用                                      | `base.css` 等                            | lint 规则                                                  |
+| U6   | P3     | 阴影统一走令牌                                                         | 各 css                                   | 主题回归测试                                               |
+| I1   | P1     | 音量图标点击 = 静音；抽屉保留为显式入口                                | `PlayerBar.vue` + `useFloatingPanels.ts` | 交互测试/手动                                              |
+| I2   | P2     | 滚轮不弹抽屉/悬停延迟展开                                              | `PlayerBar.vue`                          | 手动                                                       |
+| I3   | P2     | 增加“仍然退出”逃生选项                                                 | `window.ts`、`closePersistence.ts`       | 单测                                                       |
+| I4   | P3     | 统一菜单键语义                                                         | `useAppNavigation.ts`                    | 单测                                                       |
 
 **说明**：安全面本次建议处理两项——**S7（Electron 升级，含 CVE-2026-5858）** 与 S1（Cookie 落盘）；U1/U2/I1 为视觉与交互最优先的三项。S7 的 Electron 升级范围（保守 39.8.10 vs 直接上 41/42/43）需要你拍板。
 
@@ -309,40 +309,39 @@ function onVolumeButtonClick(): void {
 - 音量调整入口：抽屉仍可通过音量按钮旁的“下拉箭头”或 hover 展开；或补充右键菜单。
 - 验证：点击喇叭=静音/恢复；抽屉仍可打开调整音量；跑 `volumeMute` 相关测试。
 
-
 ---
 
 ## 7. 实施记录（2026-08-01，用户确认后执行）
 
 > 范围：升级 Electron 至 43 + 修复本章总结的安全/UI/交互问题，随后 `pnpm run dev` 验证音频服务。
 
-| 编号 | 状态 | 改动 |
-|---|---|---|
-| S7 | ✅ | `package.json` `electron: ^39.2.6` → `^43.0.0`，锁文件解析到 **43.2.0**；`pnpm-workspace.yaml` 增加 `node-abi: 4.33.0` override（否则 electron-builder 无法识别 Electron 43 ABI） |
-| S1 | ✅ | `src/main/ncm/api.ts:99` 登录分区去掉 `persist:` 前缀 → 内存分区，Cookie 不再落盘 |
-| S8 | ✅ | `pnpm-workspace.yaml` overrides：`body-parser@1.20.5→1.20.6`、`body-parser@2.2.2→2.3.0`（CVE-2026-12590） |
-| S2 | ✅ | `httpServer.ts` CORS 收紧：`access-control-allow-origin: '*'` 移除，仅回显同源/回环 Origin（新增 `resolveAllowedOrigin` 与 `externalUrl` 同款策略） |
-| S3 | ✅ | `httpServer.ts` SSE 上限 8 条，超出返回 429 `too_many_event_connections` |
-| S4 | ✅ | 新建 `src/main/security/externalUrl.ts`：外部跳转默认仅 https:（http: 需显式域名白名单）；`shellIpc.ts` / `window.ts` / `ncm/api.ts` 统一改用 |
-| U1 | ✅ | `SongList.css` `.track-playing` 去掉 `translateX(2px) scale(1.026)` 与大阴影 → 背景色 + inset 细描边；`track-selected.track-playing` 组合态同步收敛；base.css dark/pureWhite 主题覆盖同步 |
-| U2 | ✅ | `SongList.css` `.track-row:hover` 去掉位移/大阴影/动画渐变描边 → 仅 inset 细描边；`::before/::after` hover 动画关闭；dark/pureWhite 同步 |
-| U3 | ✅ | `PlayingMusic.vue` `.cover-column` 移除写死 `translateX(32px)` |
-| U4 | ✅ | `PlayerBar.css` HiFi 小卡片（`.hifi-meta` / `.hifi-quality-card` / `.hifi-toggle-card`）阴影收敛为 `0 1px 2px`；hover/on 态阴影收敛 |
-| I1 | ✅ | `PlayerBar.vue` 音量图标点击 = 静音/恢复（`onVolumeButtonClick`），抽屉打开时点击先收抽屉；`toggleMute` 接入 |
-| I2 | ✅ | `PlayerBar.vue` `onVolumeWheel` 只调音量、不再自动弹抽屉 |
-| I3 | ✅ | `closePersistence.ts` 支持 `'force'` 逃生出口；`window.ts` 对话框新增 “Quit without saving” 按钮；补单测 |
-| I4 | ✅ | `useAppNavigation.ts` 菜单键统一：设置/插件页先退出全屏页再打开侧边菜单 |
-| U5/U6 | ⏳ | P3 风格化重构（清理 118 处 `!important`、阴影全量走令牌），属“逐步清理”项，未在本次执行 |
+| 编号  | 状态 | 改动                                                                                                                                                                                      |
+| ----- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S7    | ✅   | `package.json` `electron: ^39.2.6` → `^43.0.0`，锁文件解析到 **43.2.0**；`pnpm-workspace.yaml` 增加 `node-abi: 4.33.0` override（否则 electron-builder 无法识别 Electron 43 ABI）         |
+| S1    | ✅   | `src/main/ncm/api.ts:99` 登录分区去掉 `persist:` 前缀 → 内存分区，Cookie 不再落盘                                                                                                         |
+| S8    | ✅   | `pnpm-workspace.yaml` overrides：`body-parser@1.20.5→1.20.6`、`body-parser@2.2.2→2.3.0`（CVE-2026-12590）                                                                                 |
+| S2    | ✅   | `httpServer.ts` CORS 收紧：`access-control-allow-origin: '*'` 移除，仅回显同源/回环 Origin（新增 `resolveAllowedOrigin` 与 `externalUrl` 同款策略）                                       |
+| S3    | ✅   | `httpServer.ts` SSE 上限 8 条，超出返回 429 `too_many_event_connections`                                                                                                                  |
+| S4    | ✅   | 新建 `src/main/security/externalUrl.ts`：外部跳转默认仅 https:（http: 需显式域名白名单）；`shellIpc.ts` / `window.ts` / `ncm/api.ts` 统一改用                                             |
+| U1    | ✅   | `SongList.css` `.track-playing` 去掉 `translateX(2px) scale(1.026)` 与大阴影 → 背景色 + inset 细描边；`track-selected.track-playing` 组合态同步收敛；base.css dark/pureWhite 主题覆盖同步 |
+| U2    | ✅   | `SongList.css` `.track-row:hover` 去掉位移/大阴影/动画渐变描边 → 仅 inset 细描边；`::before/::after` hover 动画关闭；dark/pureWhite 同步                                                  |
+| U3    | ✅   | `PlayingMusic.vue` `.cover-column` 移除写死 `translateX(32px)`                                                                                                                            |
+| U4    | ✅   | `PlayerBar.css` HiFi 小卡片（`.hifi-meta` / `.hifi-quality-card` / `.hifi-toggle-card`）阴影收敛为 `0 1px 2px`；hover/on 态阴影收敛                                                       |
+| I1    | ✅   | `PlayerBar.vue` 音量图标点击 = 静音/恢复（`onVolumeButtonClick`），抽屉打开时点击先收抽屉；`toggleMute` 接入                                                                              |
+| I2    | ✅   | `PlayerBar.vue` `onVolumeWheel` 只调音量、不再自动弹抽屉                                                                                                                                  |
+| I3    | ✅   | `closePersistence.ts` 支持 `'force'` 逃生出口；`window.ts` 对话框新增 “Quit without saving” 按钮；补单测                                                                                  |
+| I4    | ✅   | `useAppNavigation.ts` 菜单键统一：设置/插件页先退出全屏页再打开侧边菜单                                                                                                                   |
+| U5/U6 | ⏳   | P3 风格化重构（清理 118 处 `!important`、阴影全量走令牌），属“逐步清理”项，未在本次执行                                                                                                   |
 
 **新增测试**：`src/main/security/externalUrl.test.ts`（S4）、`closePersistence.test.ts` 新增 force 用例（I3）、`httpServer.mediaOnly.test.ts` 新增 CORS/SSE 断言（S2/S3）。
 
 **音频服务可用性（dev 验证）**：
+
 - 首次 dev 启动发现原生音频模块缺失（`twilight_audio_node.node` 未构建）→ 用系统 cmake/g++/FFmpeg/ALSA 执行 `cmake -S audio-engine -B audio-engine/build/default -DTAE_BUILD_NAPI=ON -DTAE_BUILD_TESTS=OFF` + `cmake --build` 编译出 `.node`（ALSA runtimeAvailable、FFmpeg/ebur128/nativeDsp 全开，`GetEngineCapabilities` 验证通过）。
 - 重新 `pnpm run dev`：无 `未加载 twilight_audio_node.node` / `音频服务不可用` 报错；NCM 音频服务 `http://127.0.0.1:3100` 正常响应（login/playlist/song 等请求持续 Success）；Electron 43.2.0 主/GPU/渲染/utility（音频引擎、插件宿主等）进程正常。
 - 注意：dev 启动需先清理 `~/.config/TwilightEcho/Singleton*`（被强杀时残留会导致新实例秒退）。
 
 **验证命令**：`pnpm audit --prod`、`pnpm run test:cross-cutting-regressions`、`pnpm run test:plugins`、`pnpm run test:radio-remote`、`pnpm run typecheck`、`pnpm run dev`。
-
 
 ---
 
@@ -354,20 +353,19 @@ function onVolumeButtonClick(): void {
   - 修复：`.settings-accordion-trigger` 增加 `margin-top: 16px`。
 - 验证：`vue-tsc` typecheck 通过；`test:app` 仅剩既有的 `.github` 缺失失败（与本次无关）；dev 热更新后实测间距 16px、控件无溢出。
 
-
 ---
 
 ## 9. 原生播放引擎修复（2026-08-01，用户反馈“还是没法用原生播放引擎”）
 
 现象：点击播放后报 `打开音频失败，错误码：-1330794744`（av_strerror = **Protocol not found**），随后判定“原生音频引擎不可用”。
 
-### 根因一：Electron 自带 Chromium libffmpeg 与引擎系统 libav* 符号抢占（主因）
+### 根因一：Electron 自带 Chromium libffmpeg 与引擎系统 libav\* 符号抢占（主因）
 
 - 音频引擎服务跑在 Electron utility 进程；该进程同时加载 Electron 自带 `libffmpeg.so` 与引擎链接的系统 `libavformat/avcodec/avutil/swresample`。同名符号抢占全局符号表后，引擎内 FFmpeg 协议注册表损坏 —— 连本地文件 `avformat_open_input` 都返回 “Protocol not found”。
 - 对照实验（utility 进程内直接调用引擎）：
   - 不带 LD_PRELOAD → `打开音频失败，错误码：-1330794744`（复现）
-  - 带 LD_PRELOAD 预载系统 libav* → `Play OK`
-- 修复：`src/main/audioEngineServiceClient.ts` —— fork 音频服务时（仅 Linux）用 `ldd <addon>` 解析引擎实际链接的系统 FFmpeg 库，经 `env.LD_PRELOAD` 传给 utility 进程（静态链接构建无 libav* 输出，自动跳过；Windows/macOS 不受影响）。
+  - 带 LD_PRELOAD 预载系统 libav\* → `Play OK`
+- 修复：`src/main/audioEngineServiceClient.ts` —— fork 音频服务时（仅 Linux）用 `ldd <addon>` 解析引擎实际链接的系统 FFmpeg 库，经 `env.LD_PRELOAD` 传给 utility 进程（静态链接构建无 libav\* 输出，自动跳过；Windows/macOS 不受影响）。
 
 ### 根因二：本机 ALSA `default` PCM 打不开，`pipewire` PCM 可用
 
@@ -383,7 +381,6 @@ function onVolumeButtonClick(): void {
 ### 备注
 
 - 网易云 `/song/url/v1`（hires/lossless/exhigh）对未付费 VIP 曲目返回错误，仅 legacy `/song/url?id=..&br=999000`（128kbps）成功 —— 属 NCM VIP 权益问题，与原生引擎无关。
-
 
 ---
 

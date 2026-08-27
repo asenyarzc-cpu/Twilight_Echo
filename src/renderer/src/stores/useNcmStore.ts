@@ -1,8 +1,5 @@
 import { ref, type Ref } from 'vue'
-import type {
-  NcmCloudSelectedFile,
-  NcmCloudTransferProgress
-} from '../../../shared/ncmCloud.ts'
+import type { NcmCloudSelectedFile, NcmCloudTransferProgress } from '../../../shared/ncmCloud.ts'
 import type { Track } from '../types/music'
 import { useMediaProviders } from '../providers'
 
@@ -172,8 +169,16 @@ export interface NcmStore {
   }>
   fetchPlaylistTracks: (playlistId: number | string, force?: boolean) => Promise<Track[]>
   fetchLikedTracks: (force?: boolean) => Promise<Track[]>
-  fetchLikedTracksPage: (offset?: number, limit?: number, force?: boolean) => Promise<NcmLikedTracksPage>
-  fetchCloudSongsPage: (offset?: number, limit?: number, append?: boolean) => Promise<NcmCloudSongsPage>
+  fetchLikedTracksPage: (
+    offset?: number,
+    limit?: number,
+    force?: boolean
+  ) => Promise<NcmLikedTracksPage>
+  fetchCloudSongsPage: (
+    offset?: number,
+    limit?: number,
+    append?: boolean
+  ) => Promise<NcmCloudSongsPage>
   refreshCloudSongs: () => Promise<NcmCloudSongsPage>
   loadMoreCloudSongs: () => Promise<NcmCloudSongsPage | null>
   chooseCloudUploadFiles: () => Promise<NcmCloudSelectedFile[]>
@@ -283,10 +288,16 @@ function scheduleCloudRefresh(): void {
   const userId = profile.value?.userId
   cloudRefreshTimer = setTimeout(() => {
     cloudRefreshTimer = null
-    if (!isLoggedIn.value || cloudStateRevision !== revision || profile.value?.userId !== userId) return
+    if (!isLoggedIn.value || cloudStateRevision !== revision || profile.value?.userId !== userId)
+      return
     void callNcmProvider<NcmCloudSongsPage>('fetchCloudSongsPage', [0, 50])
       .then((page) => {
-        if (!isLoggedIn.value || cloudStateRevision !== revision || profile.value?.userId !== userId) return
+        if (
+          !isLoggedIn.value ||
+          cloudStateRevision !== revision ||
+          profile.value?.userId !== userId
+        )
+          return
         cloudSongs.value = page.items
         cloudTotal.value = page.total
         cloudNextOffset.value = page.nextOffset
@@ -379,7 +390,10 @@ async function callNcmProvider<T>(
     markProviderAvailable()
     return value
   } catch (error) {
-    if (error instanceof Error && /Provider 未启用|provider is disabled|does not implement/i.test(error.message)) {
+    if (
+      error instanceof Error &&
+      /Provider 未启用|provider is disabled|does not implement/i.test(error.message)
+    ) {
       markProviderUnavailable(error)
     }
     throw error
@@ -490,10 +504,7 @@ export function useNcmStore(): NcmStore {
     }
   }
 
-  async function fetchPlaylistTracks(
-    playlistId: number | string,
-    force = false
-  ): Promise<Track[]> {
+  async function fetchPlaylistTracks(playlistId: number | string, force = false): Promise<Track[]> {
     return callNcmProvider<Track[]>('fetchPlaylistTracks', [playlistId, force])
   }
 
@@ -588,7 +599,8 @@ export function useNcmStore(): NcmStore {
     ensureCloudProgressListener()
     const result = await window.api.ncmCloud.download({
       cloudSongId: song.cloudSongId,
-      fileName: song.fileName || song.track.fileName || `${song.track.title}.${song.track.format || 'mp3'}`
+      fileName:
+        song.fileName || song.track.fileName || `${song.track.title}.${song.track.format || 'mp3'}`
     })
     return result.accepted ? result.transferId : null
   }
@@ -742,11 +754,7 @@ export function useNcmStore(): NcmStore {
     return callNcmProvider<NcmPlaylistSummary[]>('fetchUserPlaylistsByUid', [uid, createdOnly])
   }
 
-  async function fetchUserFollows(
-    uid: number,
-    limit = 30,
-    offset = 0
-  ): Promise<NcmUserSummary[]> {
+  async function fetchUserFollows(uid: number, limit = 30, offset = 0): Promise<NcmUserSummary[]> {
     return callNcmProvider<NcmUserSummary[]>('fetchUserFollows', [uid, limit, offset])
   }
 

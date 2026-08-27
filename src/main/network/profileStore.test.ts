@@ -94,7 +94,9 @@ test('resolveAuth decrypts credentials for the main process only', async () => {
 test('profile input validation rejects malformed profiles', async () => {
   const { dir, store } = await makeStore()
   try {
-    await assert.rejects(() => store.createProfile(makeInput({ protocol: 'carrier-pigeon' as never })))
+    await assert.rejects(() =>
+      store.createProfile(makeInput({ protocol: 'carrier-pigeon' as never }))
+    )
     await assert.rejects(() => store.createProfile(makeInput({ host: '' })))
     await assert.rejects(() => store.createProfile(makeInput({ rootPath: '/music/../secret' })))
     await assert.rejects(() => store.createProfile(makeInput({ port: 70000 })))

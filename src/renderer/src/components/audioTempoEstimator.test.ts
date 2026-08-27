@@ -19,7 +19,11 @@ function waveformPulse(strength: number): Float32Array {
   return samples
 }
 
-function feedPulseTrain(estimator: AudioTempoEstimator, bpm: number, seconds: number): ReturnType<AudioTempoEstimator['pushFrame']> {
+function feedPulseTrain(
+  estimator: AudioTempoEstimator,
+  bpm: number,
+  seconds: number
+): ReturnType<AudioTempoEstimator['pushFrame']> {
   const intervalMs = 50
   const beatMs = 60000 / bpm
   let result: ReturnType<AudioTempoEstimator['pushFrame']> = estimator.getState()

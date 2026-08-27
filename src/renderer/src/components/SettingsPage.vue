@@ -1411,15 +1411,10 @@ onBeforeUnmount(() => {
 
 <style>
 html[data-theme='dark'] .settings-preview-page {
-  /* This block is emitted after SettingsPage.css, so preserve the complete
-     opaque image stack rather than resetting the page to a transparent layer. */
-  background-color: var(--te-settings-backplate, #17181a) !important;
-  background-image:
-    var(--te-settings-bg-image, none), linear-gradient(var(--te-settings-bg), var(--te-settings-bg)) !important;
-  background-position: center, center;
-  background-size: cover, cover;
-  background-repeat: no-repeat, no-repeat;
-  background-attachment: fixed, fixed;
+  /* This block is emitted after SettingsPage.css. The overlay root is the
+     single settings wallpaper painter, so the page stays transparent in every
+     theme — a second image copy here would drift into split bands again. */
+  background: transparent;
   color: var(--te-text);
 }
 

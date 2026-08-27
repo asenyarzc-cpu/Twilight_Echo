@@ -286,7 +286,10 @@ export function getLibraryWatcherStatus(): LibraryWatcherFolderStatus[] {
     .sort((left, right) => left.folder.localeCompare(right.folder))
 }
 
-export function getLibraryWatcherStatusSnapshot(folders: string[], enabled: boolean): {
+export function getLibraryWatcherStatusSnapshot(
+  folders: string[],
+  enabled: boolean
+): {
   enabled: boolean
   folders: LibraryWatcherFolderStatus[]
 } {

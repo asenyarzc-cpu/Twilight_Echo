@@ -32,13 +32,7 @@ function textFrame(id: string, text: string): Buffer {
 
 function apicFrame(): Buffer {
   const mime = Buffer.from('image/png\u0000', 'latin1')
-  const data = Buffer.concat([
-    Buffer.from([0]),
-    mime,
-    Buffer.from([3]),
-    Buffer.from([0]),
-    TINY_PNG
-  ])
+  const data = Buffer.concat([Buffer.from([0]), mime, Buffer.from([3]), Buffer.from([0]), TINY_PNG])
   const header = Buffer.alloc(10)
   header.write('APIC', 0, 'ascii')
   header.writeUInt32BE(data.length, 4)

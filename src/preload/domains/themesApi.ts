@@ -38,10 +38,7 @@ export const themesApi = {
       [profileId, expectedRevision],
       isThemeLibraryDocument
     ),
-  setActive: (
-    selection: ThemeSelection,
-    expectedRevision: number
-  ): Promise<ThemeLibrarySnapshot> =>
+  setActive: (selection: ThemeSelection, expectedRevision: number): Promise<ThemeLibrarySnapshot> =>
     invokeVersionedDataWrite(
       'themes:setActive',
       [selection, expectedRevision],

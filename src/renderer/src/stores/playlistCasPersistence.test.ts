@@ -107,10 +107,7 @@ test('a local action queued during CAS recovery preserves the merged authoritati
     authoritative.find((playlist) => playlist.id === 'pl-shared'),
     store.playlists.value.find((playlist) => playlist.id === 'pl-shared')
   )
-  assert.equal(
-    authoritative.find((playlist) => playlist.id === 'pl-shared')?.name,
-    'Road Renamed'
-  )
+  assert.equal(authoritative.find((playlist) => playlist.id === 'pl-shared')?.name, 'Road Renamed')
   assert.equal(
     authoritative.find((playlist) => playlist.id === 'pl-shared')?.cover,
     'cover://second-local-action'

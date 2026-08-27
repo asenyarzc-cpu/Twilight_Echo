@@ -1273,277 +1273,182 @@
       "id": "appearance.accentSource",
       "dataAttribute": "data-te-accent-source",
       "label": "强调色来源",
-      "options": [
-        "fixed",
-        "cover"
-      ],
+      "options": ["fixed", "cover"],
       "defaultValue": "fixed"
     },
     {
       "id": "appearance.backgroundTreatment",
       "dataAttribute": "data-te-background-treatment",
       "label": "背景处理",
-      "options": [
-        "solid",
-        "gradient",
-        "cover-blur",
-        "image"
-      ],
+      "options": ["solid", "gradient", "cover-blur", "image"],
       "defaultValue": "solid"
     },
     {
       "id": "appearance.toneScheduling",
       "dataAttribute": "data-te-tone-scheduling",
       "label": "明暗调度",
-      "options": [
-        "manual",
-        "system",
-        "timed"
-      ],
+      "options": ["manual", "system", "timed"],
       "defaultValue": "manual"
     },
     {
       "id": "appearance.contrastGuard",
       "dataAttribute": "data-te-contrast-guard",
       "label": "对比度保护",
-      "options": [
-        "off",
-        "warn",
-        "enforce"
-      ],
+      "options": ["off", "warn", "enforce"],
       "defaultValue": "warn"
     },
     {
       "id": "appearance.effectsMode",
       "dataAttribute": "data-te-effects-mode",
       "label": "特效模式",
-      "options": [
-        "full",
-        "reduced"
-      ],
+      "options": ["full", "reduced"],
       "defaultValue": "full"
     },
     {
       "id": "navigation.style",
       "dataAttribute": "data-te-navigation-style",
       "label": "导航样式",
-      "options": [
-        "expanded",
-        "compact",
-        "rail"
-      ],
+      "options": ["expanded", "compact", "rail"],
       "defaultValue": "expanded"
     },
     {
       "id": "navigation.iconScale",
       "dataAttribute": "data-te-navigation-icon-scale",
       "label": "导航图标大小",
-      "options": [
-        "sm",
-        "md",
-        "lg"
-      ],
+      "options": ["sm", "md", "lg"],
       "defaultValue": "md"
     },
     {
       "id": "navigation.logo",
       "dataAttribute": "data-te-navigation-logo",
       "label": "导航品牌标识",
-      "options": [
-        "show",
-        "hide"
-      ],
+      "options": ["show", "hide"],
       "defaultValue": "hide"
     },
     {
       "id": "library.density",
       "dataAttribute": "data-te-library-density",
       "label": "媒体库密度",
-      "options": [
-        "comfortable",
-        "compact"
-      ],
+      "options": ["comfortable", "compact"],
       "defaultValue": "comfortable"
     },
     {
       "id": "library.selection",
       "dataAttribute": "data-te-library-selection",
       "label": "媒体库选中样式",
-      "options": [
-        "fill",
-        "stroke"
-      ],
+      "options": ["fill", "stroke"],
       "defaultValue": "fill"
     },
     {
       "id": "library.titleOverlay",
       "dataAttribute": "data-te-library-title-overlay",
       "label": "媒体库标题叠层",
-      "options": [
-        "off",
-        "on"
-      ],
+      "options": ["off", "on"],
       "defaultValue": "off"
     },
     {
       "id": "player.layout",
       "dataAttribute": "data-te-player-layout",
       "label": "播放器布局",
-      "options": [
-        "standard",
-        "full-cover",
-        "lyrics-focus",
-        "split",
-        "minimal"
-      ],
+      "options": ["standard", "full-cover", "lyrics-focus", "split", "minimal"],
       "defaultValue": "standard"
     },
     {
       "id": "player.controls",
       "dataAttribute": "data-te-player-controls",
       "label": "播放器控制区",
-      "options": [
-        "standard",
-        "pro"
-      ],
+      "options": ["standard", "pro"],
       "defaultValue": "standard"
     },
     {
       "id": "player.titleAlign",
       "dataAttribute": "data-te-player-title-align",
       "label": "播放器标题对齐",
-      "options": [
-        "left",
-        "center"
-      ],
+      "options": ["left", "center"],
       "defaultValue": "left"
     },
     {
       "id": "player.progress",
       "dataAttribute": "data-te-player-progress",
       "label": "播放器进度样式",
-      "options": [
-        "line",
-        "ring",
-        "solid",
-        "spectrum"
-      ],
+      "options": ["line", "ring", "solid", "spectrum"],
       "defaultValue": "line"
     },
     {
       "id": "artwork.transition",
       "dataAttribute": "data-te-artwork-transition",
       "label": "封面过渡",
-      "options": [
-        "fade",
-        "slide",
-        "none"
-      ],
+      "options": ["fade", "slide", "none"],
       "defaultValue": "fade"
     },
     {
       "id": "artwork.shadow",
       "dataAttribute": "data-te-artwork-shadow",
       "label": "封面阴影",
-      "options": [
-        "on",
-        "off"
-      ],
+      "options": ["on", "off"],
       "defaultValue": "on"
     },
     {
       "id": "equalizer.panel",
       "dataAttribute": "data-te-equalizer-panel",
       "label": "均衡器面板",
-      "options": [
-        "neutral",
-        "tinted",
-        "glass"
-      ],
+      "options": ["neutral", "tinted", "glass"],
       "defaultValue": "neutral"
     },
     {
       "id": "equalizer.slider",
       "dataAttribute": "data-te-equalizer-slider",
       "label": "均衡器滑块",
-      "options": [
-        "ring",
-        "solid"
-      ],
+      "options": ["ring", "solid"],
       "defaultValue": "ring"
     },
     {
       "id": "equalizer.knob",
       "dataAttribute": "data-te-equalizer-knob",
       "label": "均衡器旋钮指示",
-      "options": [
-        "line",
-        "dot"
-      ],
+      "options": ["line", "dot"],
       "defaultValue": "line"
     },
     {
       "id": "equalizer.spectrum",
       "dataAttribute": "data-te-equalizer-spectrum",
       "label": "均衡器频谱",
-      "options": [
-        "bars",
-        "line",
-        "area"
-      ],
+      "options": ["bars", "line", "area"],
       "defaultValue": "line"
     },
     {
       "id": "equalizer.button",
       "dataAttribute": "data-te-equalizer-button",
       "label": "均衡器按钮",
-      "options": [
-        "soft",
-        "outline",
-        "solid"
-      ],
+      "options": ["soft", "outline", "solid"],
       "defaultValue": "soft"
     },
     {
       "id": "icons.family",
       "dataAttribute": "data-te-icon-family",
       "label": "图标族",
-      "options": [
-        "outline",
-        "rounded",
-        "filled"
-      ],
+      "options": ["outline", "rounded", "filled"],
       "defaultValue": "outline"
     },
     {
       "id": "typography.titleCase",
       "dataAttribute": "data-te-title-case",
       "label": "标题字形",
-      "options": [
-        "preserve",
-        "uppercase"
-      ],
+      "options": ["preserve", "uppercase"],
       "defaultValue": "preserve"
     },
     {
       "id": "typography.lyricAccent",
       "dataAttribute": "data-te-lyric-accent",
       "label": "歌词强调高亮",
-      "options": [
-        "off",
-        "accent"
-      ],
+      "options": ["off", "accent"],
       "defaultValue": "off"
     },
     {
       "id": "typography.titleColor",
       "dataAttribute": "data-te-title-color",
       "label": "自适应标题颜色",
-      "options": [
-        "off",
-        "track",
-        "artist-album"
-      ],
+      "options": ["off", "track", "artist-album"],
       "defaultValue": "off"
     }
   ],
@@ -1563,30 +1468,10 @@
     "miniPlayerArtwork"
   ],
   "layout": {
-    "slots": [
-      "titleBar",
-      "navigation",
-      "content",
-      "playerBar"
-    ],
-    "tracks": [
-      "auto",
-      "content",
-      "narrow",
-      "standard",
-      "wide",
-      "fill",
-      "double"
-    ],
-    "navigation": [
-      "toggle",
-      "persistent",
-      "hidden"
-    ],
-    "requiredSlots": [
-      "titleBar",
-      "content"
-    ],
+    "slots": ["titleBar", "navigation", "content", "playerBar"],
+    "tracks": ["auto", "content", "narrow", "standard", "wide", "fill", "double"],
+    "navigation": ["toggle", "persistent", "hidden"],
+    "requiredSlots": ["titleBar", "content"],
     "compactBreakpointPx": 760
   }
 }

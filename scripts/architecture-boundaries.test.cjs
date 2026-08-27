@@ -35,10 +35,15 @@ test('IPC channels are consistently registered in main and exposed through prelo
     }
   }
   const preloadSet = new Set(preloadChannels)
-  assert.deepEqual(sorted(mainHandle).filter((ch) => !preloadSet.has(ch)), [])
-  assert.deepEqual(sorted(mainOn).filter((ch) => !preloadSet.has(ch)), [])
+  assert.deepEqual(
+    sorted(mainHandle).filter((ch) => !preloadSet.has(ch)),
+    []
+  )
+  assert.deepEqual(
+    sorted(mainOn).filter((ch) => !preloadSet.has(ch)),
+    []
+  )
 })
-
 
 function walk(dir) {
   const out = []

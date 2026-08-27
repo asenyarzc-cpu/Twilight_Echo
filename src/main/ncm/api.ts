@@ -81,7 +81,9 @@ export async function requestNcmApi(
     return { code: -1, message }
   }
   const separator = normalizedPath.includes('?') ? '&' : '?'
-  const timestamp = shouldTimestampNcmApiPath(normalizedPath) ? `${separator}timestamp=${Date.now()}` : ''
+  const timestamp = shouldTimestampNcmApiPath(normalizedPath)
+    ? `${separator}timestamp=${Date.now()}`
+    : ''
   const url = `http://${NCM_API_HOST}:${NCM_API_PORT}${normalizedPath}${timestamp}`
   const headers: Record<string, string> = {}
   const normalizedCookie = normalizeNcmCookie(cookie)

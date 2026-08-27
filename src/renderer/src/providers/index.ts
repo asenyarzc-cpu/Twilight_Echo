@@ -29,10 +29,7 @@ export function registerDefaultProviders(): void {
 }
 
 async function refreshPluginProviderHealth(): Promise<void> {
-  if (
-    Date.now() - pluginProviderHealthRefreshedAt <
-    PLUGIN_PROVIDER_HEALTH_REFRESH_INTERVAL_MS
-  ) {
+  if (Date.now() - pluginProviderHealthRefreshedAt < PLUGIN_PROVIDER_HEALTH_REFRESH_INTERVAL_MS) {
     return
   }
   if (pluginProviderHealthRefreshing) return pluginProviderHealthRefreshing

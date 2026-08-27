@@ -91,9 +91,12 @@ test('custom mode gives global fetch and plugin HTTP clients the same proxy choi
 
 test('rejects a self-signed target certificate through the production proxy dispatcher', async () => {
   const sockets = new Set<Socket>()
-  const target = createHttpsServer({ key: SELF_SIGNED_KEY, cert: SELF_SIGNED_CERT }, (_req, res) => {
-    res.end('unexpected success')
-  })
+  const target = createHttpsServer(
+    { key: SELF_SIGNED_KEY, cert: SELF_SIGNED_CERT },
+    (_req, res) => {
+      res.end('unexpected success')
+    }
+  )
   trackConnections(target, sockets)
   const targetPort = await listen(target)
   const proxy = createHttpServer()

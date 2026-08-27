@@ -7,15 +7,55 @@ const COLLATOR = new Intl.Collator('zh-Hans-CN-u-co-pinyin')
  * because standard Mandarin has no syllables beginning with those letters.
  */
 const BOUNDARIES = [
-  '阿', '芭', '擦', '搭', '蛾', '发', '噶', '哈',
-  '机', '喀', '垃', '妈', '拿', '哦', '啪', '七',
-  '然', '撒', '他', '挖', '吸', '压', '匝'
+  '阿',
+  '芭',
+  '擦',
+  '搭',
+  '蛾',
+  '发',
+  '噶',
+  '哈',
+  '机',
+  '喀',
+  '垃',
+  '妈',
+  '拿',
+  '哦',
+  '啪',
+  '七',
+  '然',
+  '撒',
+  '他',
+  '挖',
+  '吸',
+  '压',
+  '匝'
 ] as const
 
 const INITIALS = [
-  'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
-  'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
-  'r', 's', 't', 'w', 'x', 'y', 'z'
+  'a',
+  'b',
+  'c',
+  'd',
+  'e',
+  'f',
+  'g',
+  'h',
+  'j',
+  'k',
+  'l',
+  'm',
+  'n',
+  'o',
+  'p',
+  'q',
+  'r',
+  's',
+  't',
+  'w',
+  'x',
+  'y',
+  'z'
 ] as const
 
 const cjkCharPattern = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/

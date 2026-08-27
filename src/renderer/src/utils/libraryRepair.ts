@@ -15,7 +15,9 @@ export interface RepairMovedLocalTracksResult {
 export function repairMovedLocalTracks(
   options: RepairMovedLocalTracksOptions
 ): RepairMovedLocalTracksResult {
-  const availableScannedTracks = options.scannedTracks.filter((track) => options.fileExists(track.filePath))
+  const availableScannedTracks = options.scannedTracks.filter((track) =>
+    options.fileExists(track.filePath)
+  )
   const repairedTracks: Track[] = []
   const unresolvedTracks: Track[] = []
 
@@ -62,7 +64,8 @@ function findMovedLocalReplacement(track: Track, candidates: Track[]): Track | n
   const exactFileNameCandidates = candidates.filter(
     (candidate) => normalizePathName(candidate.fileName) === normalizePathName(track.fileName)
   )
-  const candidatesToScore = exactFileNameCandidates.length > 0 ? exactFileNameCandidates : candidates
+  const candidatesToScore =
+    exactFileNameCandidates.length > 0 ? exactFileNameCandidates : candidates
   return findBestMetadataMatch(track, candidatesToScore)?.track ?? null
 }
 

@@ -69,12 +69,11 @@ test('active lyrics keep their size while auxiliary layers render smaller and co
   )
   assert.doesNotMatch(activeText, /font-size:/)
   assert.match(translationText, /font-size:\s*var\(--lyric-style-font-size, 14px\)/)
-  const auxiliaryStyles = lyricLine.match(
-    /\.lyric-translation \{[\s\S]*?\n\}/
-  )?.[0] ?? ''
-  const voiceAuxiliaryStyles = lyricLine.match(
-    /\.lyric-voice-translation,\s*\.lyric-voice-romanization \{\s*width: 100%;\s*padding: 0;[\s\S]*?\n\}/
-  )?.[0] ?? ''
+  const auxiliaryStyles = lyricLine.match(/\.lyric-translation \{[\s\S]*?\n\}/)?.[0] ?? ''
+  const voiceAuxiliaryStyles =
+    lyricLine.match(
+      /\.lyric-voice-translation,\s*\.lyric-voice-romanization \{\s*width: 100%;\s*padding: 0;[\s\S]*?\n\}/
+    )?.[0] ?? ''
   assert.match(auxiliaryStyles, /font-size:\s*var\(--lyric-style-font-size, 14px\)/)
   assert.match(auxiliaryStyles, /line-height:\s*var\(--lyric-style-line-height, 1\.3\)/)
   assert.match(auxiliaryStyles, /margin-top:\s*max\(2px/)

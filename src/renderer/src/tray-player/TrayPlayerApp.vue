@@ -150,10 +150,7 @@ onBeforeUnmount(() => {
           :disabled="!state.track || state.isLoading"
           @click="sendCommand({ type: 'toggle-play' })"
         >
-          <i
-            :class="state.isPlaying ? 'ph ph-pause' : 'ph ph-play'"
-            aria-hidden="true"
-          ></i>
+          <i :class="state.isPlaying ? 'ph ph-pause' : 'ph ph-play'" aria-hidden="true"></i>
         </button>
         <button
           class="icon-button"

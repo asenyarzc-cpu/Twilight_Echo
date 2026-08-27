@@ -169,15 +169,16 @@ function startUploadSelectedFile(
     percent: 0,
     message: '上传任务已创建'
   })
-  queueMicrotask(() =>
-    void runUploadSelectedFile(
-      event.sender,
-      handle,
-      grant,
-      transferId,
-      controller,
-      releaseUploadPath
-    )
+  queueMicrotask(
+    () =>
+      void runUploadSelectedFile(
+        event.sender,
+        handle,
+        grant,
+        transferId,
+        controller,
+        releaseUploadPath
+      )
   )
   return { transferId, handle, fileName: grant.name, accepted: true }
 }
@@ -344,16 +345,17 @@ async function startDownloadCloudSong(
       message: '下载任务已创建'
     })
     handedOff = true
-    queueMicrotask(() =>
-      void runDownloadCloudSong(
-        event.sender,
-        request,
-        choice.filePath as string,
-        safeName,
-        transferId,
-        controller,
-        releaseDownloadSong
-      )
+    queueMicrotask(
+      () =>
+        void runDownloadCloudSong(
+          event.sender,
+          request,
+          choice.filePath as string,
+          safeName,
+          transferId,
+          controller,
+          releaseDownloadSong
+        )
     )
     return { transferId, fileName: safeName, accepted: true, cancelled: false }
   } finally {
@@ -398,7 +400,9 @@ async function runDownloadCloudSong(
           bytesTransferred: bytes,
           bytesTotal: total,
           percent: total ? Math.min(100, Math.round((bytes / total) * 100)) : null,
-          message: total ? `正在下载 ${Math.min(100, Math.round((bytes / total) * 100))}%` : '正在下载'
+          message: total
+            ? `正在下载 ${Math.min(100, Math.round((bytes / total) * 100))}%`
+            : '正在下载'
         })
         callback(null, chunk)
       }
@@ -464,7 +468,10 @@ async function hashFile(
   return hash.digest('hex')
 }
 
-async function readAudioMetadata(path: string, fileName: string): Promise<{
+async function readAudioMetadata(
+  path: string,
+  fileName: string
+): Promise<{
   title: string
   artist: string
   album: string
@@ -522,7 +529,12 @@ async function uploadToNos(
         response.once('end', () => {
           const status = response.statusCode ?? 0
           if (status >= 200 && status < 300) resolve()
-          else reject(new Error(`网易云存储上传失败：HTTP ${status} ${Buffer.concat(chunks).toString('utf8').slice(0, 300)}`))
+          else
+            reject(
+              new Error(
+                `网易云存储上传失败：HTTP ${status} ${Buffer.concat(chunks).toString('utf8').slice(0, 300)}`
+              )
+            )
         })
       }
     )

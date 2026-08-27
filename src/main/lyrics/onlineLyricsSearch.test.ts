@@ -75,12 +75,15 @@ test('rankOnlineLyricsCandidates prefers exact title/artist and close duration',
 
 test('normalizeOnlineLyricsQuery rejects incomplete input', () => {
   assert.throws(() => normalizeOnlineLyricsQuery({ title: 'Only' }), /title and artist/)
-  assert.deepEqual(normalizeOnlineLyricsQuery({ title: ' A ', artist: ' B ', durationSeconds: 12.6 }), {
-    title: 'A',
-    artist: 'B',
-    album: undefined,
-    durationSeconds: 13
-  })
+  assert.deepEqual(
+    normalizeOnlineLyricsQuery({ title: ' A ', artist: ' B ', durationSeconds: 12.6 }),
+    {
+      title: 'A',
+      artist: 'B',
+      album: undefined,
+      durationSeconds: 13
+    }
+  )
 })
 
 test('searchOnlineLyrics uses fetch and returns best candidate', async () => {

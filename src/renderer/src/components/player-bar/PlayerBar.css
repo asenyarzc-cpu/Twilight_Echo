@@ -4213,8 +4213,12 @@ html[data-theme='dark']
 /* Keep a direct descendant form for the shared strip contract. The shell-scoped
    selectors above carry the stronger geometry specificity; these declarations
    make the control colour invariant explicit for both flat shapes. */
-.player-bar.player-bar-glass.player-bar-mini.player-bar-mini.player-bar-mini .player-right .icon-btn,
-.player-bar.player-bar-glass.player-bar-compact.player-bar-compact.player-bar-compact .player-right .icon-btn {
+.player-bar.player-bar-glass.player-bar-mini.player-bar-mini.player-bar-mini
+  .player-right
+  .icon-btn,
+.player-bar.player-bar-glass.player-bar-compact.player-bar-compact.player-bar-compact
+  .player-right
+  .icon-btn {
   color: var(--te-flat-bar-control);
 }
 

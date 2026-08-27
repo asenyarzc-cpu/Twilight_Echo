@@ -33,7 +33,10 @@ interface TestNcmProvider {
     password: string
   ): Promise<{ loggedIn: boolean; profile: unknown }>
   searchSongs(keywords: string): Promise<unknown>
-  getPlaybackUrl(track: unknown, options?: { force?: boolean; quality?: string }): Promise<string | null>
+  getPlaybackUrl(
+    track: unknown,
+    options?: { force?: boolean; quality?: string }
+  ): Promise<string | null>
 }
 
 test('bundled NCM provider follows documented QR login request params', async () => {
@@ -114,12 +117,17 @@ test('bundled NCM provider follows documented QR login request params', async ()
   assert.equal(queryValue(loginRequests[1].path, 'platform'), 'web', loginRequests[1].path)
   assert.equal(queryValue(loginRequests[1].path, 'ua'), 'pc', loginRequests[1].path)
   assert.equal(queryValue(loginRequests[2].path, 'ua'), 'pc', loginRequests[2].path)
-  for (const request of loginRequests) assert.equal(request.path.includes('chainId='), false, request.path)
+  for (const request of loginRequests)
+    assert.equal(request.path.includes('chainId='), false, request.path)
 
   await provider.searchSongs('hello')
   const searchRequest = requests.find((request) => request.path.startsWith('/cloudsearch'))
   assert.ok(searchRequest)
-  assert.match(queryValue(searchRequest.path, 'ua') ?? '', /Chrome\/123\.0\.0\.0/, searchRequest.path)
+  assert.match(
+    queryValue(searchRequest.path, 'ua') ?? '',
+    /Chrome\/123\.0\.0\.0/,
+    searchRequest.path
+  )
 
   await provider.getPlaybackUrl({ id: 'ncm:1' })
   const playbackRequest = requests.find((request) => request.path.startsWith('/song/url'))
@@ -334,7 +342,11 @@ test('bundled NCM provider logs in with phone password and stores returned cooki
     }
   })
 
-  const login = await registeredProvider.current?.loginByPhonePassword('13800138000', 'p@ss#word', '86')
+  const login = await registeredProvider.current?.loginByPhonePassword(
+    '13800138000',
+    'p@ss#word',
+    '86'
+  )
   assert.equal(login?.loggedIn, true)
   const loginRequest = requests.find((request) => request.path.startsWith('/login/cellphone'))
   assert.ok(loginRequest)
@@ -414,14 +426,23 @@ test('bundled NCM provider logs in with phone captcha and email password', async
     }
   })
 
-  const captchaLogin = await registeredProvider.current?.loginByPhoneCaptcha('13800138000', '246810', '86')
+  const captchaLogin = await registeredProvider.current?.loginByPhoneCaptcha(
+    '13800138000',
+    '246810',
+    '86'
+  )
   assert.equal(captchaLogin?.loggedIn, true)
-  const captchaRequest = requests.find((request) => queryValue(request.path, 'captcha') === '246810')
+  const captchaRequest = requests.find(
+    (request) => queryValue(request.path, 'captcha') === '246810'
+  )
   assert.ok(captchaRequest)
   assert.equal(queryValue(captchaRequest.path, 'phone'), '13800138000')
   assert.equal(settings.get('cookie'), 'MUSIC_U=captcha-token')
 
-  const emailLogin = await registeredProvider.current?.loginByEmailPassword('user@example.com', 'email-password')
+  const emailLogin = await registeredProvider.current?.loginByEmailPassword(
+    'user@example.com',
+    'email-password'
+  )
   assert.equal(emailLogin?.loggedIn, true)
   const emailRequest = requests.find((request) => request.path.startsWith('/login?'))
   assert.ok(emailRequest)

@@ -92,15 +92,16 @@ test('native checkboxes inherit the active dark color scheme and theme accent', 
   )
 })
 
-test('settings uses an opaque independent backdrop without covering title controls', () => {
+test('settings wallpaper is painted once by the overlay root, never per element', () => {
   assert.match(
     styles,
     /\.settings-preview-page\s*\{[\s\S]*?inset:\s*32px 0 0;[\s\S]*?z-index:\s*2000;[\s\S]*?height:\s*auto/
   )
-  assert.match(
-    styles,
-    /\.settings-preview-page\s*\{[\s\S]*?background-color:\s*#17181a;[\s\S]*?background-image:\s*var\(--te-settings-bg-image, none\),[\s\S]*?linear-gradient\(var\(--te-settings-bg\), var\(--te-settings-bg\)\),[\s\S]*?linear-gradient\(#17181a, #17181a\)[\s\S]*?background-attachment:\s*fixed, fixed, fixed/
-  )
+  // The page stays transparent: per-element wallpaper copies relied on
+  // `background-attachment: fixed`, which composited layers silently unpin —
+  // splitting the image into mismatched title/body bands.
+  assert.match(styles, /\.settings-preview-page\s*\{[^}]*?background:\s*transparent;/)
+  assert.doesNotMatch(styles, /background-attachment:\s*fixed/)
   assert.match(
     baseStyles,
     /--te-settings-backplate:\s*#f5f6f8;[\s\S]*?:root\[data-theme='dark'\] \{[\s\S]*?--te-settings-backplate:\s*#17181a;/
@@ -109,43 +110,57 @@ test('settings uses an opaque independent backdrop without covering title contro
     baseStyles,
     /body\.te-settings-surface,[\s\S]*?background-color:\s*var\(--te-settings-backplate, #f5f6f8\) !important;[\s\S]*?background-image:[\s\S]*?linear-gradient\(var\(--te-settings-bg\), var\(--te-settings-bg\)\) !important/
   )
-  assert.match(
+  // No theme or window-mode branch may repaint the page background anymore.
+  const darkBasePageRule =
+    baseStyles.match(/html\[data-theme='dark'\] \.settings-preview-page\s*\{([^}]*)\}/)?.[1] ?? ''
+  assert.doesNotMatch(darkBasePageRule, /background-image|background-color/)
+  assert.doesNotMatch(baseStyles, /\.settings-preview-page\.settings-preview-page/)
+  assert.doesNotMatch(
     baseStyles,
-    /html\[data-window-transparent='on'\] \.settings-preview-page\.settings-preview-page\s*\{[\s\S]*?background-color:\s*var\(--te-settings-backplate, #17181a\) !important;[\s\S]*?linear-gradient\(var\(--te-settings-bg\), var\(--te-settings-bg\)\) !important/
+    /html\[data-window-transparent='on'\] \.title-bar\.title-bar-settings/
   )
-  assert.match(
+  assert.doesNotMatch(
     baseStyles,
-    /html\[data-window-transparent='on'\] \.title-bar\.title-bar-settings,[\s\S]*?background-color:\s*var\(--te-settings-backplate, #17181a\) !important;[\s\S]*?linear-gradient\(var\(--te-settings-bg\), var\(--te-settings-bg\)\) !important/
+    /\[data-te-background-treatment='cover-blur'\] \.settings-preview-page \{/
   )
   const darkSettingsPageRule =
     pageSource.match(/html\[data-theme='dark'\] \.settings-preview-page\s*\{([\s\S]*?)\n\}/)?.[1] ??
     ''
-  assert.match(
-    darkSettingsPageRule,
-    /background-color:\s*var\(--te-settings-backplate, #17181a\) !important;/
-  )
-  assert.match(
-    darkSettingsPageRule,
-    /linear-gradient\(var\(--te-settings-bg\), var\(--te-settings-bg\)\) !important;/
-  )
+  assert.match(darkSettingsPageRule, /background:\s*transparent;/)
+  assert.doesNotMatch(darkSettingsPageRule, /--te-settings-bg-image/)
   assert.match(
     appSource,
     /class="settings-overlay-root"[\s\S]*?settings-overlay-root--active[\s\S]*?<Transition name="settings-page">[\s\S]*?<SettingsPage/
   )
   assert.match(
     appSource,
-    /\.settings-overlay-root--active\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*32px 0 0;[\s\S]*?z-index:\s*2000;[\s\S]*?isolation:\s*isolate;[\s\S]*?background:\s*#17181a !important;/
+    /\.settings-overlay-root--active\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;[\s\S]*?z-index:\s*2000;[\s\S]*?isolation:\s*isolate;[\s\S]*?background:\s*#17181a !important;/
+  )
+  const overlayPainterRule =
+    appSource.match(/\.settings-overlay-root--active::before\s*\{([^}]*)\}/)?.[1] ?? ''
+  assert.match(overlayPainterRule, /background-color:\s*#17181a;/)
+  assert.match(overlayPainterRule, /var\(--te-settings-bg-image, none\),/)
+  assert.match(
+    overlayPainterRule,
+    /linear-gradient\(var\(--te-settings-bg\), var\(--te-settings-bg\)\),/
+  )
+  assert.match(overlayPainterRule, /linear-gradient\(#17181a, #17181a\)/)
+  assert.doesNotMatch(overlayPainterRule, /background-attachment/)
+  // Liquid-glass ambients live on the single painter too (moved off the page).
+  assert.match(
+    baseStyles,
+    /html\[data-theme='pureWhite'\]\[data-te-surface-material='liquidGlass'\]\s+\.settings-overlay-root--active::before\s*\{[^}]*?radial-gradient/
   )
   assert.match(
-    appSource,
-    /\.settings-overlay-root--active::before\s*\{[\s\S]*?background-color:\s*#17181a;[\s\S]*?var\(--te-settings-bg-image, none\),[\s\S]*?linear-gradient\(var\(--te-settings-bg\), var\(--te-settings-bg\)\),[\s\S]*?linear-gradient\(#17181a, #17181a\)/
+    baseStyles,
+    /html\[data-theme='dark'\]\[data-te-surface-material='liquidGlass'\]\s+\.settings-overlay-root--active::before\s*\{[^}]*?radial-gradient/
   )
   assert.match(appSource, /\.app-shell-title\s*\{[\s\S]*?z-index:\s*2100/)
   assert.match(appSource, /\.settings-page-enter-active\s*\{[\s\S]*?z-index:\s*2000/)
-  assert.match(
-    titleBarSource,
-    /\.title-bar\.title-bar-settings,[\s\S]*?background-color:\s*var\(--te-settings-backplate, #17181a\) !important;[\s\S]*?linear-gradient\(var\(--te-settings-bg\), var\(--te-settings-bg\)\) !important/
-  )
+  const titleBarSettingsRule =
+    titleBarSource.match(/\.title-bar\.title-bar-settings,([\s\S]*?)\n\}/)?.[1] ?? ''
+  assert.match(titleBarSettingsRule, /background:\s*transparent !important;/)
+  assert.doesNotMatch(titleBarSettingsRule, /--te-settings-bg-image|background-attachment/)
   assert.doesNotMatch(baseStyles, /html\[data-theme='dark'\] \.title-bar\.title-bar-settings,/)
 })
 

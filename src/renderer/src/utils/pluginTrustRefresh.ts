@@ -1,7 +1,4 @@
-import type {
-  PluginIndexEntryTrustLike,
-  PluginIndexStatusLike
-} from './pluginTrustPresentation.ts'
+import type { PluginIndexEntryTrustLike, PluginIndexStatusLike } from './pluginTrustPresentation.ts'
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647
 const DEFAULT_RETRY_DELAY_MS = 30_000
@@ -42,7 +39,8 @@ export function createPluginTrustRefreshController(options: {
   const now = options.now ?? Date.now
   const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS
   const setTimer = options.setTimer ?? ((callback, delayMs) => setTimeout(callback, delayMs))
-  const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>))
+  const clearTimer =
+    options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>))
   let timer: unknown | null = null
   let inFlight: Promise<void> | null = null
   let lastTriggeredDeadline: number | null = null

@@ -65,6 +65,8 @@ const props = defineProps<{
   perfectReasonExplain?: string
   /** The concrete next action; empty when nothing is user-actionable. */
   perfectReasonFix?: string
+  /** The engine's raw one-line cause (route decision / negotiation detail). */
+  perfectReasonEngineDetail?: string
   volume: number
   gaplessActive?: boolean
   preloadReady?: boolean
@@ -664,6 +666,13 @@ const deckAccentVars = computed(() => {
               <p v-if="perfectReasonExplain" class="deck-note">{{ perfectReasonExplain }}</p>
               <p v-if="perfectReasonFix" class="deck-note fix">
                 <i class="pi pi-wrench" aria-hidden="true"></i> {{ perfectReasonFix }}
+              </p>
+              <p
+                v-if="perfectReasonEngineDetail"
+                class="deck-note engine-detail"
+                :title="perfectReasonEngineDetail"
+              >
+                {{ perfectReasonEngineDetail }}
               </p>
 
               <div v-if="showUnityVolumeCta" class="deck-unity">

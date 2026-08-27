@@ -126,13 +126,10 @@ const activeLyricIndex = computed(() =>
   findActiveMiniPlayerLyricIndex(lyricLines.value, state.value.currentTime)
 )
 const currentLyricLine = computed(() =>
-  activeLyricIndex.value >= 0 ? lyricLines.value[activeLyricIndex.value] ?? null : null
+  activeLyricIndex.value >= 0 ? (lyricLines.value[activeLyricIndex.value] ?? null) : null
 )
 const hasActiveLyric = computed(
-  () =>
-    currentLyricLine.value !== null &&
-    lyricLines.value.length > 0 &&
-    Boolean(state.value.track)
+  () => currentLyricLine.value !== null && lyricLines.value.length > 0 && Boolean(state.value.track)
 )
 const trackQuality = computed(() => {
   const track = state.value.track
@@ -489,21 +486,15 @@ onBeforeUnmount(() => {
               >
                 {{ trackQuality.label }}
               </span>
-              <span v-if="trackQuality.spec" class="mini-quality-spec">{{ trackQuality.spec }}</span>
+              <span v-if="trackQuality.spec" class="mini-quality-spec">{{
+                trackQuality.spec
+              }}</span>
             </div>
           </div>
 
-          <div
-            v-if="hasActiveLyric"
-            class="mini-lyric-stage"
-            aria-live="polite"
-            aria-atomic="true"
-          >
+          <div v-if="hasActiveLyric" class="mini-lyric-stage" aria-live="polite" aria-atomic="true">
             <Transition name="mini-lyric-switch" mode="out-in">
-              <div
-                :key="`lyric:${state.track?.id}:${activeLyricIndex}`"
-                class="mini-lyric-current"
-              >
+              <div :key="`lyric:${state.track?.id}:${activeLyricIndex}`" class="mini-lyric-current">
                 <p class="mini-lyric-original" :title="currentLyricLine!.original">
                   {{ currentLyricLine!.original }}
                 </p>
@@ -520,7 +511,6 @@ onBeforeUnmount(() => {
           <div v-else class="mini-lyric-empty" aria-hidden="true">
             <span>♪ 暂无歌词</span>
           </div>
-
         </div>
 
         <div class="mini-player-dock">

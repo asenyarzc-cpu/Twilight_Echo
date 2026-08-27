@@ -120,7 +120,6 @@ test('stale responses are discarded when a newer request resolves first', async 
     discovery.playlists.value.map((item) => item.id),
     [2]
   )
-
   ;(resolveSlow as ((page: ReturnType<typeof discoveryPage>) => void) | null)?.(discoveryPage([1]))
   await first
   assert.deepEqual(

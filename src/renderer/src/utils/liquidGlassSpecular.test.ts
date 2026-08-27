@@ -131,10 +131,7 @@ test('light vector points up-left for the default angle', () => {
 test('light vector is a unit vector at every angle and rotates with it', () => {
   for (let angle = 0; angle < 360; angle += 15) {
     const light = lightVectorFromAngle(angle)
-    assert.ok(
-      Math.abs(Math.hypot(light.x, light.y) - 1) < 1e-12,
-      `not unit length at ${angle}deg`
-    )
+    assert.ok(Math.abs(Math.hypot(light.x, light.y) - 1) < 1e-12, `not unit length at ${angle}deg`)
   }
   // 0deg lights from below, 90deg from the left, 180deg from above.
   assert.ok(lightVectorFromAngle(0).y > 0.999, '0deg lights from below')
@@ -460,13 +457,7 @@ test('non-square buckets keep a highlight on the wide playbar strip', () => {
 test('rotating the light rotates the baked map', () => {
   const size = 48
   const litFromLeft = buildSpecularPixels(size, size, RIM_FRACTION, CORNER_FRACTION, 90)
-  const litFromRight = buildSpecularPixels(
-    size,
-    size,
-    RIM_FRACTION,
-    CORNER_FRACTION,
-    270
-  )
+  const litFromRight = buildSpecularPixels(size, size, RIM_FRACTION, CORNER_FRACTION, 270)
 
   const leftUnderLeft = alphaAt(litFromLeft, size, 0, size / 2)
   const leftUnderRight = alphaAt(litFromRight, size, 0, size / 2)
