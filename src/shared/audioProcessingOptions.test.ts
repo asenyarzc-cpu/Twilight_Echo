@@ -3,6 +3,8 @@ import test from 'node:test'
 import {
   DEFAULT_DSD_ROUTE,
   DEFAULT_SOFTWARE_VOLUME,
+  equalizerBandAltersSignal,
+  equalizerSettingsAlterSignal,
   DSD_OUTPUT_MODE_OPTIONS,
   GAPLESS_BLOCKED_REASONS,
   HIFI_STATUS_COPY,
@@ -172,4 +174,43 @@ test('withDsdRoutePatch preserves untouched fields across a shallow merge', () =
     ...current,
     device: 'other'
   })
+})
+
+test('a flat gain band is transparent while a filter band never is', () => {
+  assert.equal(equalizerBandAltersSignal({ gain: 0, filterType: 'peak' }), false)
+  assert.equal(equalizerBandAltersSignal({ gain: 0, filterType: 'lowShelf' }), false)
+  assert.equal(equalizerBandAltersSignal({ gain: 0.5, filterType: 'peak' }), true)
+  // Filters reshape the signal at any gain, so the enable flag alone counts.
+  assert.equal(equalizerBandAltersSignal({ gain: 0, filterType: 'highPass' }), true)
+  assert.equal(equalizerBandAltersSignal({ gain: 0, filterType: 'notch' }), true)
+  assert.equal(equalizerBandAltersSignal({ gain: 6, filterType: 'peak', enabled: false }), false)
+})
+
+test('an enabled but untouched equalizer does not count as processing', () => {
+  const flatBands = [
+    { frequency: 31, gain: 0, q: 1, filterType: 'peak' as const },
+    { frequency: 1000, gain: 0, q: 1, filterType: 'peak' as const }
+  ]
+  // This is what blocked DSD passthrough for anyone who had ever switched the EQ
+  // on: the toggle was read instead of what the EQ would do.
+  assert.equal(
+    equalizerSettingsAlterSignal({ eqEnabled: true, eqPreamp: 0, eqBands: flatBands }),
+    false
+  )
+  assert.equal(
+    equalizerSettingsAlterSignal({ eqEnabled: true, eqPreamp: -3, eqBands: flatBands }),
+    true
+  )
+  assert.equal(
+    equalizerSettingsAlterSignal({
+      eqEnabled: true,
+      eqPreamp: 0,
+      eqBands: [{ ...flatBands[0], gain: 2 }]
+    }),
+    true
+  )
+  assert.equal(
+    equalizerSettingsAlterSignal({ eqEnabled: false, eqPreamp: -6, eqBands: flatBands }),
+    false
+  )
 })

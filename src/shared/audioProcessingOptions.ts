@@ -22,6 +22,47 @@ export const LOUDNORM_ALGORITHM_VERSION = 1
 export const DEFAULT_SOFTWARE_VOLUME = 0.7
 export const UNITY_SOFTWARE_VOLUME = 1
 
+/** Below this a gain stage is bit-transparent. Mirrors the engine's own epsilon. */
+export const TRANSPARENT_GAIN_EPSILON_DB = 0.0001
+
+/**
+ * Whether an equalizer band changes the signal.
+ *
+ * A gain-shaped band (peak / shelf) sitting at 0 dB is bit-transparent, so an
+ * enabled but flat equalizer is not processing anything. Filter bands reshape
+ * the signal at any gain, so for those the enable flag alone counts.
+ *
+ * Kept in lockstep with eqBandAltersSignal() in audio-engine/core/AudioPipeline.cpp:
+ * the engine decides from this rule whether a DSD source may stay on its
+ * passthrough transport, and the UI must name the same blockers the engine acts on.
+ */
+export function equalizerBandAltersSignal(band: {
+  gain: number
+  filterType: string
+  enabled?: boolean
+}): boolean {
+  if (band.enabled === false) return false
+  if (
+    band.filterType === 'peak' ||
+    band.filterType === 'lowShelf' ||
+    band.filterType === 'highShelf'
+  ) {
+    return Math.abs(band.gain) > TRANSPARENT_GAIN_EPSILON_DB
+  }
+  return true
+}
+
+/** Whether the equalizer settings, as configured, would alter the signal. */
+export function equalizerSettingsAlterSignal(settings: {
+  eqEnabled: boolean
+  eqPreamp: number
+  eqBands: readonly { gain: number; filterType: string; enabled?: boolean }[]
+}): boolean {
+  if (!settings.eqEnabled) return false
+  if (Math.abs(settings.eqPreamp) > TRANSPARENT_GAIN_EPSILON_DB) return true
+  return settings.eqBands.some(equalizerBandAltersSignal)
+}
+
 export const VOLUME_NORMALIZATION_OPTIONS: readonly LabeledOption<VolumeNormalizationMode>[] = [
   {
     value: 'off',

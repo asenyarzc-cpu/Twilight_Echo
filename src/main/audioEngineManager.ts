@@ -40,6 +40,7 @@ import type {
   VisualizationOptions,
   VolumeNormalizationMode
 } from './audio/audioEngineTypes.ts'
+import { equalizerSettingsAlterSignal } from '../shared/audioProcessingOptions.ts'
 import {
   DEFAULT_AUDIO_ENGINE_SCHEDULER,
   METADATA_CACHE_TTL_MS,
@@ -1389,19 +1390,34 @@ export class AudioEngineManager extends EventEmitter {
       crossfadeSeconds > 0 ||
       Math.abs(this.playbackInfo.volume - 1) > 0.001 ||
       Math.abs((this.playbackInfo.playbackRate ?? 1) - 1) > 0.001
+    // The graph is what runs, so a module toggle whose node is disabled in the
+    // effective graph is not active - claiming otherwise marked bit-perfect
+    // playback as processed and cost DSD sources their passthrough transport.
+    const graphNodeActive = (type: string): boolean => {
+      const node = effectiveGraph.nodes.find((candidate) => candidate.type === type)
+      return node ? node.enabled : true
+    }
     const replayGainActive =
       !this.processing.directMode &&
       this.processing.dspEnabled &&
-      this.processing.volumeNormalization !== 'off'
+      this.processing.volumeNormalization !== 'off' &&
+      graphNodeActive('replayGain')
     const eqActive =
-      !this.processing.directMode && this.processing.dspEnabled && this.processing.eqEnabled
+      !this.processing.directMode &&
+      this.processing.dspEnabled &&
+      graphNodeActive('equalizer') &&
+      equalizerSettingsAlterSignal(this.processing)
     const convolverActive =
-      !this.processing.directMode && this.processing.dspEnabled && this.playbackInfo.convolverActive
+      !this.processing.directMode &&
+      this.processing.dspEnabled &&
+      this.playbackInfo.convolverActive &&
+      graphNodeActive('convolver')
     const crossfeedActive =
       !this.processing.directMode &&
       this.processing.dspEnabled &&
       this.processing.crossfeedEnabled &&
-      this.processing.crossfeedStrength > 0
+      this.processing.crossfeedStrength > 0 &&
+      graphNodeActive('crossfeed')
     const crossfadeActive = crossfadeSeconds > 0
     const supportsOutputPerfect = this.playbackInfo.outputInfo.supportsOutputPerfect === true
     const outputFormatMatchesSource =

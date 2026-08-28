@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
+import { equalizerSettingsAlterSignal } from '../../shared/audioProcessingOptions.ts'
 import {
+  dspGraphNodeAltersSignal,
   graphHasEnabledProcessing,
   outputStageIsActive,
   type DspSceneState
@@ -302,6 +304,17 @@ export function collectDsdPcmBlockers(input: {
     blockers.push(blocker)
   }
 
+  // The graph is what actually runs. A module toggle whose node sits disabled in
+  // the effective graph is not a blocker -- reporting it as one is how a scene
+  // with every node off still told the user their flat EQ was costing them DSD
+  // passthrough. `meter` is a read-only tap and is skipped below for the same
+  // reason. Without a graph (legacy config-only state) the toggles stand alone.
+  const graphNodes = (input.sceneState.effectiveGraph ?? input.sceneState.graph).nodes
+  const nodeIsActive = (type: string): boolean => {
+    const node = graphNodes.find((candidate) => candidate.type === type)
+    return node ? node.enabled : true
+  }
+
   if (Math.abs(input.playback.volume - 1) > 0.001) {
     add({ code: 'volume_not_unity', value: input.playback.volume, origin: 'player' })
   }
@@ -330,7 +343,8 @@ export function collectDsdPcmBlockers(input: {
   if (
     !directMode &&
     input.processing.dspEnabled &&
-    input.processing.volumeNormalization !== 'off'
+    input.processing.volumeNormalization !== 'off' &&
+    nodeIsActive('replayGain')
   ) {
     add({
       code:
@@ -341,17 +355,29 @@ export function collectDsdPcmBlockers(input: {
       origin: 'processing'
     })
   }
-  if (!directMode && input.processing.dspEnabled && input.processing.eqEnabled) {
+  if (
+    !directMode &&
+    input.processing.dspEnabled &&
+    input.processing.eqEnabled &&
+    nodeIsActive('equalizer') &&
+    equalizerSettingsAlterSignal(input.processing)
+  ) {
     add({ code: 'eq_active', origin: 'processing' })
   }
-  if (!directMode && input.processing.dspEnabled && input.processing.convolverEnabled) {
+  if (
+    !directMode &&
+    input.processing.dspEnabled &&
+    input.processing.convolverEnabled &&
+    nodeIsActive('convolver')
+  ) {
     add({ code: 'convolver_active', origin: 'processing' })
   }
   if (
     !directMode &&
     input.processing.dspEnabled &&
     input.processing.crossfeedEnabled &&
-    input.processing.crossfeedStrength > 0
+    input.processing.crossfeedStrength > 0 &&
+    nodeIsActive('crossfeed')
   ) {
     add({
       code: 'crossfeed_active',
@@ -362,7 +388,9 @@ export function collectDsdPcmBlockers(input: {
 
   const effectiveGraph = input.sceneState.effectiveGraph ?? input.sceneState.graph
   for (const node of effectiveGraph.nodes) {
-    if (!node.enabled || node.type === 'meter') continue
+    // A node left at its identity settings is not a blocker; the engine decides
+    // DSD passthrough from the same rule.
+    if (!dspGraphNodeAltersSignal(node)) continue
     add({ code: `dsp_node_${node.type}`, value: node.id, origin: 'dsp-scene' })
   }
   const outputStage = effectiveGraph.outputStage
