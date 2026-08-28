@@ -1,100 +1,289 @@
-import { BrowserWindow, ipcMain, screen } from 'electron'
+import { BrowserWindow, ipcMain, powerMonitor, screen } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { runtime } from '../core/runtime'
-import type { DesktopLyricsSettings } from '../core/types'
-import type { DesktopLyricsTrackPayload } from '../../shared/lyricsManagement.ts'
+import {
+  DESKTOP_LYRICS_MAX_CONTENT_BYTES,
+  normalizeDesktopLyricsSettings,
+  type DesktopLyricsBootstrap,
+  type DesktopLyricsClockSnapshot,
+  type DesktopLyricsLine,
+  type DesktopLyricsSession,
+  type DesktopLyricsSettingsV3,
+  type DesktopLyricsTransportAction
+} from '../../shared/desktopLyrics.ts'
 import { resolveDesktopLyricsFontFamily } from '../../shared/desktopLyricsFont.ts'
-import { createSettingsSnapshot, normalizeDesktopLyrics, writeAppSettings } from '../core/settings'
+import { runtime } from '../core/runtime'
+import { createSettingsSnapshot, writeAppSettings } from '../core/settings'
 import { assertTrustedIpcSender, shouldAcceptIpcEvent } from '../security/electronSecurity.ts'
+import { stringifyJsonForIpcStorage } from '../security/ipcValidation.ts'
 
-let moveSaveTimer: NodeJS.Timeout | null = null
-let temporarilyInteractive = false
+let destroyingWindow = false
+let resumeBound = false
 
-function clearMoveSaveTimer(): void {
-  if (!moveSaveTimer) return
-  clearTimeout(moveSaveTimer)
-  moveSaveTimer = null
+function isMainSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
+  return Boolean(
+    runtime.mainWindow &&
+    !runtime.mainWindow.isDestroyed() &&
+    event.sender === runtime.mainWindow.webContents
+  )
+}
+
+function isDesktopLyricsSender(
+  event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent
+): boolean {
+  return Boolean(
+    runtime.desktopLyricsWindow &&
+    !runtime.desktopLyricsWindow.isDestroyed() &&
+    event.sender === runtime.desktopLyricsWindow.webContents
+  )
 }
 
 function persistDesktopLyricsPosition(win: BrowserWindow): void {
   if (win.isDestroyed()) return
-  const [px, py] = win.getPosition()
-  runtime.appSettings.desktopLyrics.windowX = px
-  runtime.appSettings.desktopLyrics.windowY = py
+  const [windowX, windowY] = win.getPosition()
+  runtime.appSettings.desktopLyrics = {
+    ...runtime.appSettings.desktopLyrics,
+    windowX,
+    windowY
+  }
   writeAppSettings(runtime.appSettings)
 }
 
-function applyDesktopLyricsMouseMode(): void {
-  const win = runtime.desktopLyricsWindow
-  if (!win || win.isDestroyed()) return
-  const shouldIgnoreMouseEvents =
-    runtime.appSettings.desktopLyrics.locked && !temporarilyInteractive
-  win.setIgnoreMouseEvents(shouldIgnoreMouseEvents, { forward: true })
+function windowPosition(): { x: number; y: number } {
+  const settings = runtime.appSettings.desktopLyrics
+  const requested = {
+    x: Math.round(settings.windowX),
+    y: Math.round(settings.windowY),
+    width: settings.windowWidth,
+    height: settings.windowHeight
+  }
+  const visible =
+    !(requested.x === -1 && requested.y === -1) &&
+    screen.getAllDisplays().some((display) => {
+      const area = display.workArea
+      const horizontal =
+        Math.min(requested.x + requested.width, area.x + area.width) - Math.max(requested.x, area.x)
+      const vertical =
+        Math.min(requested.y + requested.height, area.y + area.height) -
+        Math.max(requested.y, area.y)
+      return horizontal >= 80 && vertical >= 48
+    })
+  if (visible) return { x: requested.x, y: requested.y }
+  const area = screen.getPrimaryDisplay().workArea
+  return {
+    x: Math.round(area.x + (area.width - settings.windowWidth) / 2),
+    y: Math.round(area.y + area.height - settings.windowHeight - 56)
+  }
 }
 
-export function getEffectiveDesktopLyricsSettings(): DesktopLyricsSettings {
+export function getEffectiveDesktopLyricsSettings(): DesktopLyricsSettingsV3 {
   const settings = runtime.appSettings.desktopLyrics
   return {
     ...settings,
     resolvedFontFamily: resolveDesktopLyricsFontFamily(
       settings.fontFamily,
       runtime.appSettings.lyricsAppearance.styles.active
-    )
+    ),
+    accentColor: runtime.appSettings.accentColor,
+    motionPreference: runtime.appSettings.motionPreference
   }
+}
+
+function applyWindowSettings(): void {
+  const win = runtime.desktopLyricsWindow
+  if (!win || win.isDestroyed()) return
+  const settings = runtime.appSettings.desktopLyrics
+  win.setAlwaysOnTop(settings.alwaysOnTop, 'screen-saver')
+  win.setIgnoreMouseEvents(settings.locked)
+  const bounds = win.getBounds()
+  if (bounds.width !== settings.windowWidth || bounds.height !== settings.windowHeight) {
+    win.setSize(settings.windowWidth, settings.windowHeight)
+  }
+  const current = win.getPosition()
+  const constrained = clampToCurrentDisplay(win, current[0], current[1])
+  if (constrained.x !== current[0] || constrained.y !== current[1]) {
+    win.setPosition(constrained.x, constrained.y)
+    settings.windowX = constrained.x
+    settings.windowY = constrained.y
+    writeAppSettings(runtime.appSettings)
+  }
+}
+
+function notifySettingsChanged(): void {
+  const settings = getEffectiveDesktopLyricsSettings()
+  applyWindowSettings()
+  runtime.desktopLyricsWindow?.webContents.send('desktopLyrics:settingsChanged', settings)
+  runtime.mainWindow?.webContents.send(
+    'settings:changed',
+    createSettingsSnapshot(runtime.appSettings, runtime.launchSettings)
+  )
+  runtime.refreshTrayMenu?.(true)
 }
 
 export function syncDesktopLyricsSettings(): void {
-  const win = runtime.desktopLyricsWindow
-  if (!win || win.isDestroyed()) return
-
-  const settings = runtime.appSettings.desktopLyrics
-  win.setAlwaysOnTop(settings.alwaysOnTop, 'screen-saver')
-  applyDesktopLyricsMouseMode()
-  if (
-    settings.windowWidth !== win.getBounds().width ||
-    settings.windowHeight !== win.getBounds().height
-  ) {
-    win.setSize(settings.windowWidth, settings.windowHeight)
-  }
-  win.webContents.send('desktopLyrics:initSettings', getEffectiveDesktopLyricsSettings())
+  notifySettingsChanged()
 }
 
-function sendDesktopLyricsSnapshot(): void {
-  if (!runtime.desktopLyricsWindow || runtime.desktopLyricsWindow.isDestroyed()) return
+function updateDesktopLyricsSettings(
+  patch: Partial<DesktopLyricsSettingsV3>
+): DesktopLyricsSettingsV3 {
+  runtime.appSettings.desktopLyrics = normalizeDesktopLyricsSettings(
+    { ...runtime.appSettings.desktopLyrics, ...patch, version: 3 },
+    { resetLegacy: false }
+  )
+  writeAppSettings(runtime.appSettings)
+  notifySettingsChanged()
+  return getEffectiveDesktopLyricsSettings()
+}
 
-  runtime.desktopLyricsWindow.webContents.send(
-    'desktopLyrics:initSettings',
-    getEffectiveDesktopLyricsSettings()
-  )
-  if (runtime.latestDesktopLyricsTrack) {
-    runtime.desktopLyricsWindow.webContents.send(
-      'desktopLyrics:updateTrack',
-      runtime.latestDesktopLyricsTrack
-    )
+function clampToCurrentDisplay(win: BrowserWindow, x: number, y: number): { x: number; y: number } {
+  const size = win.getBounds()
+  const area = screen.getDisplayMatching({ ...size, x, y }).workArea
+  return {
+    x: Math.min(Math.max(Math.round(x), area.x), area.x + area.width - size.width),
+    y: Math.min(Math.max(Math.round(y), area.y), area.y + area.height - size.height)
   }
-  runtime.desktopLyricsWindow.webContents.send(
-    'desktopLyrics:updateTime',
-    runtime.latestDesktopLyricsTime
+}
+
+function validWord(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+  const value = raw as Record<string, unknown>
+  return (
+    typeof value.text === 'string' &&
+    value.text.length <= 4096 &&
+    Number.isFinite(value.startMs) &&
+    Number.isFinite(value.endMs) &&
+    Number(value.endMs) >= Number(value.startMs)
   )
+}
+
+function validLine(raw: unknown): raw is DesktopLyricsLine {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+  const value = raw as Record<string, unknown>
+  const words = value.words
+  return (
+    typeof value.id === 'string' &&
+    value.id.length > 0 &&
+    value.id.length <= 160 &&
+    typeof value.text === 'string' &&
+    value.text.length <= 4096 &&
+    (value.translation == null ||
+      (typeof value.translation === 'string' && value.translation.length <= 4096)) &&
+    (value.startMs == null || Number.isFinite(value.startMs)) &&
+    (value.endMs == null || Number.isFinite(value.endMs)) &&
+    (words == null ||
+      (Array.isArray(words) && words.length <= 512 && words.every((word) => validWord(word))))
+  )
+}
+
+function validSession(raw: unknown): raw is DesktopLyricsSession {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+  try {
+    stringifyJsonForIpcStorage(raw, 'desktop lyrics session', DESKTOP_LYRICS_MAX_CONTENT_BYTES)
+  } catch {
+    return false
+  }
+  const value = raw as Record<string, unknown>
+  const lines = value.lines
+  const track = value.track
+  const validTrack =
+    track === null ||
+    (typeof track === 'object' &&
+      !Array.isArray(track) &&
+      track !== null &&
+      typeof (track as Record<string, unknown>).id === 'string' &&
+      String((track as Record<string, unknown>).id).length <= 160 &&
+      typeof (track as Record<string, unknown>).title === 'string' &&
+      String((track as Record<string, unknown>).title).length <= 1024 &&
+      typeof (track as Record<string, unknown>).artist === 'string' &&
+      String((track as Record<string, unknown>).artist).length <= 1024)
+  return (
+    value.schemaVersion === 1 &&
+    typeof value.sessionId === 'string' &&
+    value.sessionId.length > 0 &&
+    value.sessionId.length <= 160 &&
+    Number.isSafeInteger(value.contentRevision) &&
+    Number(value.contentRevision) >= 0 &&
+    validTrack &&
+    ['idle', 'loading', 'ready', 'empty', 'error'].includes(String(value.status)) &&
+    Number.isFinite(value.lyricOffsetMs) &&
+    Math.abs(Number(value.lyricOffsetMs)) <= 600000 &&
+    Array.isArray(lines) &&
+    lines.length <= 10000 &&
+    lines.every((line) => validLine(line))
+  )
+}
+
+function validClock(raw: unknown): raw is DesktopLyricsClockSnapshot {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+  const value = raw as Record<string, unknown>
+  return (
+    value.schemaVersion === 1 &&
+    typeof value.sessionId === 'string' &&
+    value.sessionId.length > 0 &&
+    value.sessionId.length <= 160 &&
+    Number.isSafeInteger(value.sequence) &&
+    Number(value.sequence) >= 0 &&
+    Number.isSafeInteger(value.epoch) &&
+    Number(value.epoch) >= 0 &&
+    Number.isFinite(value.positionMs) &&
+    Number(value.positionMs) >= 0 &&
+    Number.isFinite(value.durationMs) &&
+    Number(value.durationMs) >= 0 &&
+    Number.isFinite(value.rate) &&
+    Number(value.rate) >= 0.5 &&
+    Number(value.rate) <= 2 &&
+    ['idle', 'loading', 'playing', 'paused'].includes(String(value.state))
+  )
+}
+
+function validQuickSettingsPatch(raw: unknown): raw is Partial<DesktopLyricsSettingsV3> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+  const value = raw as Record<string, unknown>
+  const keys = Object.keys(value)
+  if (
+    !keys.every((key) =>
+      ['fontSize', 'palette', 'customActiveColor', 'translationVisible'].includes(key)
+    )
+  ) {
+    return false
+  }
+  if (
+    'fontSize' in value &&
+    (!Number.isFinite(value.fontSize) || Number(value.fontSize) < 20 || Number(value.fontSize) > 64)
+  )
+    return false
+  if (
+    'palette' in value &&
+    !['accent', 'twilight', 'warm', 'custom'].includes(String(value.palette))
+  )
+    return false
+  if (
+    'customActiveColor' in value &&
+    (typeof value.customActiveColor !== 'string' ||
+      !/^#[0-9a-fA-F]{6}$/.test(value.customActiveColor))
+  )
+    return false
+  return !('translationVisible' in value) || typeof value.translationVisible === 'boolean'
 }
 
 function createDesktopLyricsWindow(): void {
   if (runtime.desktopLyricsWindow && !runtime.desktopLyricsWindow.isDestroyed()) return
-
-  const dl = runtime.appSettings.desktopLyrics
-  const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize
-  const x = dl.windowX >= 0 ? dl.windowX : Math.round((screenWidth - dl.windowWidth) / 2)
-  const y = dl.windowY >= 0 ? dl.windowY : screenHeight - dl.windowHeight - 60
-
-  runtime.desktopLyricsWindow = new BrowserWindow({
-    width: dl.windowWidth,
-    height: dl.windowHeight,
-    x,
-    y,
+  const settings = runtime.appSettings.desktopLyrics
+  const position = windowPosition()
+  if (position.x !== settings.windowX || position.y !== settings.windowY) {
+    settings.windowX = position.x
+    settings.windowY = position.y
+    writeAppSettings(runtime.appSettings)
+  }
+  const win = new BrowserWindow({
+    width: settings.windowWidth,
+    height: settings.windowHeight,
+    x: position.x,
+    y: position.y,
     frame: false,
     transparent: true,
-    alwaysOnTop: dl.alwaysOnTop,
+    alwaysOnTop: settings.alwaysOnTop,
     skipTaskbar: true,
     resizable: false,
     minimizable: false,
@@ -110,201 +299,193 @@ function createDesktopLyricsWindow(): void {
       allowRunningInsecureContent: false
     }
   })
-
-  runtime.desktopLyricsWindow.setAlwaysOnTop(dl.alwaysOnTop, 'screen-saver')
-  applyDesktopLyricsMouseMode()
-
-  runtime.desktopLyricsWindow.on('ready-to-show', () => {
-    runtime.desktopLyricsWindow?.show()
-    sendDesktopLyricsSnapshot()
+  runtime.desktopLyricsWindow = win
+  applyWindowSettings()
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (event) => event.preventDefault())
+  win.webContents.on('did-fail-load', (_event, code, description) => {
+    runtime.mainWindow?.webContents.send('desktopLyrics:loadFailed', { code, description })
   })
-
-  runtime.desktopLyricsWindow.on('closed', () => {
-    clearMoveSaveTimer()
-    temporarilyInteractive = false
+  win.webContents.on('render-process-gone', (_event, details) => {
+    if (destroyingWindow || details.reason === 'clean-exit') return
     runtime.desktopLyricsWindow = null
-  })
-
-  runtime.desktopLyricsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  runtime.desktopLyricsWindow.webContents.on('will-navigate', (event) => {
-    event.preventDefault()
-  })
-
-  runtime.desktopLyricsWindow.on('move', () => {
-    if (moveSaveTimer) clearTimeout(moveSaveTimer)
-    moveSaveTimer = setTimeout(() => {
-      moveSaveTimer = null
-      if (!runtime.desktopLyricsWindow || runtime.desktopLyricsWindow.isDestroyed()) return
-      persistDesktopLyricsPosition(runtime.desktopLyricsWindow)
-    }, 500)
-  })
-
-  runtime.desktopLyricsWindow.webContents.on(
-    'did-fail-load',
-    (_event, errorCode, errorDescription) => {
-      console.error('[desktop-lyrics] load failed', errorCode, errorDescription)
+    if (!runtime.appSettings.desktopLyrics.enabled || runtime.desktopLyricsCrashRestarts >= 1) {
+      runtime.appSettings.desktopLyrics.enabled = false
+      writeAppSettings(runtime.appSettings)
       runtime.mainWindow?.webContents.send('desktopLyrics:loadFailed', {
-        code: errorCode,
-        description: errorDescription
+        code: -1,
+        description: '桌面歌词渲染进程异常退出，已停止自动重启'
       })
-      hideDesktopLyrics()
+      runtime.refreshTrayMenu?.(true)
+      return
     }
-  )
-
-  const desktopLyricsHtml = is.dev
-    ? join(__dirname, '../../resources/desktop-lyrics.html')
-    : join(__dirname, '../renderer/desktop-lyrics.html')
-  runtime.desktopLyricsWindow.loadFile(desktopLyricsHtml)
+    runtime.desktopLyricsCrashRestarts += 1
+    setTimeout(() => {
+      if (runtime.appSettings.desktopLyrics.enabled) createDesktopLyricsWindow()
+    }, 250)
+  })
+  win.on('closed', () => {
+    if (runtime.desktopLyricsWindow === win) runtime.desktopLyricsWindow = null
+  })
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    const rendererUrl = new URL(process.env['ELECTRON_RENDERER_URL'])
+    rendererUrl.searchParams.set('window', 'desktop-lyrics')
+    void win.loadURL(rendererUrl.toString())
+  } else {
+    void win.loadFile(join(__dirname, '../renderer/index.html'), {
+      query: { window: 'desktop-lyrics' }
+    })
+  }
 }
 
 export function showDesktopLyrics(): void {
   if (!runtime.desktopLyricsWindow || runtime.desktopLyricsWindow.isDestroyed()) {
     createDesktopLyricsWindow()
-  } else {
-    runtime.desktopLyricsWindow.show()
-    sendDesktopLyricsSnapshot()
+    return
   }
+  runtime.desktopLyricsWindow.showInactive()
 }
 
 export function destroyDesktopLyrics(): void {
   const win = runtime.desktopLyricsWindow
-  clearMoveSaveTimer()
   if (!win || win.isDestroyed()) {
     runtime.desktopLyricsWindow = null
     return
   }
+  destroyingWindow = true
   persistDesktopLyricsPosition(win)
   runtime.desktopLyricsWindow = null
   win.destroy()
+  destroyingWindow = false
 }
 
-export function hideDesktopLyrics(): void {
-  destroyDesktopLyrics()
+export function setDesktopLyricsEnabled(enabled: boolean): boolean {
+  if (enabled && !runtime.appSettings.desktopLyrics.enabled) {
+    runtime.desktopLyricsCrashRestarts = 0
+  }
+  runtime.appSettings.desktopLyrics.enabled = enabled
+  writeAppSettings(runtime.appSettings)
+  if (enabled) showDesktopLyrics()
+  else destroyDesktopLyrics()
+  runtime.mainWindow?.webContents.send('desktopLyrics:enabledChanged', enabled)
+  runtime.refreshTrayMenu?.(true)
+  return enabled
 }
 
 export function toggleDesktopLyrics(): boolean {
-  const shouldShow = !runtime.appSettings.desktopLyrics.enabled
-  runtime.appSettings.desktopLyrics.enabled = shouldShow
-  writeAppSettings(runtime.appSettings)
-  if (shouldShow) {
-    showDesktopLyrics()
-  } else {
-    hideDesktopLyrics()
-  }
-  // Notify renderer
-  runtime.mainWindow?.webContents.send('desktopLyrics:toggleChanged', shouldShow)
-  runtime.refreshTrayMenu?.()
-  return shouldShow
+  return setDesktopLyricsEnabled(!runtime.appSettings.desktopLyrics.enabled)
 }
 
-export function applyDesktopLyricsSettings(settings: DesktopLyricsSettings): void {
-  const normalized = normalizeDesktopLyrics(settings)
-  runtime.appSettings.desktopLyrics = normalized
-  writeAppSettings(runtime.appSettings)
-  syncDesktopLyricsSettings()
+export function toggleDesktopLyricsLock(): boolean {
+  const locked = !runtime.appSettings.desktopLyrics.locked
+  updateDesktopLyricsSettings({ locked })
+  return locked
+}
+
+export function requestDesktopLyricsResync(): void {
+  runtime.desktopLyricsWindow?.webContents.send('desktopLyrics:freezeClock')
+  runtime.mainWindow?.webContents.send('desktopLyrics:resyncRequested')
 }
 
 export function setupDesktopLyricsIpc(): void {
-  ipcMain.on('desktopLyrics:setInteractive', (event, interactive: boolean) => {
-    if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC')) return
+  if (!resumeBound) {
+    resumeBound = true
+    powerMonitor.on('resume', requestDesktopLyricsResync)
+  }
+
+  ipcMain.handle('desktopLyrics:setEnabled', (event, enabled: unknown) => {
+    assertTrustedIpcSender(event, 'desktop lyrics IPC')
+    if (!isMainSender(event)) throw new Error('desktop lyrics enable rejected from satellite')
+    if (typeof enabled !== 'boolean') throw new Error('invalid desktop lyrics enabled state')
+    return setDesktopLyricsEnabled(enabled)
+  })
+
+  ipcMain.handle('desktopLyrics:bootstrap', (event): DesktopLyricsBootstrap => {
+    assertTrustedIpcSender(event, 'desktop lyrics IPC')
+    if (!isDesktopLyricsSender(event)) throw new Error('desktop lyrics bootstrap rejected')
+    return {
+      settings: getEffectiveDesktopLyricsSettings(),
+      session: runtime.latestDesktopLyricsSession,
+      clock: runtime.latestDesktopLyricsClock
+    }
+  })
+
+  ipcMain.handle('desktopLyrics:updateQuickSettings', (event, patch: unknown) => {
+    assertTrustedIpcSender(event, 'desktop lyrics IPC')
+    if (!isDesktopLyricsSender(event)) throw new Error('desktop lyrics settings rejected')
+    if (!validQuickSettingsPatch(patch)) {
+      throw new Error('invalid desktop lyrics settings patch')
+    }
+    return updateDesktopLyricsSettings(patch)
+  })
+
+  ipcMain.handle('desktopLyrics:setLocked', (event, locked: unknown) => {
+    assertTrustedIpcSender(event, 'desktop lyrics IPC')
+    if (!isDesktopLyricsSender(event)) throw new Error('desktop lyrics lock rejected')
+    return updateDesktopLyricsSettings({ locked: locked === true })
+  })
+
+  ipcMain.on('desktopLyrics:publishSession', (event, session: unknown) => {
+    if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC') || !isMainSender(event)) return
+    if (!validSession(session)) return
+    runtime.latestDesktopLyricsSession = session
+    if (runtime.latestDesktopLyricsClock?.sessionId !== session.sessionId) {
+      runtime.latestDesktopLyricsClock = null
+    }
+    runtime.desktopLyricsWindow?.webContents.send('desktopLyrics:sessionChanged', session)
+  })
+
+  ipcMain.on('desktopLyrics:publishClock', (event, clock: unknown) => {
+    if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC') || !isMainSender(event)) return
+    if (!validClock(clock)) return
+    const current = runtime.latestDesktopLyricsClock
     if (
-      !runtime.desktopLyricsWindow ||
-      runtime.desktopLyricsWindow.isDestroyed() ||
-      event.sender !== runtime.desktopLyricsWindow.webContents
+      current?.sessionId === clock.sessionId &&
+      (clock.epoch < current.epoch ||
+        (clock.epoch === current.epoch && clock.sequence <= current.sequence))
     ) {
       return
     }
-    temporarilyInteractive = interactive === true
-    applyDesktopLyricsMouseMode()
+    runtime.latestDesktopLyricsClock = clock
+    runtime.desktopLyricsWindow?.webContents.send('desktopLyrics:clockChanged', clock)
   })
 
-  // Forward track/time updates from renderer to lyrics window
-  ipcMain.on('desktopLyrics:updateTrack', (_event, data: DesktopLyricsTrackPayload) => {
-    if (!shouldAcceptIpcEvent(_event, 'desktop lyrics IPC')) return
-    runtime.latestDesktopLyricsTrack = data
-    if (runtime.desktopLyricsWindow && !runtime.desktopLyricsWindow.isDestroyed()) {
-      runtime.desktopLyricsWindow.webContents.send('desktopLyrics:updateTrack', data)
-    }
+  ipcMain.on('desktopLyrics:transport', (event, action: unknown) => {
+    if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC') || !isDesktopLyricsSender(event)) return
+    if (!['previous', 'playPause', 'next'].includes(String(action))) return
+    runtime.mainWindow?.webContents.send('player:shortcut', action as DesktopLyricsTransportAction)
   })
 
-  ipcMain.on('desktopLyrics:updateTime', (_event, time: number) => {
-    if (!shouldAcceptIpcEvent(_event, 'desktop lyrics IPC')) return
-    if (!Number.isFinite(time)) return
-    runtime.latestDesktopLyricsTime = Math.max(0, time)
-    if (runtime.desktopLyricsWindow && !runtime.desktopLyricsWindow.isDestroyed()) {
-      runtime.desktopLyricsWindow.webContents.send(
-        'desktopLyrics:updateTime',
-        runtime.latestDesktopLyricsTime
-      )
-    }
+  ipcMain.on('desktopLyrics:moveTo', (event, payload: unknown) => {
+    if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC') || !isDesktopLyricsSender(event)) return
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return
+    const value = payload as { x?: unknown; y?: unknown }
+    if (
+      !Number.isFinite(value.x) ||
+      !Number.isFinite(value.y) ||
+      Math.abs(Number(value.x)) > 100000 ||
+      Math.abs(Number(value.y)) > 100000
+    )
+      return
+    const win = runtime.desktopLyricsWindow
+    if (!win || win.isDestroyed() || runtime.appSettings.desktopLyrics.locked) return
+    const position = clampToCurrentDisplay(win, Number(value.x), Number(value.y))
+    win.setPosition(position.x, position.y)
   })
 
-  ipcMain.on('desktopLyrics:updateSettings', (_event, settings: Partial<DesktopLyricsSettings>) => {
-    if (!shouldAcceptIpcEvent(_event, 'desktop lyrics IPC')) return
-    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return
-    const fromDesktopLyricsWindow =
-      runtime.desktopLyricsWindow &&
-      !runtime.desktopLyricsWindow.isDestroyed() &&
-      _event.sender === runtime.desktopLyricsWindow.webContents
-    applyDesktopLyricsSettings({ ...runtime.appSettings.desktopLyrics, ...settings })
-    if (fromDesktopLyricsWindow) {
-      runtime.mainWindow?.webContents.send(
-        'settings:changed',
-        createSettingsSnapshot(runtime.appSettings, runtime.launchSettings)
-      )
-    }
+  ipcMain.on('desktopLyrics:moveEnd', (event) => {
+    if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC') || !isDesktopLyricsSender(event)) return
+    const win = runtime.desktopLyricsWindow
+    if (win && !win.isDestroyed()) persistDesktopLyricsPosition(win)
   })
 
-  ipcMain.handle('desktopLyrics:toggle', async (event) => {
-    assertTrustedIpcSender(event, 'desktop lyrics IPC')
-    return toggleDesktopLyrics()
+  ipcMain.on('desktopLyrics:ready', (event) => {
+    if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC') || !isDesktopLyricsSender(event)) return
+    runtime.desktopLyricsWindow?.showInactive()
   })
 
-  ipcMain.handle('desktopLyrics:show', async (event) => {
-    assertTrustedIpcSender(event, 'desktop lyrics IPC')
-    showDesktopLyrics()
+  ipcMain.on('desktopLyrics:close', (event) => {
+    if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC') || !isDesktopLyricsSender(event)) return
+    setDesktopLyricsEnabled(false)
   })
-
-  ipcMain.handle('desktopLyrics:hide', async (event) => {
-    assertTrustedIpcSender(event, 'desktop lyrics IPC')
-    hideDesktopLyrics()
-  })
-
-  // Lyrics window → main: get current position (for drag start)
-  ipcMain.on('desktopLyrics:getPosition', (event) => {
-    if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC')) return
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (win && !win.isDestroyed()) {
-      const [x, y] = win.getPosition()
-      event.sender.send('desktopLyrics:position', { x, y })
-    }
-  })
-
-  // Lyrics window → main: move window
-  ipcMain.on('desktopLyrics:move', (event, data: { x: number; y: number }) => {
-    if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC')) return
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win.isDestroyed()) return
-    if (!data || !Number.isFinite(data.x) || !Number.isFinite(data.y)) return
-    const display = screen.getDisplayMatching(win.getBounds())
-    const bounds = display.workArea
-    const size = win.getBounds()
-    const x = clampNumber(Math.round(data.x), bounds.x, bounds.x + bounds.width - size.width)
-    const y = clampNumber(Math.round(data.y), bounds.y, bounds.y + bounds.height - size.height)
-    win.setPosition(x, y)
-  })
-
-  // Lyrics window → main: request close (close button in toolbar)
-  ipcMain.on('desktopLyrics:requestClose', (event) => {
-    if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC')) return
-    runtime.appSettings.desktopLyrics.enabled = false
-    writeAppSettings(runtime.appSettings)
-    hideDesktopLyrics()
-    runtime.mainWindow?.webContents.send('desktopLyrics:toggleChanged', false)
-    runtime.refreshTrayMenu?.()
-  })
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), Math.max(min, max))
 }

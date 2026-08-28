@@ -13,8 +13,14 @@ const query = new URLSearchParams(window.location.search)
 const windowKind = query.get('window')
 const isMiniPlayer = windowKind === 'mini-player'
 const isTrayPlayer = windowKind === 'tray-player'
-if (isMiniPlayer || isTrayPlayer) {
-  const documentClass = isMiniPlayer ? 'mini-player-document' : 'tray-player-document'
+const isDesktopLyrics = windowKind === 'desktop-lyrics'
+const isSatelliteWindow = isMiniPlayer || isTrayPlayer || isDesktopLyrics
+if (isSatelliteWindow) {
+  const documentClass = isMiniPlayer
+    ? 'mini-player-document'
+    : isTrayPlayer
+      ? 'tray-player-document'
+      : 'desktop-lyrics-document'
   document.documentElement.classList.add(documentClass)
   document.body.classList.add(documentClass)
   document.documentElement.style.background = 'transparent'
@@ -23,7 +29,7 @@ if (isMiniPlayer || isTrayPlayer) {
 }
 
 installAutoHideScrollbars()
-if (!isMiniPlayer && !isTrayPlayer) {
+if (!isSatelliteWindow) {
   injectCachedThemeRuntime()
   // The satellite windows are only a few hundred pixels tall, so a floating
   // back-to-top would cover more than it saves; the main window gets it for
@@ -49,12 +55,16 @@ document.addEventListener(
 )
 
 async function mountApp(): Promise<void> {
-  const startupSnapshot = !isMiniPlayer && !isTrayPlayer ? beginStartupSnapshot() : null
+  const startupSnapshot = isSatelliteWindow ? null : beginStartupSnapshot()
   const rootComponent = isMiniPlayer
     ? (await import('./mini-player/MiniPlayerApp.vue')).default
     : isTrayPlayer
       ? (await import('./tray-player/TrayPlayerApp.vue')).default
-      : (await import('./App.vue')).default
+      : isDesktopLyrics
+        ? (await import('./desktop-lyrics/DesktopLyricsApp.vue')).default
+        : (await import('./App.vue')).default
+  // The lyrics window reads no theme tokens: every colour arrives in its settings
+  // payload, so it must not pay for (or wait on) the theme runtime.
   if (isMiniPlayer) await bootstrapThemeRuntime()
   createApp(rootComponent).use(createPinia()).mount('#app')
   void startupSnapshot

@@ -14,9 +14,9 @@ import type {
   AppBackgroundPage,
   ChannelRoutingMode,
   DesktopLyricsSettings,
+  LyricsAppearanceAlign,
   LyricsAppearanceFontFamily,
   LyricsFocusLineCount,
-  LyricAlign,
   MotionPreference,
   NcmPlaybackQuality,
   PlaybackResumeMode,
@@ -27,7 +27,7 @@ import type {
   StreamingAudioCachePolicy,
   UiDensity
 } from '../../types/settings'
-import { DESKTOP_LYRICS_FOLLOW_FONT } from '../../../../shared/desktopLyricsFont.ts'
+import { DEFAULT_DESKTOP_LYRICS_SETTINGS } from '../../../../shared/desktopLyrics.ts'
 import type { AppFontFamily } from '../../../../shared/appFont.ts'
 
 export type SectionKey =
@@ -206,9 +206,10 @@ export const appBackgroundPageOptions: { value: AppBackgroundPage; label: string
     { value: 'player', label: '播放页', desc: '沉浸式播放页和全屏播放背景。' }
   ]
 
-export const lyricAlignOptions: { value: LyricAlign; label: string }[] = [
+export const lyricAlignOptions: { value: LyricsAppearanceAlign; label: string }[] = [
   { value: 'center', label: '居中对齐' },
-  { value: 'left', label: '靠左对齐' }
+  { value: 'left', label: '靠左对齐' },
+  { value: 'right', label: '靠右对齐' }
 ]
 
 export const streamingAudioCachePolicyOptions: {
@@ -749,33 +750,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = (
   terms: `${sectionTerms[entry.section]} ${entry.terms}`
 }))
 
-export const RESET_DESKTOP_LYRICS: DesktopLyricsSettings = {
-  enabled: false,
-  fontSize: 32,
-  fontFamily: DESKTOP_LYRICS_FOLLOW_FONT,
-  fontWeight: 700,
-  color: '#ffffff',
-  highlightColor: '#3b82f6',
-  bgColor: '#000000',
-  bgOpacity: 30,
-  align: 'center',
-  showTranslation: true,
-  layout: 'bilingual',
-  presentation: 'netease',
-  lineSpacing: 1.6,
-  shadow: true,
-  shadowBlur: 8,
-  shadowColor: '#000000',
-  windowWidth: 900,
-  windowHeight: 160,
-  windowX: -1,
-  windowY: -1,
-  alwaysOnTop: true,
-  locked: false,
-  clickThrough: false,
-  maxLines: 2,
-  lineOffset: 0
-}
+export const RESET_DESKTOP_LYRICS: DesktopLyricsSettings = DEFAULT_DESKTOP_LYRICS_SETTINGS
+
 export type PluginSettingsFieldType = 'text' | 'password' | 'url' | 'select'
 
 export interface PluginSettingsOption {

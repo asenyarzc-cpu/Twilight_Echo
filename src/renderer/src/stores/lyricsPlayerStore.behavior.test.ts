@@ -68,8 +68,13 @@ function runtimeEntrySource(): string {
     workspaceRoot,
     'src/renderer/src/stores/lyricsManagement.ts'
   ).replaceAll('\\', '/')
+  const desktopLyricsPublisherPath = join(
+    workspaceRoot,
+    'src/renderer/src/app/useDesktopLyricsPublisher.ts'
+  ).replaceAll('\\', '/')
   return `import { usePlayerStore } from ${JSON.stringify(playerStorePath)}
 import { useLyricsManagement } from ${JSON.stringify(lyricsStorePath)}
+import { useDesktopLyricsPublisher } from ${JSON.stringify(desktopLyricsPublisherPath)}
 
 function expect(condition, message) {
   if (!condition) throw new Error(message)
@@ -92,7 +97,7 @@ let document = {
   tracks: {}
 }
 let revision = 1
-let latestDesktopLyricsTrack = null
+let latestDesktopLyricsSession = null
 let deferProvider = false
 let providerFailuresRemaining = 0
 const deferredProviderResolvers = []
@@ -112,12 +117,17 @@ window.api = {
   ...window.api,
   desktopLyrics: {
     ...window.api.desktopLyrics,
-    updateTrack: (snapshot) => {
-      latestDesktopLyricsTrack = clone(snapshot)
+    setEnabled: async (enabled) => enabled,
+    publishSession: (snapshot) => {
+      latestDesktopLyricsSession = clone(snapshot)
     },
-    updateTime: () => {},
-    updateSettings: () => {},
-    onToggle: () => () => {}
+    publishClock: () => {},
+    onEnabledChanged: (callback) => {
+      callback(true)
+      return () => {}
+    },
+    onResyncRequested: () => () => {},
+    onLoadFailed: () => () => {}
   },
   data: {
     getLyrics: async () => null,
@@ -167,6 +177,7 @@ const nextTrack = {
 window.runLyricsPlayerRuntime = async () => {
   const player = usePlayerStore()
   const management = useLyricsManagement()
+  useDesktopLyricsPublisher()
   player.currentTrack.value = clone(track)
   player.queue.value = [clone(track)]
   await management.ensureLoaded()
@@ -303,16 +314,15 @@ window.runLyricsPlayerRuntime = async () => {
   })
   await player.refreshCurrentLyrics()
   await waitFor(
-    () => latestDesktopLyricsTrack?.lyrics === '[00:03.00]Manual original',
+    () => latestDesktopLyricsSession?.lines?.[0]?.text === 'Manual original',
     'managed manual lyrics did not refresh the desktop snapshot'
   )
   expect(JSON.stringify(player.currentTrack.value) === JSON.stringify(beforeCurrent), 'manual original mutated current track')
   expect(JSON.stringify(player.queue.value) === JSON.stringify(beforeQueue), 'manual romanization mutated queue')
   expect(management.entryFor(failedLyricsTrack.id).romanization === '[00:03.00]Manual romanization', 'manual romanization was not persisted')
-  expect(latestDesktopLyricsTrack.translatedLyrics === '[00:03.00]Manual translation', 'desktop lyrics kept the stale automatic translation')
-  expect(latestDesktopLyricsTrack.lyricsSource === 'manual', 'desktop lyrics did not expose the manual source')
-  expect(latestDesktopLyricsTrack.translatedLyricsSource === 'manual', 'desktop translation did not expose the manual source')
-  expect(!latestDesktopLyricsTrack.lyrics.includes('[te:voice'), 'desktop lyrics leaked an internal voice tag')
+  expect(latestDesktopLyricsSession.lines[0].translation === 'Manual translation', 'desktop lyrics kept the stale automatic translation')
+  expect(!('lyricsSource' in latestDesktopLyricsSession), 'desktop lyrics leaked source metadata')
+  expect(!latestDesktopLyricsSession.lines[0].text.includes('[te:voice'), 'desktop lyrics leaked an internal voice tag')
 
   player.currentTrack.value = clone(track)
   player.queue.value = [clone(track), clone(nextTrack)]

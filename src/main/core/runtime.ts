@@ -1,6 +1,9 @@
 import { readAppSettings } from './settings'
 import type { AppSettings } from './types'
-import type { DesktopLyricsTrackPayload } from '../../shared/lyricsManagement.ts'
+import type {
+  DesktopLyricsClockSnapshot,
+  DesktopLyricsSession
+} from '../../shared/desktopLyrics.ts'
 import type { BrowserWindow, Tray } from 'electron'
 import type { AudioEngineManager, PlaybackInfo } from '../audioEngineManager'
 import type { TelemetryClient } from '../analytics/telemetryClient.ts'
@@ -50,12 +53,13 @@ export const runtime = {
   pendingTrayNavigation: null as TrayNavigationTarget | null,
   latestMiniPlayerState: null as MiniPlayerStateSnapshot | null,
   desktopLyricsWindow: null as BrowserWindow | null,
-  latestDesktopLyricsTrack: null as DesktopLyricsTrackPayload | null,
-  latestDesktopLyricsTime: 0,
+  latestDesktopLyricsSession: null as DesktopLyricsSession | null,
+  latestDesktopLyricsClock: null as DesktopLyricsClockSnapshot | null,
+  desktopLyricsCrashRestarts: 0,
   ncmServer: null as import('http').Server | null,
   ncmServerPromise: null as Promise<void> | null,
   tray: null as Tray | null,
-  refreshTrayMenu: null as (() => void) | null,
+  refreshTrayMenu: null as ((force?: boolean) => void) | null,
   forceQuit: false,
   closingAfterPlaybackSessionSave: false,
   savingPlaybackSessionBeforeClose: false,

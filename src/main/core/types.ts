@@ -21,6 +21,7 @@ export type PlayerShortcutAction =
   | 'play'
   | 'pause'
   | 'toggleDesktopLyrics'
+  | 'toggleDesktopLyricsLock'
   | { action: 'seek'; positionSeconds: number }
   | { action: 'setVolume'; volume: number }
   | { action: 'jumpQueue'; index: number }
@@ -85,5 +86,10 @@ export const PLAYER_SHORTCUTS: {
   { accelerator: 'CommandOrControl+Alt+Right', action: 'next', label: '下一首' },
   { accelerator: 'CommandOrControl+Alt+Space', action: 'playPause', label: '播放 / 暂停' },
   { accelerator: 'CommandOrControl+Alt+D', action: 'toggleDesktopLyrics', label: '桌面歌词' },
+  {
+    accelerator: 'CommandOrControl+Alt+L',
+    action: 'toggleDesktopLyricsLock',
+    label: '锁定 / 解锁桌面歌词'
+  },
   ...MEDIA_KEY_SHORTCUTS
 ]

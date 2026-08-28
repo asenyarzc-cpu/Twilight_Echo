@@ -248,7 +248,7 @@ const translationLayerSelection = computed(() => lyricLayerSelection('translatio
 const showTranslation = computed(() => lyricsManagement.document.value.showTranslation)
 
 async function toggleDesktopLyrics(): Promise<void> {
-  const enabled = await window.api.desktopLyrics.toggle()
+  const enabled = await window.api.desktopLyrics.setEnabled(!desktopLyricsOn.value)
   desktopLyricsOn.value = enabled
 }
 
@@ -265,7 +265,7 @@ async function openMiniPlayer(): Promise<void> {
 }
 
 if (!props.preview) {
-  window.api.desktopLyrics.onToggle((enabled: boolean) => {
+  window.api.desktopLyrics.onEnabledChanged((enabled: boolean) => {
     desktopLyricsOn.value = enabled
   })
   window.api.desktopLyrics.onLoadFailed?.((payload) => {
@@ -2095,6 +2095,7 @@ onBeforeUnmount(() => {
           :audio-output-config="audioOutputConfig"
           :dsp-output-stage="dspOutputStage"
           :dsp-stereo-image="dspStereoImage"
+          :dsp-active="playbackInfo?.dspActive === true"
           :actual-sample-rate="outputInfo?.actualSampleRate || playbackInfo?.actualSampleRate || 0"
           :status-chips="audioStatusChips"
           :non-perfect-reason="nonPerfectReason"

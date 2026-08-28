@@ -340,13 +340,14 @@ test('specialized windows receive only their scoped preload APIs', () => {
   assert.match(preloadSource, /exposedApiForDocument\(\)/)
   assert.match(
     preloadSource,
-    /if \(isDesktopLyricsDocument\(\)\) return \{ desktopLyrics: api\.desktopLyrics \}/
+    /if \(isDesktopLyricsDocument\(\)\) return \{ desktopLyrics: desktopLyricsWindowApi \}/
   )
   assert.match(
     preloadSource,
     /if \(isMiniPlayerDocument\(\)\) \{[\s\S]*?return \{ miniPlayer: miniPlayerWindowApi, data: miniPlayerCoverDataApi \}/
   )
-  assert.match(preloadSource, /window\.location\.pathname\.endsWith\('\/desktop-lyrics\.html'\)/)
+  // The lyrics window is the shared renderer document with a `window` query now.
+  assert.match(preloadSource, /get\('window'\) === 'desktop-lyrics'/)
   assert.match(preloadSource, /get\('window'\) === 'mini-player'/)
   assert.match(miniPlayerApi, /chooseBackgroundImage/)
   assert.doesNotMatch(miniPlayerApi, /ipcRenderer\.(?:invoke|send)\('(?:settings|shell|dialog):/)

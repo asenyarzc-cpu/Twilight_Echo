@@ -57,6 +57,7 @@ const props = defineProps<{
   audioOutputConfig: OutputConfig
   dspOutputStage: DspOutputStageConfig
   dspStereoImage: DspStereoImageConfig
+  dspActive?: boolean
   actualSampleRate?: number
   statusChips: HiFiStatusChip[]
   nonPerfectReason: string
@@ -313,6 +314,16 @@ const crossfeedPercent = computed(() => Math.round(props.audioProcessing.crossfe
 const crossfadeSeconds = computed(() => props.audioProcessing.crossfadeSeconds)
 const replayGainPreamp = computed(() => props.audioProcessing.replayGainPreamp)
 const dspMasterOn = computed(() => props.audioProcessing.dspEnabled)
+const dspRuntimeActive = computed(() => props.dspActive === true)
+const dspSignalState = computed(() => {
+  if (dspRuntimeActive.value) return { label: 'ENGAGED', tone: 'warning' as StatusTone }
+  if (dspMasterOn.value) return { label: 'STANDBY', tone: 'muted' as StatusTone }
+  return { label: 'BYPASS', tone: 'muted' as StatusTone }
+})
+const dspMasterStatusText = computed(() => {
+  if (!dspMasterOn.value) return '旁路 · 样本直通优先'
+  return dspRuntimeActive.value ? '处理链正在处理' : '处理链已开启 · 当前直通旁路'
+})
 const eqOn = computed(() => props.audioProcessing.dspEnabled && props.audioProcessing.eqEnabled)
 const crossfeedOn = computed(
   () => props.audioProcessing.dspEnabled && props.audioProcessing.crossfeedEnabled
@@ -634,10 +645,10 @@ const deckAccentVars = computed(() => {
                   <em>{{ sourceQuality.format }} · {{ sourceQuality.depth }}</em>
                 </div>
                 <div class="deck-flow-link" :class="{ active: Boolean(currentTrack) }"></div>
-                <div class="deck-node" :data-tone="dspMasterOn ? 'warning' : 'muted'">
+                <div class="deck-node" :data-tone="dspSignalState.tone">
                   <span class="deck-node-led"></span>
                   <strong>DSP</strong>
-                  <em>{{ dspMasterOn ? 'ENGAGED' : 'BYPASS' }}</em>
+                  <em>{{ dspSignalState.label }}</em>
                 </div>
                 <div class="deck-flow-link" :class="{ active: Boolean(currentTrack) }"></div>
                 <div class="deck-node" :data-tone="deckLiveTone">
@@ -1068,10 +1079,10 @@ const deckAccentVars = computed(() => {
             <section class="deck-card">
               <div class="deck-master">
                 <div class="deck-master-copy">
-                  <span class="deck-led" :class="{ on: dspMasterOn }"></span>
+                  <span class="deck-led" :class="{ on: dspRuntimeActive }"></span>
                   <div>
                     <strong>Master DSP</strong>
-                    <span>{{ dspMasterOn ? '处理链已启用' : '旁路 · 样本直通优先' }}</span>
+                    <span>{{ dspMasterStatusText }}</span>
                   </div>
                 </div>
                 <button

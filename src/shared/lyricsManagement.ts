@@ -6,16 +6,6 @@ export type LyricSourcePreference = 'auto' | 'local' | 'provider' | 'amll' | 'ma
 export type LyricLayerSourceSelection = 'automatic' | 'local' | 'provider' | 'amll' | 'manual'
 export type LyricSource = 'embedded' | 'local' | 'provider' | 'amll' | 'manual' | 'online'
 
-export interface DesktopLyricsTrackPayload {
-  lyrics: string | null
-  translatedLyrics?: string | null
-  romanizedLyrics?: string | null
-  lyricsSource?: LyricSource | null
-  translatedLyricsSource?: LyricSource | null
-  title?: string
-  artist?: string
-}
-
 export interface LyricTrackOverride {
   offsetMs: number
   source: LyricSourcePreference

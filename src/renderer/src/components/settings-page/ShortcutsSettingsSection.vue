@@ -21,14 +21,16 @@ const DEFAULT_BINDINGS: GlobalShortcutSettings = {
   previous: 'CommandOrControl+Alt+Left',
   next: 'CommandOrControl+Alt+Right',
   playPause: 'CommandOrControl+Alt+Space',
-  toggleDesktopLyrics: 'CommandOrControl+Alt+D'
+  toggleDesktopLyrics: 'CommandOrControl+Alt+D',
+  toggleDesktopLyricsLock: 'CommandOrControl+Alt+L'
 }
 
 const EDITABLE_BINDINGS: { key: BindingKey; label: string }[] = [
   { key: 'previous', label: '上一首' },
   { key: 'next', label: '下一首' },
   { key: 'playPause', label: '播放 / 暂停' },
-  { key: 'toggleDesktopLyrics', label: '桌面歌词' }
+  { key: 'toggleDesktopLyrics', label: '桌面歌词' },
+  { key: 'toggleDesktopLyricsLock', label: '锁定 / 解锁桌面歌词' }
 ]
 
 const IS_MAC = typeof navigator !== 'undefined' && /mac/i.test(navigator.userAgent)
@@ -59,7 +61,8 @@ const bindingValues = computed<Record<BindingKey, string>>(() => ({
   previous: props.shortcutBindings.previous,
   next: props.shortcutBindings.next,
   playPause: props.shortcutBindings.playPause,
-  toggleDesktopLyrics: props.shortcutBindings.toggleDesktopLyrics
+  toggleDesktopLyrics: props.shortcutBindings.toggleDesktopLyrics,
+  toggleDesktopLyricsLock: props.shortcutBindings.toggleDesktopLyricsLock
 }))
 
 /** 自定义组合键与媒体键共用 action，靠 Media 前缀区分两组状态。 */

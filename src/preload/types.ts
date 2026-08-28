@@ -55,7 +55,6 @@ export type {
   UiDensity,
   ProxyMode,
   NowPlayingBackground,
-  LyricAlign,
   StreamingAudioCachePolicy,
   AppBackgroundPage,
   AppBackgroundKind,
@@ -69,8 +68,7 @@ export type {
   BackgroundEffectSettings,
   CardAppearanceSettings,
   WindowTransparencyEffectSettings,
-  DesktopLyricsLayout,
-  DesktopLyricsPresentation,
+  DesktopLyricsPalette,
   DesktopLyricsSettings,
   MusicCachePolicySettings,
   AudioEqPreset,
@@ -136,9 +134,17 @@ export type {
   LyricsManagementDocument,
   LyricTrackOverride,
   LyricSourcePreference,
-  LyricSource,
-  DesktopLyricsTrackPayload
+  LyricSource
 } from '../shared/lyricsManagement.ts'
+export type {
+  DesktopLyricsBootstrap,
+  DesktopLyricsClockSnapshot,
+  DesktopLyricsLine,
+  DesktopLyricsSession,
+  DesktopLyricsSettingsV3,
+  DesktopLyricsTransportAction,
+  DesktopLyricsWord
+} from '../shared/desktopLyrics.ts'
 
 export type {
   AcousticFingerprint,

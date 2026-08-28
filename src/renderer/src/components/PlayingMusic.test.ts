@@ -477,17 +477,31 @@ test('playbar lyrics section hosts the lyrics manager panel', () => {
   assert.match(playerBar, /@toggle-translation-visibility="toggleTranslationVisibility"/)
 })
 
-test('desktop lyrics html exposes lyric source metadata on hover', () => {
-  const source = readFileSync(
-    new URL('../../../../resources/desktop-lyrics.html', import.meta.url),
+test('the HiFi signal path reports runtime DSP state instead of the configured master switch', () => {
+  const sidebar = readFileSync(new URL('./player-bar/HiFiSidebar.vue', import.meta.url), 'utf8')
+  const playerBar = readFileSync(new URL('./PlayerBar.vue', import.meta.url), 'utf8')
+
+  assert.match(sidebar, /dspActive\?: boolean/)
+  assert.match(sidebar, /const dspRuntimeActive = computed\(\(\) => props\.dspActive === true\)/)
+  assert.match(
+    sidebar,
+    /if \(dspRuntimeActive\.value\) return \{ label: 'ENGAGED',[\s\S]*if \(dspMasterOn\.value\) return \{ label: 'STANDBY'/
+  )
+  assert.match(sidebar, /<em>\{\{ dspSignalState\.label \}\}<\/em>/)
+  assert.match(sidebar, /处理链已开启 · 当前直通旁路/)
+  assert.doesNotMatch(sidebar, /<em>\{\{ dspMasterOn \? 'ENGAGED' : 'BYPASS' \}\}<\/em>/)
+  assert.match(playerBar, /:dsp-active="playbackInfo\?\.dspActive === true"/)
+})
+
+test('desktop lyrics window exposes concise song metadata on hover', () => {
+  const app = readFileSync(
+    new URL('../desktop-lyrics/DesktopLyricsApp.vue', import.meta.url),
     'utf8'
   )
 
-  assert.match(source, /function lyricSourceLabel\(source\)/)
-  assert.match(source, /data\.lyricsSource/)
-  assert.match(source, /data\.translatedLyricsSource/)
-  assert.match(source, /sourceLabel/)
-  assert.match(source, /songInfoEl\.title = sourceLabel/)
+  assert.match(app, /track\.artist \? `\$\{track\.title\} · \$\{track\.artist\}`/)
+  assert.match(app, /v-if="songLabel" class="dl-song-label" :title="songLabel"/)
+  assert.doesNotMatch(app, /lyricsSource|translatedLyricsSource/)
 })
 
 test('phase four layouts only rearrange the existing cover and lyrics instances', () => {

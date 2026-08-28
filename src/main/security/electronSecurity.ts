@@ -36,11 +36,7 @@ function shouldApplyDocumentSecurityHeaders(
   details: Electron.OnHeadersReceivedListenerDetails
 ): boolean {
   if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') return false
-  return (
-    isAppDocumentUrl(details.url) ||
-    isDesktopLyricsDocumentUrl(details.url) ||
-    isAudioVisualizerDocumentUrl(details.url)
-  )
+  return isAppDocumentUrl(details.url) || isAudioVisualizerDocumentUrl(details.url)
 }
 
 function contentSecurityPolicyForUrl(url: string): string {
@@ -62,7 +58,6 @@ function contentSecurityPolicyForUrl(url: string): string {
     ].join('; ')
   }
 
-  const scriptSrc = isDesktopLyricsDocumentUrl(url) ? "'self' 'unsafe-inline'" : "'self'"
   const connectSrc = ["'self'", ...NCM_API_ORIGINS]
   if (isDevRendererUrl(url)) {
     connectSrc.push(
@@ -80,7 +75,7 @@ function contentSecurityPolicyForUrl(url: string): string {
     // Allow the bundled audio visualizer surface and other same-origin app frames.
     "frame-src 'self'",
     "frame-ancestors 'none'",
-    `script-src ${scriptSrc}`,
+    "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: cover: background: theme-asset: twilight-media:",
     "font-src 'self' data: theme-asset:",
@@ -106,10 +101,6 @@ function isAppDocumentUrl(url: string): boolean {
   return isDevRendererUrl(url) || /\/renderer\/index\.html(?:[#?].*)?$/i.test(url)
 }
 
-function isDesktopLyricsDocumentUrl(url: string): boolean {
-  return /\/(?:resources|renderer)\/desktop-lyrics\.html(?:[#?].*)?$/i.test(url)
-}
-
 function isAudioVisualizerDocumentUrl(url: string): boolean {
   return /\/audio-visualizer\/index\.html(?:[#?].*)?$/i.test(url)
 }
@@ -125,10 +116,11 @@ function isDevRendererUrl(url: string): boolean {
 }
 
 export function isTrustedIpcSenderUrl(url: string): boolean {
-  if (isAppDocumentUrl(url) || isDesktopLyricsDocumentUrl(url)) return true
-  if (url.startsWith('file://') && app.isPackaged) {
-    return isAppDocumentUrl(url) || isDesktopLyricsDocumentUrl(url)
-  }
+  // The desktop lyrics window is now the shared renderer document with a `window`
+  // query, so it is covered by isAppDocumentUrl and needs no exception of its own
+  // (which is also what let its old inline-script CSP allowance go away).
+  if (isAppDocumentUrl(url)) return true
+  if (url.startsWith('file://') && app.isPackaged) return isAppDocumentUrl(url)
   return false
 }
 

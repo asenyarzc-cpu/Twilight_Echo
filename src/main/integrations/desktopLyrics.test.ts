@@ -2,115 +2,85 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-test('desktop lyrics resolve linked fonts at every window settings send point', async () => {
-  const source = await readFile(new URL('./desktopLyrics.ts', import.meta.url), 'utf8')
-  const state = await readFile(new URL('../audio/state.ts', import.meta.url), 'utf8')
+async function source(path: string): Promise<string> {
+  return readFile(new URL(path, import.meta.url), 'utf8')
+}
 
-  assert.match(source, /resolveDesktopLyricsFontFamily/)
-  assert.match(source, /runtime\.appSettings\.lyricsAppearance\.styles\.active/)
-  assert.match(source, /getEffectiveDesktopLyricsSettings\(\)/)
-  assert.match(source, /syncDesktopLyricsSettings\(\)/)
-  assert.match(state, /hasOwnProperty\.call\(patch, 'lyricsAppearance'\)/)
-  assert.match(state, /syncDesktopLyricsSettings\(\)/)
-})
+test('desktop lyrics v3 isolates host and satellite IPC capabilities', async () => {
+  const main = await source('./desktopLyrics.ts')
+  const preload = await source('../../preload/domains/desktopLyricsApi.ts')
+  const entry = await source('../../preload/index.ts')
 
-test('desktop lyrics settings expose an explicit follow-font control', async () => {
-  const source = await readFile(
-    new URL(
-      '../../renderer/src/components/settings-page/DesktopLyricsSettingsSection.vue',
-      import.meta.url
-    ),
-    'utf8'
-  )
-  const settings = await readFile(new URL('../core/settings.ts', import.meta.url), 'utf8')
-  const settingsCss = await readFile(
-    new URL('../../renderer/src/components/settings-page/SettingsPage.css', import.meta.url),
-    'utf8'
-  )
-
-  assert.match(source, /useLyricsFontPicker/)
-  assert.match(source, /跟随 PlayingMusic/)
-  assert.match(source, /fontPicker\.installedMatches/)
-  assert.match(source, /'font-menu-open': fontMenuOpen/)
-  assert.match(settingsCss, /\.desktop-font-setting\.font-menu-open\s*\{[\s\S]*z-index: 30/)
+  assert.match(main, /isMainSender\(event\)/)
+  assert.match(main, /isDesktopLyricsSender\(event\)/)
+  assert.match(main, /desktopLyrics:publishSession/)
+  assert.match(main, /desktopLyrics:bootstrap/)
+  assert.match(preload, /desktopLyricsHostApi/)
+  assert.match(preload, /desktopLyricsWindowApi/)
+  assert.match(entry, /desktopLyrics: desktopLyricsHostApi/)
   assert.match(
-    settingsCss,
-    /\.setting-item\.desktop-font-setting\.font-menu-open:hover\s*\{[\s\S]*translate: 0 0/
+    entry,
+    /if \(isDesktopLyricsDocument\(\)\) return \{ desktopLyrics: desktopLyricsWindowApi \}/
   )
-  assert.match(settings, /fontFamily: DESKTOP_LYRICS_FOLLOW_FONT/)
+  assert.doesNotMatch(preload, /desktopLyrics:toggle/)
 })
 
-test('netEase desktop lyrics select two rows and calculate weighted karaoke progress', async () => {
-  const presentation = (await import('../../../resources/desktop-lyrics-presentation.js')).default
-  const lines = [
-    { time: 0, text: 'ab', translation: '甲乙', words: null },
-    { time: 10, text: 'cdef', translation: null, words: null }
-  ]
-  assert.deepEqual(presentation.resolveNetEaseRows(lines, 0, { showTranslation: true }), [
-    { lineIndex: 0, text: 'ab', isTranslation: false, isActive: true },
-    { lineIndex: 0, text: '甲乙', isTranslation: true, isActive: true }
-  ])
-  assert.deepEqual(presentation.resolveNetEaseRows(lines, 0, { showTranslation: false }), [
-    { lineIndex: 0, text: 'ab', isTranslation: false, isActive: true },
-    { lineIndex: 1, text: 'cdef', isTranslation: false, isActive: false }
-  ])
-  assert.equal(presentation.hasWordTiming(lines[0]), false)
-  assert.equal(presentation.calculateLineProgress(lines, 0, 4), 0)
-  const timedLines = [
-    {
-      time: 0,
-      text: 'abcde',
-      words: [
-        { time: 0, text: 'ab' },
-        { time: 2, text: 'cde' }
-      ]
-    }
-  ]
-  assert.equal(presentation.hasWordTiming(timedLines[0]), true)
-  assert.equal(presentation.calculateLineProgress(timedLines, 0, 3), 0.55)
+test('desktop lyrics validates payload size, shape, ranges, and message order', async () => {
+  const main = await source('./desktopLyrics.ts')
+
+  assert.match(main, /DESKTOP_LYRICS_MAX_CONTENT_BYTES/)
+  assert.match(main, /stringifyJsonForIpcStorage\(raw, 'desktop lyrics session'/)
+  assert.match(main, /lines\.length <= 10000/)
+  assert.match(main, /words\.length <= 512/)
+  assert.match(main, /Number\(value\.rate\) >= 0\.5/)
+  assert.match(main, /clock\.epoch < current\.epoch/)
+  assert.match(main, /clock\.sequence <= current\.sequence/)
 })
 
-test('netEase desktop lyrics only enable karaoke sweep for word-timed lines', async () => {
-  const renderer = await readFile(
-    new URL('../../../resources/desktop-lyrics.html', import.meta.url),
-    'utf8'
-  )
-  const source = await readFile(new URL('./desktopLyrics.ts', import.meta.url), 'utf8')
+test('desktop lyrics bootstraps before reveal and performs one crash recovery', async () => {
+  const main = await source('./desktopLyrics.ts')
+  const app = await source('../../renderer/src/desktop-lyrics/DesktopLyricsApp.vue')
 
-  assert.match(renderer, /TwilightDesktopLyricsPresentation\.hasWordTiming/)
-  assert.match(
-    renderer,
-    /div\.style\.color = canKaraoke[\s\S]*\? settings\.color[\s\S]*\? settings\.highlightColor/
-  )
-  assert.match(renderer, /listInstalledFonts/)
-  assert.match(renderer, /id="color-panel"/)
-  assert.match(renderer, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
-  assert.match(renderer, /updateSettingsPatch\(\{ fontFamily: fontSelect\.value \}\)/)
-  assert.match(source, /settings: Partial<DesktopLyricsSettings>/)
-  assert.match(source, /'settings:changed'/)
+  assert.match(main, /show: false/)
+  assert.match(main, /desktopLyrics:ready/)
+  assert.match(app, /await api\.bootstrap\(\)/)
+  assert.match(app, /api\.ready\(\)/)
+  assert.ok(app.indexOf('await api.bootstrap()') < app.indexOf('api.ready()'))
+  assert.match(main, /desktopLyricsCrashRestarts >= 1/)
+  assert.match(main, /runtime\.desktopLyricsCrashRestarts \+= 1/)
 })
 
-test('desktop lyrics retain legacy click-through state as hover-unlock locking', async () => {
-  const source = await readFile(new URL('./desktopLyrics.ts', import.meta.url), 'utf8')
-  const settings = await readFile(new URL('../core/settings.ts', import.meta.url), 'utf8')
-  const renderer = await readFile(
-    new URL('../../../resources/desktop-lyrics.html', import.meta.url),
-    'utf8'
-  )
+test('desktop lyrics uses constrained manual dragging and real locked click-through', async () => {
+  const main = await source('./desktopLyrics.ts')
+  const app = await source('../../renderer/src/desktop-lyrics/DesktopLyricsApp.vue')
 
-  assert.match(settings, /locked:\s*\n?\s*typeof d\.locked === 'boolean'/)
-  assert.match(source, /applyDesktopLyricsMouseMode/)
-  assert.match(source, /setIgnoreMouseEvents\(shouldIgnoreMouseEvents,\s*\{\s*forward:\s*true\s*\}/)
-  assert.match(renderer, /TwilightDesktopLyricsPresentation\.resolveNetEaseRows/)
-  assert.match(renderer, /desktopLyrics:setInteractive|api\.setInteractive/)
+  assert.match(main, /screen\.getDisplayMatching/)
+  assert.match(main, /win\.setIgnoreMouseEvents\(settings\.locked\)/)
+  assert.doesNotMatch(main, /forward:\s*true/)
+  assert.match(app, /setPointerCapture/)
+  assert.match(app, /api\.moveTo/)
+  assert.match(app, /api\.moveEnd/)
 })
 
-test('desktop lyrics presentation survives settings normalization after restart', async () => {
-  const settings = await readFile(new URL('../core/settings.ts', import.meta.url), 'utf8')
+test('desktop lyrics resumes frozen and requests an authoritative snapshot', async () => {
+  const main = await source('./desktopLyrics.ts')
+  const clock = await source('../../renderer/src/desktop-lyrics/desktopLyricsClock.ts')
 
-  assert.match(settings, /presentation: 'netease'/)
-  assert.match(
-    settings,
-    /presentation:\s*\n\s*d\.presentation === 'classic' \|\| d\.presentation === 'netease'\s*\n\s*\? d\.presentation\s*\n\s*:\s*DEFAULT_DESKTOP_LYRICS\.presentation/
-  )
+  assert.match(main, /powerMonitor\.on\('resume', requestDesktopLyricsResync\)/)
+  assert.match(main, /desktopLyrics:freezeClock/)
+  assert.match(main, /desktopLyrics:resyncRequested/)
+  assert.match(clock, /current\.state === 'playing' && !frozen/)
+})
+
+test('desktop lyrics v3 removes presets and keeps a dedicated lock shortcut', async () => {
+  const settings = await source('../core/settings.ts')
+  const shared = await source('../../shared/appSettings.ts')
+  const tray = await source('./shortcutsTray.ts')
+
+  assert.match(settings, /normalizeDesktopLyricsSettings/)
+  assert.doesNotMatch(settings, /desktopLyricsPresets/)
+  assert.doesNotMatch(shared, /DesktopLyricsPreset/)
+  assert.match(settings, /CommandOrControl\+Alt\+L/)
+  assert.match(tray, /toggleDesktopLyricsLock/)
+  assert.match(tray, /type: 'checkbox'/)
 })

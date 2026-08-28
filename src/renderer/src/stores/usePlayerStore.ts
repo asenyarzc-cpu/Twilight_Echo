@@ -74,8 +74,6 @@ import {
 } from '../utils/playbackQueueVirtualization.ts'
 import { clampProviderReliability, findPlaybackFallbackTrack } from '../utils/playbackFallback.ts'
 import { findProviderRematchCandidate } from '../utils/libraryRepair.ts'
-import { buildLyricLines, stripValidLyricVoiceTags } from '../utils/lyrics.ts'
-import { isAmlTtml } from '../utils/amllTtml.ts'
 import { useNcmStore } from './useNcmStore.ts'
 import { useLyricsManagement } from './lyricsManagement.ts'
 import { usePlaybackBookmarks } from './playbackBookmarks'
@@ -102,12 +100,12 @@ import { syncPluginProviders, useMediaProviders } from '../providers'
 import { useSettingsStore } from './useSettingsStore'
 import { useMusicStore } from './useMusicStore'
 import { type SleepTimerMode, type SleepTimerState } from '../../../shared/sleepTimer.ts'
-import { projectManagedLyrics, type LyricSource } from '../../../shared/lyricsManagement.ts'
 import { DEFAULT_SOFTWARE_VOLUME } from '../../../shared/audioProcessingOptions.ts'
 import { presentError, presentErrorDetail } from '../../../shared/errors/presentError.ts'
 import { parseAppError } from '../../../shared/errors/appError.ts'
 import { translate } from '../../../shared/i18n/translate.ts'
 import { currentLocale } from '../app/useLocale.ts'
+import type { LyricSource } from '../../../shared/lyricsManagement.ts'
 import { toNativePlayMode } from '../../../shared/playbackModes.ts'
 import { deviceOptionsForOutput } from '../../../shared/audioDeviceRouting.ts'
 import { createPlayerSleepTimer } from './player/usePlayerSleepTimer.ts'
@@ -3213,7 +3211,19 @@ async function handlePlayerShortcutAction(
       return
     }
     if (action === 'toggleDesktopLyrics') {
-      await window.api.desktopLyrics.toggle()
+      const enabled = await window.api.desktopLyrics.setEnabled(
+        !appSettings.value.desktopLyrics.enabled
+      )
+      await updateSettings({ desktopLyrics: { ...appSettings.value.desktopLyrics, enabled } })
+      return
+    }
+    if (action === 'toggleDesktopLyricsLock') {
+      await updateSettings({
+        desktopLyrics: {
+          ...appSettings.value.desktopLyrics,
+          locked: !appSettings.value.desktopLyrics.locked
+        }
+      })
       return
     }
     // playPause
@@ -3448,117 +3458,6 @@ let playerIntegrationSideEffectsSetup = false
 let mediaSessionHandlersBound = false
 let mediaSessionMetadataKey = ''
 let discordPlayStartTimestamp: number | null = null
-let desktopLyricsTimeThrottle = 0
-
-function normalizeDesktopLyricSource(source: string | null | undefined): LyricSource | null {
-  return source === 'embedded' ||
-    source === 'local' ||
-    source === 'provider' ||
-    source === 'amll' ||
-    source === 'manual' ||
-    source === 'online'
-    ? source
-    : null
-}
-
-function formatCompactLrcTimestamp(seconds: number): string {
-  const centiseconds = Math.max(0, Math.round(seconds * 100))
-  const minutes = Math.floor(centiseconds / 6000)
-  const remainder = centiseconds % 6000
-  return `[${String(minutes).padStart(2, '0')}:${(remainder / 100).toFixed(2).padStart(5, '0')}]`
-}
-
-function projectCompactTtmlLyrics(
-  lyrics: string | null | undefined,
-  translatedLyrics: string | null | undefined,
-  replaceTranslation: boolean
-): {
-  original: string | null
-  translation: string | null
-} | null {
-  if (!isAmlTtml(lyrics)) return null
-  const lines = buildLyricLines(lyrics, translatedLyrics, null, {
-    replaceTtmlTranslation: replaceTranslation
-  })
-  const primary = lines
-    .filter((line) => line.time != null)
-    .map((line) => {
-      const voice = line.voices?.find((candidate) => candidate.role === 'lead') ?? line.voices?.[0]
-      return {
-        time: line.time!,
-        text: voice?.text ?? line.text,
-        translation: voice?.translation?.text ?? line.translation
-      }
-    })
-    .filter((line) => line.text.trim())
-  if (!primary.length) return { original: null, translation: null }
-  const original = primary
-    .map((line) => `${formatCompactLrcTimestamp(line.time)}${line.text}`)
-    .join('\n')
-  const translated = primary
-    .filter((line) => line.translation)
-    .map((line) => `${formatCompactLrcTimestamp(line.time)}${line.translation}`)
-    .join('\n')
-  return { original, translation: translated || null }
-}
-
-function syncDesktopLyricsSnapshot(): void {
-  const desktopLyricsApi = window.api?.desktopLyrics
-  if (!desktopLyricsApi) return
-
-  const track = currentTrack.value
-  if (track) {
-    const managedOverride = lyricsManagement.entryFor(track.id)
-    const automaticSources = {
-      lyricsSource: track.lyricsSource ?? null,
-      translatedLyricsSource: track.translatedLyricsSource ?? null
-    }
-    const lyrics = projectManagedLyrics(
-      {
-        original: track.lyrics,
-        translation: track.translatedLyrics,
-        romanization: track.romanizedLyrics,
-        originalSource: track.lyricsSource,
-        translationSource: track.translatedLyricsSource,
-        romanizationSource: track.romanizedLyricsSource
-      },
-      managedOverride
-    )
-    const replaceTtmlTranslation =
-      managedOverride?.translationSelection === 'manual' ||
-      (managedOverride?.translationSelection == null && managedOverride?.source === 'manual')
-    const compactTtml = projectCompactTtmlLyrics(
-      lyrics.original,
-      lyrics.translation,
-      replaceTtmlTranslation
-    )
-    desktopLyricsApi.updateTrack({
-      lyrics: compactTtml?.original ?? stripValidLyricVoiceTags(lyrics.original),
-      translatedLyrics: compactTtml?.translation ?? stripValidLyricVoiceTags(lyrics.translation),
-      lyricsSource:
-        lyrics.originalSource === track.lyricsSource
-          ? automaticSources.lyricsSource
-          : normalizeDesktopLyricSource(lyrics.originalSource),
-      translatedLyricsSource: compactTtml?.translation
-        ? normalizeDesktopLyricSource(lyrics.originalSource)
-        : lyrics.translationSource === track.translatedLyricsSource
-          ? automaticSources.translatedLyricsSource
-          : normalizeDesktopLyricSource(lyrics.translationSource),
-      title: track.title || '',
-      artist: track.artist || ''
-    })
-  } else {
-    desktopLyricsApi.updateTrack({
-      lyrics: null,
-      translatedLyrics: null,
-      lyricsSource: null,
-      translatedLyricsSource: null,
-      title: '',
-      artist: ''
-    })
-  }
-  desktopLyricsApi.updateTime(currentTime.value)
-}
 
 function updateMediaSessionPlaybackState(): void {
   if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
@@ -3819,10 +3718,6 @@ function setupPlayerIntegrationSideEffects(): void {
     { immediate: true }
   )
 
-  watch([currentTrack, lyricsManagement.document], () => syncDesktopLyricsSnapshot(), {
-    immediate: true
-  })
-
   watch(
     [() => currentTrack.value?.queueEntryId, () => currentTrack.value?.id, queueIndex],
     () => markCurrentPersonalizedStreamTrackPlayed(),
@@ -3837,26 +3732,6 @@ function setupPlayerIntegrationSideEffects(): void {
     },
     { immediate: true }
   )
-
-  watch(currentTime, (time) => {
-    const now = Date.now()
-    if (now - desktopLyricsTimeThrottle < 200) return
-    desktopLyricsTimeThrottle = now
-    window.api?.desktopLyrics?.updateTime(time)
-  })
-
-  watch(
-    () => appSettings.value?.desktopLyrics,
-    (dl) => {
-      if (!dl) return
-      window.api?.desktopLyrics?.updateSettings({ ...dl })
-    },
-    { deep: true }
-  )
-
-  window.api?.desktopLyrics?.onToggle((enabled: boolean) => {
-    if (enabled) syncDesktopLyricsSnapshot()
-  })
 
   window.api?.bpmAnalysis?.onCompleted((event) => {
     applyBpmAnalysisToTrack(event.trackId, event.filePath, event.analysis)

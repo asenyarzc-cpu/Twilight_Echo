@@ -67,7 +67,15 @@ export async function createInheritedThemeSettingsPatch(
       ...(lyrics.fontSize != null ? { fontSize: lyrics.fontSize } : {}),
       ...(lyrics.fontWeight != null ? { fontWeight: lyrics.fontWeight } : {}),
       ...(lyrics.color ? { color: lyrics.color } : {}),
-      ...(lyrics.highlightColor ? { highlightColor: lyrics.highlightColor } : {}),
+      // v2 sings through a gradient; a theme that names one colour pins both ends,
+      // and has to switch the mode off `accent` or its colours would be ignored.
+      ...(lyrics.highlightColor
+        ? {
+            colorMode: 'custom' as const,
+            highlightStart: lyrics.highlightColor,
+            highlightEnd: lyrics.highlightColor
+          }
+        : {}),
       ...(lyrics.backgroundColor ? { bgColor: lyrics.backgroundColor } : {}),
       ...(lyrics.backgroundOpacity != null ? { bgOpacity: lyrics.backgroundOpacity } : {}),
       ...(lyrics.shadow != null ? { shadow: lyrics.shadow } : {}),

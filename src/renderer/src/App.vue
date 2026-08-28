@@ -47,6 +47,7 @@ import { useBackStack } from './app/useBackStack'
 import { createPlaybackSessionPersistence } from './app/usePlaybackSessionPersistence'
 import { useSideMenuClearance } from './app/useSideMenuClearance'
 import { useMiniPlayerSync } from './app/useMiniPlayerSync'
+import { useDesktopLyricsPublisher } from './app/useDesktopLyricsPublisher.ts'
 import { useFavoriteButton } from './components/player-bar/useFavoriteButton'
 import { useMotionPreference } from './app/useMotionPreference'
 import { useLanguagePreference } from './app/useLocale'
@@ -327,6 +328,7 @@ const {
   rehydrateCurrentTrackFromLibrary,
   visualizerActive
 } = usePlayerStore()
+useDesktopLyricsPublisher()
 const { setAdaptiveMedia } = useThemeStore()
 const mediaProviders = useMediaProviders()
 

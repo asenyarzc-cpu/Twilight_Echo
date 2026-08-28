@@ -26,8 +26,10 @@ project grows.
   `allowRunningInsecureContent: false`.
 - The preload exposes only `window.api`; it does not expose the generic
   `window.electron.ipcRenderer` bridge.
-- The desktop lyrics HTML receives only `window.api.desktopLyrics`, not the full
-  renderer API surface.
+- The desktop lyrics document receives only the satellite subset of
+  `window.api.desktopLyrics`; the main document receives only the publisher subset.
+  Main-process handlers verify the exact sending `webContents`, validate structured
+  session/clock payloads, and cap each normalized lyrics session at 1 MiB.
 - Main-frame navigation is limited to the app renderer. External URLs are opened
   through the OS browser only for `http` and `https`.
 - The NetEase official login window allows in-window navigation only on
@@ -38,16 +40,15 @@ project grows.
   strips existing CSP headers before replacing them, adds `nosniff`,
   `no-referrer`, and a restrictive `Permissions-Policy`, and denies Chromium
   permission requests/checks by default.
-- The main renderer CSP disallows remote scripts and inline scripts. The desktop
-  lyrics document is the only app document that still allows inline script
-  because it is a static bundled HTML file with an existing inline controller.
+- The shared renderer CSP disallows remote and inline scripts for the main and
+  satellite windows, including desktop lyrics.
 
 ## IPC And Network Boundaries
 
-- High-impact IPC handlers validate the sender URL before doing work. Accepted
-  senders are the app renderer and the bundled desktop lyrics document; untrusted
-  `ipcMain.handle` callers are rejected, and untrusted fire-and-forget
-  `ipcMain.on` callers are ignored without throwing in the main process.
+- High-impact IPC handlers validate the sender URL before doing work. Desktop lyrics
+  additionally separates host publication from satellite window controls by exact
+  sender identity; untrusted `ipcMain.handle` callers are rejected, and untrusted
+  fire-and-forget `ipcMain.on` callers are ignored without throwing in the main process.
 - Renderer audio file reads are limited to paths accepted by
   `resolvePlayableAudioFile`.
 - Renderer-controlled JSON persisted by `data:*` IPC has size limits before

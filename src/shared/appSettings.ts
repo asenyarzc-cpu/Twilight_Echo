@@ -11,12 +11,20 @@ import type { MiniPlayerSettings } from './miniPlayer.ts'
 import type { DspScene } from './dspGraph.ts'
 import type { SleepTimerSettings } from './sleepTimer.ts'
 import type { ThemeSelection, ThemeWindowInheritance } from './theme.ts'
-import type { MotionPreference } from './motion.ts'
 import type { LiquidGlassSettings, SurfaceMaterial } from './liquidGlass.ts'
 import type { LyricsAppearanceSettings } from './lyricsAppearance.ts'
 import type { LyricsPresetConfig } from './lyricsPresets.ts'
+import type { DesktopLyricsSettingsV3 } from './desktopLyrics.ts'
 import type { PlayerBarSettings } from './playerBar.ts'
 import type { LanguagePreference } from './i18n/locale.ts'
+import type { MotionPreference } from './motion.ts'
+
+export type {
+  DesktopLyricsPalette,
+  DesktopLyricsSettingsV3,
+  DesktopLyricsTransportAction
+} from './desktopLyrics.ts'
+export { DESKTOP_LYRICS_SETTINGS_VERSION } from './desktopLyrics.ts'
 
 export type AppTheme = 'system' | 'pureWhite' | 'dark'
 export type PlaybackResumeMode = 'off' | 'track' | 'trackAndPosition'
@@ -27,7 +35,6 @@ export type TrackActivationMode = 'singleClick' | 'doubleClick'
 export type UiDensity = 'compact' | 'standard' | 'comfortable'
 export type ProxyMode = 'auto' | 'custom' | 'off'
 export type NowPlayingBackground = 'blur' | 'fluid' | 'solid'
-export type LyricAlign = 'center' | 'left'
 export type StreamingAudioCachePolicy = 'off' | 'provider'
 export type AppBackgroundPage = 'local' | 'settings' | 'streaming' | 'player'
 export type AppBackgroundKind = 'color' | 'image'
@@ -91,44 +98,8 @@ export interface WindowTransparencyEffectSettings {
   cardBlur: number
 }
 
-export type DesktopLyricsLayout = 'multi' | 'bilingual'
-export type DesktopLyricsPresentation = 'netease' | 'classic'
-
-export interface DesktopLyricsSettings {
-  enabled: boolean
-  fontSize: number
-  /** `follow` resolves from the active PlayingMusic lyric style; other values are overrides. */
-  fontFamily: string
-  /** Resolved font stack sent to the desktop window while preserving the stored preference. */
-  resolvedFontFamily?: string
-  fontWeight: number
-  color: string
-  highlightColor: string
-  bgColor: string
-  bgOpacity: number
-  align: LyricAlign
-  showTranslation: boolean
-  /** multi = consecutive lines; bilingual = original + translation for the active line. */
-  layout: DesktopLyricsLayout
-  /** netease = two-row karaoke overlay; classic = the previous desktop lyrics layout. */
-  presentation: DesktopLyricsPresentation
-  lineSpacing: number
-  shadow: boolean
-  shadowBlur: number
-  shadowColor: string
-  windowWidth: number
-  windowHeight: number
-  windowX: number
-  windowY: number
-  alwaysOnTop: boolean
-  /** Locked windows are click-through until the hover unlock affordance is used. */
-  locked: boolean
-  /** Compatibility alias retained for settings written before locked mode existed. */
-  clickThrough: boolean
-  maxLines: number
-  /** Horizontal stagger in px: even rows left (-), odd rows right (+). */
-  lineOffset: number
-}
+/** Versioned desktop lyrics window, appearance, and behavior settings. */
+export type DesktopLyricsSettings = DesktopLyricsSettingsV3
 
 export interface MusicCachePolicySettings {
   cover: boolean
@@ -150,6 +121,7 @@ export interface GlobalShortcutSettings {
   next: string
   playPause: string
   toggleDesktopLyrics: string
+  toggleDesktopLyricsLock: string
 }
 
 export type CloseWindowBehavior = 'quit' | 'tray' | 'miniPlayer'

@@ -308,7 +308,7 @@ test('Electron documents use local CSP, denied permissions, and trusted IPC send
   assert.match(electronSecuritySource, /onHeadersReceived/)
   assert.match(electronSecuritySource, /Content-Security-Policy/)
   assert.match(electronSecuritySource, /default-src 'none'/)
-  assert.match(electronSecuritySource, /script-src \$\{scriptSrc\}/)
+  assert.match(electronSecuritySource, /"script-src 'self'"/)
   assert.match(electronSecuritySource, /Permissions-Policy/)
   assert.match(electronSecuritySource, /frame-src 'self'/)
   assert.match(electronSecuritySource, /isAudioVisualizerDocumentUrl/)

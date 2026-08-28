@@ -12,7 +12,11 @@ import type {
 import { createSleepTimerEventBridge } from './sleepTimerEvents.ts'
 import { dataApi, miniPlayerCoverDataApi } from './domains/dataApi.ts'
 import { audioEngineApi, bindAudioEngineIpcEvents } from './domains/audioEngineApi.ts'
-import { bindDesktopLyricsIpcEvents, desktopLyricsApi } from './domains/desktopLyricsApi.ts'
+import {
+  bindDesktopLyricsIpcEvents,
+  desktopLyricsHostApi,
+  desktopLyricsWindowApi
+} from './domains/desktopLyricsApi.ts'
 import { libraryAndFileSystemApi } from './domains/libraryApi.ts'
 import { mediaSubscriptionsApi } from './domains/mediaSubscriptionsApi.ts'
 import { networkSourcesApi } from './domains/networkSourcesApi.ts'
@@ -36,11 +40,6 @@ bindDesktopLyricsIpcEvents()
 bindThemesIpcEvents()
 
 sleepTimerEvents.bind(ipcRenderer)
-ipcRenderer.on('desktopLyrics:position', (_event, pos: { x: number; y: number }) => {
-  // Forward to a temporary global that the HTML page can read
-  ;(window as unknown as Record<string, unknown>).__dlPos = pos
-})
-
 ipcRenderer.on('miniPlayer:state', (_event, state: MiniPlayerStateSnapshot) => {
   for (const cb of miniPlayerStateCallbacks) cb(state)
 })
@@ -139,7 +138,7 @@ const api = {
   ...systemApi,
   themes: themesApi,
   ...pluginsApi,
-  desktopLyrics: desktopLyricsApi,
+  desktopLyrics: desktopLyricsHostApi,
   miniPlayer: miniPlayerHostApi,
   trayPlayer: trayPlayerWindowApi,
   debug: {
@@ -161,10 +160,10 @@ if (process.contextIsolated) {
 
 function exposedApiForDocument():
   | typeof api
-  | { desktopLyrics: typeof api.desktopLyrics }
+  | { desktopLyrics: typeof desktopLyricsWindowApi }
   | { miniPlayer: typeof miniPlayerWindowApi; data: typeof miniPlayerCoverDataApi }
   | { trayPlayer: typeof trayPlayerWindowApi } {
-  if (isDesktopLyricsDocument()) return { desktopLyrics: api.desktopLyrics }
+  if (isDesktopLyricsDocument()) return { desktopLyrics: desktopLyricsWindowApi }
   if (isMiniPlayerDocument()) {
     return { miniPlayer: miniPlayerWindowApi, data: miniPlayerCoverDataApi }
   }
@@ -174,7 +173,7 @@ function exposedApiForDocument():
 
 function isDesktopLyricsDocument(): boolean {
   try {
-    return window.location.pathname.endsWith('/desktop-lyrics.html')
+    return new URLSearchParams(window.location.search).get('window') === 'desktop-lyrics'
   } catch {
     return false
   }

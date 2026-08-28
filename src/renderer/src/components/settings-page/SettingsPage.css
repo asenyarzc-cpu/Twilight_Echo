@@ -4167,3 +4167,94 @@ html[data-density='comfortable'] .setting-copy {
     justify-content: space-between;
   }
 }
+
+/* ── Desktop lyrics: live preview and preset management ─────────────────── */
+
+/*
+ * The preview hosts the real KaraokeLine component out of the lyrics window, so
+ * this wrapper only has to supply a legible box and let `--dl-*` do the rest.
+ */
+.desktop-lyrics-preview {
+  flex: 1 1 320px;
+  min-width: 0;
+  max-width: 460px;
+  border: 1px solid var(--te-card-border);
+  border-radius: 16px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--te-neutral-900) 88%, transparent),
+      color-mix(in srgb, var(--te-primary-500) 24%, var(--te-neutral-900))
+    ),
+    var(--te-card-bg);
+  overflow: hidden;
+}
+
+.desktop-preset-field {
+  display: grid;
+  flex: 0 0 320px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.desktop-preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.desktop-preset-input {
+  flex: 1 1 120px;
+  min-width: 96px;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--te-card-border);
+  border-radius: 8px;
+  color: var(--te-neutral-900);
+  background: var(--te-card-bg);
+  font-size: 12px;
+}
+
+/* The picker is driven by the 导入 JSON button, never shown on its own. */
+.desktop-preset-file {
+  display: none;
+}
+
+.desktop-preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.desktop-preset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--te-card-border);
+  border-radius: 999px;
+  color: var(--te-neutral-700);
+  background: color-mix(in srgb, var(--te-primary-500) 8%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.desktop-preset-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--te-neutral-500);
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.desktop-preset-remove:hover {
+  color: var(--te-neutral-900);
+  background: color-mix(in srgb, var(--te-neutral-500) 18%, transparent);
+}
