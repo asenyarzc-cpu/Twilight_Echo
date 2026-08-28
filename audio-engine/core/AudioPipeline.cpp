@@ -37,6 +37,8 @@ namespace {
 constexpr size_t kDecodeChunkFrames = 2048;
 constexpr size_t kVisualizationFftResolution = 8192;
 constexpr double kUnityVolumeEpsilon = 0.0001;
+// Below this a gain stage is bit-transparent, so it is not "processing".
+constexpr double kTransparentGainEpsilonDb = 0.0001;
 
 uint64_t doubleBits(double value) noexcept {
   return std::bit_cast<uint64_t>(value);
@@ -340,20 +342,132 @@ bool nativeDsdOutputMatchesRequested(
   return nativeDsdRuntimeFactsMatchRequested(facts, requested);
 }
 
+/**
+ * Whether an equalizer band changes the signal.
+ *
+ * A gain-shaped band at 0 dB is bit-transparent, so an enabled but flat
+ * equalizer is not processing. Filter bands reshape the signal at any gain, so
+ * for those the enable flag alone counts.
+ */
+bool eqBandAltersSignal(const DspEqBand& band) {
+  if (!band.enabled) return false;
+  switch (band.type) {
+    case DspFilterType::Peak:
+    case DspFilterType::LowShelf:
+    case DspFilterType::HighShelf:
+      return std::abs(band.gainDb) > kTransparentGainEpsilonDb;
+    default:
+      return true;
+  }
+}
+
+/**
+ * Whether one enabled graph node would actually change the samples.
+ *
+ * The identity settings mirror the legacy-flag rules below: a flat equalizer, a
+ * ReplayGain stage switched off, a crossfeed at zero strength and a convolver
+ * with no impulse response are all bit-transparent. A scene generated from the
+ * renderer's module toggles enables the node as soon as the toggle is on, so
+ * without this an untouched 10-band EQ still cost a DSD source its passthrough.
+ * Unknown node types count as processing: silence is not the safe default when
+ * the alternative is claiming bit-perfect output that isn't.
+ */
+bool graphNodeAltersSignal(const std::string& type, const std::string& params) {
+  if (type == "meter") return false;
+  if (type == "replayGain" || type == "replaygain") {
+    return json_utils::fieldString(params, "mode").value_or("off") != "off";
+  }
+  if (type == "crossfeed") {
+    return json_utils::fieldNumber(params, "strength").value_or(0.0) > 0.0;
+  }
+  if (type == "convolver") {
+    return !json_utils::fieldString(params, "impulseResponsePath").value_or("").empty();
+  }
+  if (type == "equalizer") {
+    if (std::abs(json_utils::fieldNumber(params, "preampDb").value_or(0.0)) > kTransparentGainEpsilonDb) {
+      return true;
+    }
+    for (const std::string& band : json_utils::splitTopLevelObjects(json_utils::fieldArray(params, "bands"))) {
+      if (!json_utils::fieldBool(band, "enabled").value_or(true)) continue;
+      const std::string filter = json_utils::fieldString(band, "filterType").value_or("peak");
+      if (filter == "peak" || filter == "lowShelf" || filter == "highShelf") {
+        if (std::abs(json_utils::fieldNumber(band, "gain").value_or(0.0)) > kTransparentGainEpsilonDb) return true;
+        continue;
+      }
+      return true;
+    }
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Whether an applied DSP graph state actually processes audio.
+ *
+ * An ApplyDspState payload carries two descriptions of the DSP: the graph that
+ * runs, and the renderer's legacy module toggles. Only the graph runs. A scene
+ * whose equalizer node is disabled still ships `eqEnabled: true`, so reading the
+ * toggle sent every DSD source through a PCM conversion on behalf of a graph
+ * that processes nothing - which is why DSD passthrough looked permanently
+ * broken to anyone who had ever switched the EQ on. `meter` is a read-only
+ * observation tap, and an enabled node left at its identity settings does not
+ * count either - see graphNodeAltersSignal.
+ *
+ * Returns nullopt when the payload carries no graph at all, so config-only
+ * callers keep deciding from the legacy flags.
+ */
+std::optional<bool> graphStateProcessingActive(const std::string& stateJson) {
+  if (stateJson.empty()) return std::nullopt;
+  const std::string graph = json_utils::fieldObject(stateJson, "graph");
+  const std::string root = graph.empty() ? stateJson : graph;
+  const std::string nodes = json_utils::fieldArray(root, "nodes");
+  if (nodes.empty()) return std::nullopt;
+
+  const std::string processing = json_utils::fieldObject(stateJson, "processing");
+  if (!processing.empty() && !json_utils::fieldBool(processing, "dspEnabled").value_or(true)) {
+    return false;
+  }
+
+  for (const std::string& node : json_utils::splitTopLevelObjects(nodes)) {
+    if (!json_utils::fieldBool(node, "enabled").value_or(true)) continue;
+    const std::string type = json_utils::fieldString(node, "type").value_or("");
+    if (graphNodeAltersSignal(type, json_utils::fieldObject(node, "params"))) return true;
+  }
+
+  const std::string outputStage = json_utils::fieldObject(root, "outputStage");
+  if (outputStage.empty()) return false;
+  return json_utils::fieldNumber(outputStage, "targetSampleRate").value_or(0.0) > 0.0 ||
+         json_utils::fieldString(outputStage, "resamplerQuality").value_or("native") != "native" ||
+         json_utils::fieldString(outputStage, "dither").value_or("off") != "off";
+}
+
 bool dspConfigProcessingRequiresPcm(
     const DspConfig& dspConfig,
     const OutputConfig& outputConfig,
     double volume,
-    double playbackRate = 1.0) {
+    double playbackRate = 1.0,
+    std::optional<bool> graphProcessingActive = std::nullopt) {
+  const bool eqAltersSignal =
+      dspConfig.eqEnabled &&
+      (std::abs(dspConfig.eqPreampDb) > kTransparentGainEpsilonDb ||
+       std::any_of(dspConfig.eqBands.begin(), dspConfig.eqBands.end(), eqBandAltersSignal));
+  // Each module is judged by what it would do, not by its enable flag: a flat
+  // equalizer, a convolver with no impulse response and a crossfeed at zero
+  // strength all leave the samples untouched, and treating them as processing
+  // costs a DSD source its passthrough for nothing.
   const bool graphOrLegacyProcessing =
-      dspConfig.replayGainMode != ReplayGainMode::Off || dspConfig.eqEnabled || dspConfig.convolverEnabled ||
-      dspConfig.crossfeedEnabled || dspConfig.channelMatrixEnabled || dspConfig.channelStripEnabled ||
+      dspConfig.replayGainMode != ReplayGainMode::Off || eqAltersSignal ||
+      (dspConfig.convolverEnabled && !dspConfig.impulseResponsePath.empty()) ||
+      (dspConfig.crossfeedEnabled && dspConfig.crossfeedStrength > 0.0) ||
+      dspConfig.channelMatrixEnabled || dspConfig.channelStripEnabled ||
       dspConfig.bassManagementEnabled || dspConfig.gateEnabled || dspConfig.compressorEnabled ||
       dspConfig.dynamicEqEnabled || dspConfig.multibandCompressorEnabled || dspConfig.stereoFieldEnabled ||
       dspConfig.loudnessContourEnabled || dspConfig.truePeakLimiterEnabled ||
       dspConfig.outputTargetSampleRate > 0 || dspConfig.resamplerQuality != DspResamplerQuality::Native ||
       dspConfig.ditherMode != DspDitherMode::Off;
-  return (dspConfig.enabled && graphOrLegacyProcessing) ||
+  // An applied graph outranks the legacy flags; see graphStateProcessingActive.
+  const bool moduleProcessing = graphProcessingActive.value_or(dspConfig.enabled && graphOrLegacyProcessing);
+  return moduleProcessing ||
          dspConfig.crossfadeSeconds > 0.0001 || outputConfig.routingMode != ChannelRoutingMode::Auto ||
          std::abs(volume - 1.0) > kUnityVolumeEpsilon ||
          std::abs(playbackRate - 1.0) > kUnityVolumeEpsilon;
@@ -1567,9 +1681,13 @@ TAE_Result AudioPipeline::playInternal(
 
   const DspConfig requestedDspConfig = DspChain::parseConfigJson(dspConfigJson);
   const DspOutputStageRequest outputStageRequest = outputStageRequestFromGraphJson(dspGraphJson);
+  // The DSD routes are decided against the graph that will run, not the legacy
+  // module toggles that ride along with it.
+  const std::optional<bool> graphProcessingActive = graphStateProcessingActive(dspGraphJson);
   const bool processingRequiresPcm =
       dspConfigProcessingRequiresPcm(
-          requestedDspConfig, outputConfig, requestedPlaybackVolume, requestedPlaybackRate);
+          requestedDspConfig, outputConfig, requestedPlaybackVolume, requestedPlaybackRate,
+          graphProcessingActive);
 
   crossfadeMixActive_ = false;
   crossfadeFramesProcessed_ = 0;
@@ -1635,14 +1753,16 @@ TAE_Result AudioPipeline::playInternal(
                              outputConfig,
                              dsdProbe,
                              requestedPlaybackVolume,
-                             dsdBackendId);
+                             dsdBackendId,
+                             graphProcessingActive);
   const bool canTryNativeDsd =
       allowNativeDsd && shouldAttemptNativeDsdForCurrentConfig(
                             requestedDspConfig,
                             outputConfig,
                             dsdProbe,
                             requestedPlaybackVolume,
-                            dsdBackendId);
+                            dsdBackendId,
+                            graphProcessingActive);
   if (const char* tracePath = std::getenv("TAE_ASIO_TRACE_PATH");
       tracePath != nullptr && tracePath[0] != '\0') {
     if (std::ofstream trace(tracePath, std::ios::app); trace) {
@@ -1654,7 +1774,10 @@ TAE_Result AudioPipeline::playInternal(
             << " routingMode=" << static_cast<int>(outputConfig.routingMode)
             << " processingRequiresPcm="
             << dspConfigProcessingRequiresPcm(
-                   requestedDspConfig, outputConfig, requestedPlaybackVolume, tracePlaybackRate)
+                   requestedDspConfig, outputConfig, requestedPlaybackVolume, tracePlaybackRate,
+                   graphProcessingActive)
+            << " graphProcessingActive="
+            << (graphProcessingActive.has_value() ? (*graphProcessingActive ? "1" : "0") : "unset")
             << " allowNativeDsd=" << allowNativeDsd << " canTryNativeDsd=" << canTryNativeDsd
             << " allowDop=" << allowDop << " canTryDop=" << canTryDop
             << " dsdRate=" << (dsdProbe.has_value() ? dsdProbe->dsdRate : 0)
@@ -1670,7 +1793,8 @@ TAE_Result AudioPipeline::playInternal(
         " mode=" + std::to_string(static_cast<int>(requestedDspConfig.dsdOutputMode)) +
         " rate=" + std::to_string(decisionRate) + " canTryNativeDsd=" +
         (canTryNativeDsd ? "1" : "0") + " canTryDop=" + (canTryDop ? "1" : "0") +
-        " dsdRate=" + std::to_string(dsdRate);
+        " dsdRate=" + std::to_string(dsdRate) + " graphProcessingActive=" +
+        (graphProcessingActive.has_value() ? (*graphProcessingActive ? "1" : "0") : "unset");
     DiagnosticLog::instance().append(
         routeAllowed ? DiagLevel::Info : DiagLevel::Warning, "dsd_route_decision",
         dsdProbeError.empty() ? summary : summary + " probeError=" + dsdProbeError,
@@ -1683,8 +1807,9 @@ TAE_Result AudioPipeline::playInternal(
             ",\"canTryNativeDsd\":" + (canTryNativeDsd ? "true" : "false") +
             ",\"allowDop\":" + (allowDop ? "true" : "false") +
             ",\"canTryDop\":" + (canTryDop ? "true" : "false") +
-            ",\"dsdRate\":" + std::to_string(dsdRate) + ",\"probeError\":\"" +
-            json_utils::escape(dsdProbeError) + "\"}");
+            ",\"dsdRate\":" + std::to_string(dsdRate) + ",\"graphProcessingActive\":" +
+            (graphProcessingActive.has_value() ? (*graphProcessingActive ? "true" : "false") : "null") +
+            ",\"probeError\":\"" + json_utils::escape(dsdProbeError) + "\"}");
   }
 
   std::shared_ptr<DecodeStream> active;
@@ -1747,7 +1872,8 @@ TAE_Result AudioPipeline::playInternal(
       dsdRouteOverrideError = nativeAttemptError;
       nativeAttemptError.clear();
       if (shouldAttemptNativeDsdForCurrentConfig(
-              requestedDspConfig, outputConfig, dsdProbe, requestedPlaybackVolume, backendId)) {
+              requestedDspConfig, outputConfig, dsdProbe, requestedPlaybackVolume, backendId,
+              graphProcessingActive)) {
         tryNativeDsdRoute(backendId, deviceId);
       }
       if (!active && nativeAttemptError.empty()) nativeAttemptError = dsdRouteOverrideError;
@@ -1805,7 +1931,8 @@ TAE_Result AudioPipeline::playInternal(
       const std::string overrideDopError = dopAttemptError;
       dopAttemptError.clear();
       if (shouldAttemptDopForCurrentConfig(
-              requestedDspConfig, outputConfig, dsdProbe, requestedPlaybackVolume, backendId)) {
+              requestedDspConfig, outputConfig, dsdProbe, requestedPlaybackVolume, backendId,
+              graphProcessingActive)) {
         tryDopRoute(backendId, deviceId);
       }
       if (!active && dopAttemptError.empty()) dopAttemptError = overrideDopError;
@@ -2024,7 +2151,8 @@ TAE_Result AudioPipeline::playInternal(
               // report when DoP failed too.
               ? (!dopAttemptError.empty() ? dopAttemptError : nativeAttemptError)
               : forcedDsdFallbackReason,
-          dsdOutputModeRequestsDop(requestedDspConfig.dsdOutputMode));
+          dsdOutputModeRequestsDop(requestedDspConfig.dsdOutputMode),
+          graphProcessingActive);
       if (!dsdProbe.has_value() && !dsdProbeError.empty()) {
         // Without the probe both DSD routes were skipped before any backend was
         // asked, so this is the only record of why passthrough never happened.
@@ -2158,6 +2286,19 @@ TAE_Result AudioPipeline::playInternal(
       // reach the device untouched, so the backend cannot report this on its own.
       outputInfo_.diagnostics.typedRawPath = activeStream_->typedPassthrough;
       outputInfo_.diagnostics.processingBypassed = activeStream_->typedPassthrough;
+      // A hi-rate 24-bit request is wire-identical to a DoP carrier, so a
+      // backend that sniffs the carrier shape labels plain PCM as a DSD
+      // transport. The pipeline owns the truth: this stream has no DSD source.
+      outputInfo_.diagnostics.dsdTransport = "pcm";
+      outputInfo_.diagnostics.semanticSampleRate = outputFormat_.sampleRate;
+      outputInfo_.diagnostics.transportSampleRate = outputFormat_.sampleRate;
+      if (pcmFormatsSemanticallyMatch(activeStream_->stream.sourceFormat, outputFormat_)) {
+        outputInfo_.resampled = false;
+        if (outputInfo_.perfectReasonCode == "dsd_dop") {
+          outputInfo_.perfectReasonCode.clear();
+          outputInfo_.perfectReason.clear();
+        }
+      }
     }
     nativeDsdFallbackFacts_ =
         activeStream_->stream.isDsd && activeStream_->stream.dsdMode != DsdMode::Native &&
@@ -2393,11 +2534,14 @@ bool AudioPipeline::shouldAttemptDopForCurrentConfig(
     const OutputConfig& outputConfig,
     const std::optional<DsdStreamInfo>& dsdProbe,
     double volume,
-    const std::string& backendId) const {
+    const std::string& backendId,
+    std::optional<bool> graphProcessingActive) const {
   if (!dsdProbe.has_value()) return false;
   if (!dsdOutputModeRequestsDop(dspConfig.dsdOutputMode)) return false;
   const double playbackRate = loadAtomicDouble(requestedPlaybackRateBits_);
-  if (dspConfigProcessingRequiresPcm(dspConfig, outputConfig, volume, playbackRate)) return false;
+  if (dspConfigProcessingRequiresPcm(dspConfig, outputConfig, volume, playbackRate, graphProcessingActive)) {
+    return false;
+  }
   if (!backendCanAttemptDop(backendId)) return false;
   return dopCarrierFormatForDsd(dsdProbe->dsdRate, dsdProbe->dsdSampleRate, dsdProbe->channelCount).has_value();
 }
@@ -2407,11 +2551,14 @@ bool AudioPipeline::shouldAttemptNativeDsdForCurrentConfig(
     const OutputConfig& outputConfig,
     const std::optional<DsdStreamInfo>& dsdProbe,
     double volume,
-    const std::string& backendId) const {
+    const std::string& backendId,
+    std::optional<bool> graphProcessingActive) const {
   if (!dsdProbe.has_value()) return false;
   if (!dsdOutputModeRequestsNative(dspConfig.dsdOutputMode)) return false;
   const double playbackRate = loadAtomicDouble(requestedPlaybackRateBits_);
-  if (dspConfigProcessingRequiresPcm(dspConfig, outputConfig, volume, playbackRate)) return false;
+  if (dspConfigProcessingRequiresPcm(dspConfig, outputConfig, volume, playbackRate, graphProcessingActive)) {
+    return false;
+  }
   if (!backendCanAttemptNativeDsd(backendId)) return false;
   return dsdProbe->dsdRate == 64 || dsdProbe->dsdRate == 128 || dsdProbe->dsdRate == 256 ||
          dsdProbe->dsdRate == 512;
@@ -2424,9 +2571,10 @@ std::string AudioPipeline::determineDsdPcmFallbackReason(
     double volume,
     const std::string& backendId,
     const std::string& attemptedDopReason,
-    bool dopModeRequested) const {
+    bool dopModeRequested,
+    std::optional<bool> graphProcessingActive) const {
   const double playbackRate = loadAtomicDouble(requestedPlaybackRateBits_);
-  if (dspConfigProcessingRequiresPcm(dspConfig, outputConfig, volume, playbackRate)) {
+  if (dspConfigProcessingRequiresPcm(dspConfig, outputConfig, volume, playbackRate, graphProcessingActive)) {
     return "DSD processing active; falling back to PCM";
   }
   if (dspConfig.dsdOutputMode == DsdOutputMode::Pcm) return "DSD output mode forced PCM";
@@ -3722,7 +3870,8 @@ bool AudioPipeline::processingForcesDsdPcmFallback() const {
       dspConfig_,
       outputConfig_,
       loadAtomicDouble(requestedVolumeBits_),
-      loadAtomicDouble(requestedPlaybackRateBits_));
+      loadAtomicDouble(requestedPlaybackRateBits_),
+      graphStateProcessingActive(dspGraphJson_));
 }
 
 bool AudioPipeline::needsPcmFallback(std::string* reason) const {
@@ -4226,11 +4375,19 @@ size_t AudioPipeline::renderTyped(PcmBlock& output) {
   const bool nativeDsdPathActive = renderNativeDsdPathActive_.load(std::memory_order_acquire);
   const bool pcmToDsdPathActive = renderPcmToDsdPathActive_.load(std::memory_order_acquire);
   const bool dopPathActive = renderDopPathActive_.load(std::memory_order_acquire);
+  // The only authoritative signal that this stream is a DSD transport. Plain
+  // hi-rate 24-bit PCM is wire-identical to a DoP carrier, so the format alone
+  // cannot decide: marker/idle writes into plain PCM destroy its top byte.
+  const bool dsdTransportActive = dopPathActive || nativeDsdPathActive || pcmToDsdPathActive;
 
   if (state != PipelineState::Playing || !active) {
     if (typedPassthroughActive && output.byteSize > 0) {
       if (isDopCarrierFormat(output.format)) {
-        finalizeDopCarrier(output, 0, &renderDopMarkerIndex_);
+        if (dsdTransportActive) {
+          finalizeDopCarrier(output, 0, &renderDopMarkerIndex_);
+        } else {
+          std::memset(output.data, 0, output.byteSize);
+        }
       } else if (isDsdSampleFormat(output.format.sampleFormat)) {
         fillNativeDsdIdle(output, 0);
       } else {
@@ -4347,7 +4504,6 @@ size_t AudioPipeline::renderTyped(PcmBlock& output) {
       std::memcpy(output.data, pcmToDsdInterleavedBytes_.data(), std::min(copyBytes, output.byteSize));
     }
     finalizeDopCarrier(output, copyFrames, &renderDopMarkerIndex_);
-    (void)dopPathActive;
     recordPerformance();
     return output.frames;
   }
@@ -4361,7 +4517,7 @@ size_t AudioPipeline::renderTyped(PcmBlock& output) {
           ? dsdFormatsExactMatch(active->bufferFormat(), output.format)
           : pcmFormatsExactMatch(active->bufferFormat(), output.format);
   if (!typedPassthroughActive || !outputMatches || !bufferMatches) {
-    if (typedPassthroughActive &&
+    if (typedPassthroughActive && dsdTransportActive &&
         (isDopCarrierFormat(output.format) || isDsdSampleFormat(output.format.sampleFormat))) {
       // Never expose all-zero or PCM fallback bytes at a DSD transport boundary.
       // Even on an unexpected typed-format mismatch, keep the DAC locked to a
@@ -4377,7 +4533,9 @@ size_t AudioPipeline::renderTyped(PcmBlock& output) {
 
   const size_t read = active->read(output);
   if (isDopCarrierFormat(output.format)) {
-    finalizeDopCarrier(output, read, &renderDopMarkerIndex_);
+    if (dsdTransportActive) {
+      finalizeDopCarrier(output, read, &renderDopMarkerIndex_);
+    }
   } else if (isDsdSampleFormat(output.format.sampleFormat) && read < output.frames) {
     fillNativeDsdIdle(output, read);
   }

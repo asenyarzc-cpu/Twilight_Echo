@@ -733,6 +733,7 @@ if(TAE_BUILD_TESTS)
     twilight_channel_router_tests
     twilight_wsola_tests
     twilight_audio_buffer_tests
+    twilight_diagnostic_log_tests
     twilight_native_dsp_plugin_tests
     twilight_metadata_tests
     twilight_bitperfect_tests

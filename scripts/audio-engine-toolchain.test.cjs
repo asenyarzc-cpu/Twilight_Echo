@@ -896,7 +896,7 @@ test('MinGW build runner reuses the preflight environment for builds and tests',
   assert.match(script, /prepareMingwCmakeEnvironment/)
   assert.match(
     script,
-    /const preflight = prepareMingwCmakeEnvironment\(\{ buildDir: layout\.buildDir, env: toolchainEnvironment \}\)/
+    /const preflight = prepareMingwCmakeEnvironment\(\{\s*buildDir: layout\.buildDir,\s*env: toolchainEnvironment\s*\}\)/
   )
   assert.match(script, /if \(!preflight\.ok\) \{[\s\S]*console\.error\(preflight\.message\)/)
   assert.match(
@@ -940,7 +940,7 @@ test('MinGW CTest validation requires every native test registration, including 
     ...cmakeLists.matchAll(/add_test\(\s*NAME\s+(twilight_[a-z0-9_]+)/g)
   ].map((match) => match[1])
 
-  assert.equal(MINGW_EXPECTED_CTESTS.length, 27)
+  assert.equal(MINGW_EXPECTED_CTESTS.length, 28)
   assert.ok(MINGW_EXPECTED_CTESTS.includes('twilight_audio_performance_gate'))
   assert.deepEqual([...MINGW_EXPECTED_CTESTS].sort(), registeredTests.sort())
 })

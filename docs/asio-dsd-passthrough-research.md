@@ -1,6 +1,6 @@
 # ASIO DSD 直通行业调研（2026-08-27）
 
-状态：调研结论与对照分析；含本次已落地的兼容性修复记录（修复①② + §5.3 UTF-8 路径根因修复）。
+状态：调研结论与对照分析；含已落地的兼容性修复记录（修复①② + §5.3 UTF-8 路径根因修复 + §5.6 第三轮四项修复）。
 范围：Windows 原生 DSD ASIO 直通、DoP、各 DAC 品牌驱动生态、foobar2000 生态的稳定性实现方式。
 
 ## 1. 结论
@@ -209,8 +209,10 @@ probe）根本没打开文件。
    部分驱动，并在多客户端设备上重新触发独占格式仲裁，正是 §5.1 FiiO 格式锁的暴露面之一）。
 5. 按驱动名 quirk 表（JUCE 对 Digidesign "动态改缓冲会崩"强制 preferred 的先例），以
    `TAE_ASIO_TRACE_PATH` 遥测积累数据。
-6. JUCE 初始化期"Cubase 舞步"（dummy buffers→start→80ms→stop→dispose；部分设备不跳就打不开）。
-   与已证伪的"预热重试"不同（那是运行期格式切换预热，此为初始化顺序兼容），但同样需真机。
+6. ~~JUCE 初始化期"Cubase 舞步"~~ **已落地**（代码核对 2026-08-28，文档此前漏勾）：`createBuffers`
+   失败 → preferred 重试失败后的最后兜底——dummy 2ch buffers → start → 80ms → stop → dispose →
+   再试真实 createBuffers。仅失败路径触发，健康驱动不付 80ms；`danceInProgress` 标志保证 dummy
+   回调既不进渲染管线也不触发 buffer-failure 事件。
 7. JUCE 用 SEH 包 `CoCreateInstance` 防驱动加载期崩溃（我们由 utilityProcess 进程隔离承担
    同等职责，优先级降低）。
 8. ~~DST 压缩 DFF~~ **已落地**（2026-08-27 第三轮）：`openDff` 接受 FRM8 `'DST '` form 与
@@ -259,15 +261,57 @@ HQPlayer（Miska 本人在 Audiophile Style/Roon 论坛的发言）、JRiver（�
 **新识别的候选（按价值排序）**：
 
 - **切换点可配置过渡**（Audirvana/sacd 2.x 先例）：把现有 DSD idle 字节与 DoP marker 相位基础
-  设施暴露为设置项（静音字节数/过渡时长），覆盖"切换瞬间 plop"的用户反馈面。
-- **预填充启动**（foo_out_asio+dsd v0.4.5 "半满才开播"）：渲染管线在 start 前预填一定深度，
-  吸收启动期抖动；需对照现有 preload 机制评估增量价值。
-- **xrun 风暴时自动加大驱动缓冲**（JRiver "Use large hardware buffers" 的自动版）：连续 xrun
-  时按驱动 maxBufferSize 重开一次，替代用户手调。
+  设施暴露为设置项（静音字节数/过渡时长），覆盖"切换瞬间 plop"的用户反馈面。**未实施**（idle
+  字节 0x69/0x96 与 marker 相位基础设施已就绪，仅差设置面暴露）。
+- ~~**预填充启动**~~ **已覆盖**（代码核对 2026-08-28）：ASIO 后端 start 前 双缓冲组按 DSD idle
+  字节/PCM 静音预填（native DSD 收敛到 §5.6 的探测单位），WASAPI 独占同样有预填充 + DoP 无
+  SILENT 标记提交，管线另有 `waitForPreroll` 启动闸——与 foo_out_asio+dsd v0.4.5 "半满才开播"
+  的核心等价；"可配置预填深度"仍属可选增强。
+- ~~**xrun 风暴时自动加大驱动缓冲**~~ **已按 BufferFailure 形态落地**：`AsioBackend::recover`
+  对缓冲几何类故障的每次重试按 ×4 阶梯放大缓冲并钳到 `maxBufferSize`（JRiver 自动阶梯）；
+  Overload/LatenciesChanged 类 xrun 维持"只计数不重建"（§5.4 已论证重建是自伤）。
 - **控制/渲染线程优先级**（Peter："hack ASIOhost 设实时优先级"）：Windows 下对 ASIO 控制线程
-  尝试 `THREAD_PRIORITY_TIME_CRITICAL`（含降级容错），高负载场景减少断续。
+  尝试 `THREAD_PRIORITY_TIME_CRITICAL`（含降级容错），高负载场景减少断续。**未实施**；WASAPI
+  侧渲染线程已用 MMCSS "Pro Audio"（`AvSetMmThreadCharacteristicsW`），ASIO 实时回调跑在驱动
+  自有线程上，宿主侧可做的主要是控制线程优先级，收益有限。
 - **应用级缓冲默认值审视**：foobar 默认 1s 应用缓冲叠加设备缓冲、JRiver 建议 device buffering
-  ~500ms；对照本项目解码预读深度确认默认值在高负载下的余量。
+  ~500ms；对照本项目解码预读深度确认默认值在高负载下的余量。**未做**（评估类任务）。
+
+### 5.6 第三轮修复（2026-08-28）：载波误判、单位自适应、rate-only 驱动、48k 族速率
+
+本轮为独立代码审查（对照 §2.1 官方 asio.h 注释与 §5.4/§5.5 已收敛点）发现并落地的四项缺陷修复，
+全部有源码断言/纯函数单测入库：
+
+1. **DoP 载波形状误判破坏 24bit 高采样率 PCM（严重）。** `isDopCarrierFormat` 按"速率 + 24bit +
+   int24/int24-in32"形状嗅探，把 176.4k/192k/352.8k/384k/705.6k/768k 的**普通 PCM**也判成 DoP
+   载波。`renderTyped` 据此无条件调用 `finalizeDopCarrier`，把每个样本的最高字节覆写为 0x05/0xFA
+   交替标记——24/192 FLAC 等 typed-passthrough 曲目直接变成超声噪声；停止/失配分支还会把"静音"
+   写成标记字节（DAC 输出蜂鸣而非静音）。WASAPI 协商器同类误判还会把这类 PCM 标注为
+   `dsd_dop` 传输并误报 `resampled`。**修复**：管线以自身 DSD 路由标志
+   （`renderDopPathActive_` / `renderNativeDsdPathActive_` / `renderPcmToDsdPathActive_`）作为
+   标记/空闲字节写入的唯一授权信号（`dsdTransportActive`）；普通 PCM 分支纠偏
+   `dsdTransport`/`semanticSampleRate`/`resampled`/`dsd_dop` 标签。DoP 本身的协商端嗅探保持不变
+   （管线只会为真实 DSD 源请求载波形状，协商结果不受影响）。
+2. **修复②升级：从"检测后失败"到"保守探测 + 确认后自适应"。** 原实现连续 4 个回调命中
+   1-bit 样本节奏才置 `native_dsd_buffer_unit_mismatch` 并降级 PCM——但此时预填充 + 4 个回调
+   已按全尺寸写入，"不继续可能越界的写入"的纪律实际并未达成（Creative heap corruption 案例
+   的写穿发生在检测之前）。**新实现**：Native DSD 的一切写入（预填充、typed 块、空闲填充）从
+   `bufferSize/8` 打包字节组的保守探询单元起步——该单元对"打包字节组"与"1-bit 样本"两种计数
+   都不会越界；节奏确认 ByteFrames 后扩展到全尺寸（主流 Thesycon 类驱动的代价是首 1-2 个回调
+   的部分填充窗口，约 6-12ms），确认 BitSamples 后保持保守单元并把运行时事实备注为
+   adapted（状态保持 Proven，管线不再降级 PCM）。deadline 账目在确认 BitSamples 后按实际
+   单元计算，探测期沿用字节组口径（bit-sample 驱动实际间隔更短，不产生假 underrun）。
+   纯函数状态机 `advanceDsdRenderUnitProbe` 入 `AsioRenderUtils.h` 并单测。
+3. **rate-only 第三协商顺序。** Amanero 时代的 USB 驱动家族从未实现 IoFormat futures，仅凭
+   语义 DSD 采样率切换通道类型；此前这类驱动在 format-first 与 rate-first 双双失败后被永久
+   判为"不支持原生 DSD"。新增第三顺序：仅 `setSampleRate(DSD 速率)`，由 open() 既有的
+   getChannelInfo DSD 类型校验做真实性证明（驱动不理会速率时在那里失败并恢复），失败文案
+   三个顺序齐报。
+4. **WASAPI 协商器补 48k 族原生 DSD 速率。** `dopCarrierRateForSource` 此前只认 44.1k 族原始
+   DSD 速率（2822400/5644800/…），3072000/6144000（48k 族 DSD64/128）返回 0；管线虽预计算
+   载波规避了主路径，但协商器独立收到原始速率时（含失败文案）会误报"无可用 DoP carrier"。
+5. 顺带修复：`native_dsd_typed_callback_missing` 诊断在正常瞬态饥饿（typed 回调返回 0）时被
+   永久置位——现在仅在 typed 路径结构性缺失（会话快照判定）时置位。
 
 ### 后续候选（未实施）
 

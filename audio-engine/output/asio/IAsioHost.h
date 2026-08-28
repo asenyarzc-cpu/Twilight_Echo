@@ -70,6 +70,15 @@ struct AsioDeviceInfo {
   long outputLatencyFrames = 0;
   uint64_t capabilityVersion = 0;
   bool isDefault = false;
+  /**
+   * Whether a driver interrogation actually filled the capability fields.
+   *
+   * The ASIO registry carries identity only, so an unprobed record has
+   * `dopCapable` and `nativeDsdCapable` at their false defaults. Reporting that
+   * as "this driver cannot do DSD" told users their DAC was incapable when
+   * nothing had asked it yet.
+   */
+  bool capabilityProbed = false;
 };
 
 struct AsioOpenConfig {

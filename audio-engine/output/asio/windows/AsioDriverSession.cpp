@@ -224,7 +224,8 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
     requestedIoFormat.formatType = asio_abi::kAsioIoFormatDsd;
     const auto canFormatResult = driver->future(asio_abi::kFutureCanDoIoFormat, &requestedIoFormat);
     traceNativeDsdResult(driver, (std::string(order) + " can-io-format").c_str(), canFormatResult, std::nullopt, &requestedIoFormat);
-    if (!asio_abi::asioErrorIsSuccess(canFormatResult)) {
+    if (!asio_abi::asioErrorIsSuccess(canFormatResult) ||
+        requestedIoFormat.formatType == asio_abi::kAsioIoFormatInvalid) {
       if (error) *error = "ASIO driver rejected Native DSD I/O format";
       return false;
     }
@@ -233,7 +234,8 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
     ioFormatRestoreRequired = true;
     const auto setFormatResult = driver->future(asio_abi::kFutureSetIoFormat, &requestedIoFormat);
     traceNativeDsdResult(driver, (std::string(order) + " set-io-format").c_str(), setFormatResult, std::nullopt, &requestedIoFormat);
-    if (!asio_abi::asioErrorIsSuccess(setFormatResult)) {
+    if (!asio_abi::asioErrorIsSuccess(setFormatResult) ||
+        requestedIoFormat.formatType == asio_abi::kAsioIoFormatInvalid) {
       if (error) *error = "ASIO driver could not switch to Native DSD I/O format";
       return false;
     }
@@ -311,10 +313,24 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
     }
 
     restoreNativeDsdConfiguration();
+
+    // A third driver family never implemented the IoFormat futures at all and
+    // switches its channel sample type to raw DSD purely from the semantic DSD
+    // sample rate (the Amanero-era USB class). Setting the rate alone is safe:
+    // the getChannelInfo DSD-type check later in open() is the actual proof, so
+    // a driver that ignored the rate fails there instead of emitting PCM into
+    // a DSD stream.
+    std::string rateOnlyError;
+    if (selectNativeDsdSemanticRate(driverRate, "rate-only", &rateOnlyError)) {
+      nativeDsdNegotiation = "rate-only";
+      return true;
+    }
+
+    restoreNativeDsdConfiguration();
     nativeDsdNegotiation = "all-orders-failed";
     if (error) {
       *error = "ASIO Native DSD negotiation failed (format-first: " + formatFirstError +
-               "; rate-first: " + rateFirstError + ")";
+               "; rate-first: " + rateFirstError + "; rate-only: " + rateOnlyError + ")";
       if (nativeDsdCanDoReported) {
         // Can-do answered yes while both sets were refused. Field-verified
         // shape of a device held by another audio client — the same driver
@@ -826,6 +842,7 @@ bool AsioDriverSession::probe(AsioDeviceInfo* info, std::string* error) {
 
         if (originalRateKnown) driver->setSampleRate(originalRate);
         driver->Release();
+        outcome.info.capabilityProbed = true;
         outcome.ok = outcome.info.outputChannels > 0 || !outcome.info.supportedSampleRates.empty();
         if (!outcome.ok) outcome.error = "ASIO driver did not report any usable capability";
         return outcome;
