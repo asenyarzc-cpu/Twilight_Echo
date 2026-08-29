@@ -120,6 +120,20 @@ std::string dopBufferSummary(const DopBufferObservation& observation) {
   appendHex(summary, observation.hash);
   return summary;
 }
+
+bool dopMarkersValid(const DopBufferObservation& observation) {
+  return observation.startMarkerValid && observation.invalidMarkers == 0 && observation.channelMarkerMismatches == 0;
+}
+
+std::string dopRuntimeEvidenceSummary(const DopBufferObservation& observation) {
+  if (!observation.observed) return {};
+  std::string text = dopMarkersValid(observation)
+                         ? "DoP marker sequence confirmed in the first rendered buffer ("
+                         : "DoP marker sequence invalid in the first rendered buffer (";
+  text += dopBufferSummary(observation);
+  text += ")";
+  return text;
+}
 #endif
 
 }  // namespace
@@ -1180,13 +1194,38 @@ OutputInfo WasapiExclusiveBackend::outputInfo() const {
 #if defined(_WIN32) && defined(TAE_ENABLE_WASAPI)
   if (impl_->firstDopBufferObservation.observed) {
     info.diagnostics.firstBufferSummary = dopBufferSummary(impl_->firstDopBufferObservation);
+    if (isDopCarrierFormat(impl_->outputFormat)) {
+      info.diagnostics.dopRuntimeEvidence = dopRuntimeEvidenceSummary(impl_->firstDopBufferObservation);
+    }
   }
 #endif
   return info;
 }
 
 DopRuntimeFacts WasapiExclusiveBackend::dopRuntimeFacts() const {
-  return impl_->dopRuntimeFacts;
+#if defined(_WIN32) && defined(TAE_ENABLE_WASAPI)
+  // Fold the render thread's first-buffer marker inspection into the negotiated
+  // facts: IsFormatSupported cannot prove the frames left untouched, and this
+  // observation is exactly the evidence the "DoP unproven" report used to
+  // lack. Invalid markers demote the carrier so the pipeline stops trusting a
+  // corrupting transport, mirroring the ASIO backend's marker verdict.
+  std::lock_guard lock(impl_->infoMutex);
+  DopRuntimeFacts facts = impl_->dopRuntimeFacts;
+  const DopBufferObservation& observation = impl_->firstDopBufferObservation;
+  if (observation.observed && isDopCarrierFormat(impl_->outputFormat)) {
+    if (dopMarkersValid(observation)) {
+      facts.reason = facts.reason.empty()
+                         ? "DoP marker sequence confirmed in the first rendered buffer"
+                         : facts.reason + "; DoP marker sequence confirmed in the first rendered buffer";
+    } else {
+      facts.state = DopRuntimeFactState::Mismatch;
+      facts.reason = "DoP marker sequence was invalid in the first rendered buffer";
+    }
+  }
+  return facts;
+#else
+  return DopRuntimeFacts{};
+#endif
 }
 
 NativeDsdRuntimeFacts WasapiExclusiveBackend::nativeDsdRuntimeFacts() const {

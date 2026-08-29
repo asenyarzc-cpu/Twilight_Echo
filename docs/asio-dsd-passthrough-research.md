@@ -312,6 +312,24 @@ HQPlayer（Miska 本人在 Audiophile Style/Roon 论坛的发言）、JRiver（�
    载波规避了主路径，但协商器独立收到原始速率时（含失败文案）会误报"无可用 DoP carrier"。
 5. 顺带修复：`native_dsd_typed_callback_missing` 诊断在正常瞬态饥饿（typed 回调返回 0）时被
    永久置位——现在仅在 typed 路径结构性缺失（会话快照判定）时置位。
+6. **WASAPI 独占 DoP 被"未能证明直通"误报（2026-08-28 真机诊断包定位，ONIX XI1 + DSD128
+   DSF 案例根因）。** 诊断包证据：`dsd_route_engaged mode=dop rate=352800`、零 underrun、
+   `firstBufferSummary` marker 全部有效（`startMarkerValid=true markerInvalid=0
+channelMarkerMismatch=0`）——**直通实际已成功**，但评估层三处叠加把它判为
+   `dop_passthrough_unproven` + RESAMPLED 徽章：(a) 协商器 `sameSourceFormat` 对一切
+   DoP 载波形状的请求硬编码 `return false`，`resampled=true` 直接进入
+   `dopPassthroughProven = … && !backendResampled`（`updatePerfectLocked`），让 WASAPI
+   独占的 DoP **在任何设备上都不可能被判 output-perfect**；(b) 后端从未把首缓冲 marker
+   实测回填 `dopRuntimeFacts`/`diagnostics.dopRuntimeEvidence`（UI 自己都写着"只是缺少
+   证据"）；(c) `evaluatePerfect` 的 `result.resampled = backendResampled || …` 把错误
+   标志放大成 RESAMPLED 徽章。**修复**：协商器按"接受的候选是否等于该源期望的载波
+   （`dopCarrierRateForSource` 换算）+ int24 载波族"判定 resampled（原始 DSD 速率与载波
+   形状两种请求形态都覆盖）；`dopRuntimeFacts()` 折叠首缓冲 marker 观察（有效 → Proven
+   附证据文案，无效 → 降级 Mismatch，镜像 ASIO 后端的 marker 判定）；`outputInfo()`
+   回填 `diagnostics.dopRuntimeEvidence`。修复后该案例六项条件全部满足，应报告
+   `outputPerfect=true / sourceExact=true`。回归测试
+   `testDopCarrierIsNotReportedAsResampled`（行为）与
+   `testWasapiExclusiveDopRuntimeFactsFoldMarkerEvidence`（断言）入库。
 
 ### 后续候选（未实施）
 

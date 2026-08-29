@@ -509,7 +509,18 @@ std::string WasapiFormatNegotiator::buildFailureReason(
 }
 
 bool WasapiFormatNegotiator::sameSourceFormat(const AudioFormat& sourceFormat, const AudioFormat& outputFormat) const {
-  if (wantsDopCarrier(sourceFormat)) return false;
+  // A DoP carrier request is the pipeline's deliberate transport decision for a
+  // DSD source, not a conversion: this negotiator only ever accepts candidates
+  // at the carrier rate derived from the source, so an accepted candidate is by
+  // definition not a resample. Reporting it as one failed the pipeline's DoP
+  // passthrough proof on every WASAPI exclusive session even while the rendered
+  // markers proved the frames left untouched.
+  if (wantsDopCarrier(sourceFormat)) {
+    const int expectedCarrierRate = dopCarrierRateForSource(sourceFormat);
+    return expectedCarrierRate > 0 && expectedCarrierRate == outputFormat.sampleRate &&
+           sourceFormat.channelCount == outputFormat.channelCount &&
+           effectivePcmBitDepth(outputFormat) == 24 && isDopCarrierSampleFormat(outputFormat.sampleFormat);
+  }
   // int24 -> int24-in-32 only widens the container; every significant bit
   // survives, so negotiating it is not a conversion of the source.
   return sourceFormat.sampleRate == outputFormat.sampleRate &&
