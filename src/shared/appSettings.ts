@@ -106,6 +106,7 @@ export interface DesktopLyricsSettings {
   highlightColor: string
   bgColor: string
   bgOpacity: number
+  showAcrylic: boolean
   align: LyricAlign
   showTranslation: boolean
   /** multi = consecutive lines; bilingual = original + translation for the active line. */

@@ -99,6 +99,7 @@ export const DEFAULT_DESKTOP_LYRICS: DesktopLyricsSettings = {
   highlightColor: '#3b82f6',
   bgColor: '#000000',
   bgOpacity: 30,
+  showAcrylic: true,
   align: 'center',
   showTranslation: true,
   layout: 'bilingual',
@@ -655,6 +656,7 @@ export function normalizeDesktopLyrics(raw: unknown): DesktopLyricsSettings {
         : DEFAULT_DESKTOP_LYRICS.highlightColor,
     bgColor: typeof d.bgColor === 'string' ? d.bgColor : DEFAULT_DESKTOP_LYRICS.bgColor,
     bgOpacity: clampNumber(d.bgOpacity, 0, 100, DEFAULT_DESKTOP_LYRICS.bgOpacity),
+    showAcrylic: d.showAcrylic !== false,
     align: d.align === 'left' ? 'left' : 'center',
     showTranslation: d.showTranslation !== false,
     layout:

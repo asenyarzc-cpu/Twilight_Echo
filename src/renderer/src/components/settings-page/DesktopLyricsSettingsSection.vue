@@ -380,6 +380,23 @@ async function toggleFontMenu(): Promise<void> {
       <hr />
       <div class="setting-item">
         <div class="setting-copy">
+          <strong>选中时显示亚克力 (Acrylic)</strong>
+          <span>点击歌词选中后才显示毛玻璃背景；关闭后选中也只显示歌词和控制条。</span>
+        </div>
+        <span
+          class="toggle-switch"
+          :class="{
+            active: props.desktopLyrics.showAcrylic !== false,
+            inactive: props.desktopLyrics.showAcrylic === false
+          }"
+          role="switch"
+          :aria-checked="props.desktopLyrics.showAcrylic !== false"
+          @click="update('showAcrylic', props.desktopLyrics.showAcrylic === false)"
+        ></span>
+      </div>
+      <hr />
+      <div class="setting-item">
+        <div class="setting-copy">
           <strong>文字阴影 (Text Shadow)</strong>
           <span>为歌词文字添加阴影以提高辨识度。</span>
         </div>
@@ -522,7 +539,7 @@ async function toggleFontMenu(): Promise<void> {
       <div class="setting-item">
         <div class="setting-copy">
           <strong>锁定桌面歌词 (Lock)</strong>
-          <span>开启后点击穿透桌面；把鼠标移到歌词右上角可显示解锁按钮。</span>
+          <span>开启后点击穿透桌面；双击或悬浮歌词约 2 秒后在正中显示小锁，点锁即可解锁编辑。</span>
         </div>
         <span
           class="toggle-switch"

@@ -33,16 +33,38 @@
         align-items: center;
         justify-content: center;
         gap: 4px;
-        transition: background 0.3s ease;
         border-radius: 12px;
         position: relative;
+        background: transparent;
         -webkit-app-region: drag;
+      }
+      #lyrics-container::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: var(--dl-acrylic-bg, transparent);
+        opacity: 0;
+        pointer-events: none;
+        z-index: 0;
+        transition: opacity 0.22s ease;
+      }
+      #lyrics-container.show-acrylic::before {
+        opacity: 1;
+        backdrop-filter: blur(18px) saturate(1.35);
+        -webkit-backdrop-filter: blur(18px) saturate(1.35);
       }
       #lyrics-container.dragging {
         cursor: grabbing;
       }
-      #lyrics-container:not(.dragging) {
+      #lyrics-container:not(.dragging):not(.locked) {
         cursor: grab;
+      }
+      #lyrics-content,
+      #toolbar,
+      #song-info {
+        position: relative;
+        z-index: 1;
       }
 
       #toolbar {
@@ -62,12 +84,51 @@
         z-index: 100;
         -webkit-app-region: no-drag;
       }
-      #lyrics-container:hover #toolbar,
-      #lyrics-container:focus-within #toolbar,
-      #lyrics-container.locked.temp-unlocked #toolbar {
+      #lyrics-container.hovered:not(.locked) #toolbar,
+      #lyrics-container.selected:not(.locked) #toolbar,
+      #lyrics-container:focus-within:not(.locked) #toolbar {
         opacity: 1;
         pointer-events: auto;
         transform: translateY(0);
+      }
+      #lyrics-container.locked #toolbar {
+        top: 50%;
+        left: 50%;
+        right: auto;
+        align-items: center;
+        transform: translate(-50%, calc(-50% - 4px));
+      }
+      #lyrics-container.locked.hovered #toolbar {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translate(-50%, -50%);
+      }
+      #lyrics-container.locked #toolbar .toolbar-surface > :not(#btn-lock),
+      #lyrics-container.locked #color-panel {
+        display: none;
+      }
+      #lyrics-container.locked #toolbar .toolbar-surface {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        padding: 0;
+        min-height: 0;
+        max-width: none;
+      }
+      #lyrics-container.locked #btn-lock {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: rgba(16, 18, 24, 0.55);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+      }
+      #lyrics-container.locked #btn-lock:hover {
+        background: rgba(16, 18, 24, 0.78);
+      }
+      .toolbar-btn.active {
+        background: rgba(255, 255, 255, 0.28);
       }
       .toolbar-surface {
         display: flex;
@@ -329,22 +390,17 @@
         transition: opacity 0.25s ease;
         pointer-events: none;
       }
-      #lyrics-container:hover #song-info {
+      #lyrics-container.hovered:not(.locked) #song-info,
+      #lyrics-container.selected:not(.locked) #song-info {
         opacity: 1;
       }
       #lyrics-container.locked {
         cursor: default;
         -webkit-app-region: no-drag;
       }
-      #lyrics-container.locked #toolbar,
       #lyrics-container.locked #song-info {
         opacity: 0;
         pointer-events: none;
-      }
-      #lyrics-container.locked.temp-unlocked #toolbar,
-      #lyrics-container.locked.temp-unlocked #song-info {
-        opacity: 1;
-        pointer-events: auto;
       }
     </style>
   </head>
@@ -415,6 +471,19 @@
             <option value="center">居中</option>
             <option value="left">靠左</option>
           </select>
+          <button
+            class="toolbar-btn"
+            id="btn-acrylic"
+            title="隐藏亚克力背景"
+            aria-label="隐藏亚克力背景"
+            aria-pressed="true"
+          >
+            <svg viewBox="0 0 24 24">
+              <path
+                d="M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm1 3v8h12V8zm3 2h6v4H9z"
+              />
+            </svg>
+          </button>
           <button class="toolbar-btn" id="btn-lock" title="锁定桌面歌词" aria-label="锁定桌面歌词">
             <svg viewBox="0 0 24 24">
               <path
@@ -480,6 +549,7 @@
         var songInfoEl = document.getElementById('song-info')
         var btnClose = document.getElementById('btn-close')
         var btnLock = document.getElementById('btn-lock')
+        var btnAcrylic = document.getElementById('btn-acrylic')
         var btnFontDecrease = document.getElementById('btn-font-decrease')
         var btnFontIncrease = document.getElementById('btn-font-increase')
         var btnColor = document.getElementById('btn-color')
@@ -808,20 +878,19 @@
           container.style.fontSize = s.fontSize + 'px'
           container.style.fontWeight = String(s.fontWeight)
 
-          var bgAlpha = s.bgOpacity / 100
-          container.style.background =
-            s.bgOpacity > 0 ? hexToRgba(s.bgColor, bgAlpha) : 'transparent'
-
           container.style.textAlign = s.align
           container.style.justifyContent = 'center'
           container.style.alignItems = 'center'
           contentEl.style.alignItems = s.align === 'left' ? 'flex-start' : 'center'
           container.classList.toggle('netease', s.presentation !== 'classic')
-          container.classList.toggle('locked', s.locked === true)
-          container.classList.toggle('temp-unlocked', s.locked === true && tempInteractive)
           container.style.setProperty('--dl-highlight', s.highlightColor)
           btnLock.title = s.locked ? '解锁桌面歌词' : '锁定桌面歌词'
           btnLock.setAttribute('aria-label', btnLock.title)
+          var acrylicOn = s.showAcrylic !== false
+          btnAcrylic.classList.toggle('active', acrylicOn)
+          btnAcrylic.title = acrylicOn ? '隐藏亚克力背景' : '显示亚克力背景'
+          btnAcrylic.setAttribute('aria-label', btnAcrylic.title)
+          btnAcrylic.setAttribute('aria-pressed', acrylicOn ? 'true' : 'false')
           fontSelect.value = s.fontFamily || 'system'
           if (!fontSelect.value) appendInstalledFontOption(s.fontFamily)
           fontSelect.value = s.fontFamily || 'system'
@@ -834,7 +903,7 @@
           opacityBackground.value = String(s.bgOpacity)
           opacityBackgroundValue.textContent = s.bgOpacity + '%'
           document.getElementById('color-swatch').style.background = s.highlightColor
-          updateTempInteraction()
+          syncChrome()
 
           renderLines()
         }
@@ -1160,39 +1229,110 @@
           })
           .catch(function () {})
 
-        var tempInteractive = false
+        var selected = false
+        var hovered = false
+        var pointerOver = false
+        var hoverRevealTimer = null
         var pendingInteractiveValue = false
-        function updateTempInteraction() {
-          if (tempInteractive === pendingInteractiveValue) return
-          pendingInteractiveValue = tempInteractive
-          api.setInteractive(tempInteractive)
+        var HOVER_REVEAL_DELAY_MS = 2000
+
+        function clearHoverRevealTimer() {
+          if (hoverRevealTimer == null) return
+          clearTimeout(hoverRevealTimer)
+          hoverRevealTimer = null
         }
 
-        function shouldShowUnlockAffordance(event) {
-          var rect = toolbar.getBoundingClientRect()
-          return (
-            event.clientX >= rect.left - 12 &&
-            event.clientX <= rect.right + 12 &&
-            event.clientY >= rect.top - 12 &&
-            event.clientY <= rect.bottom + 12
+        function setPointerOver(over) {
+          pointerOver = over === true
+          if (!pointerOver) {
+            clearHoverRevealTimer()
+            hovered = false
+            syncChrome()
+            return
+          }
+          if (!settings || !settings.locked) {
+            clearHoverRevealTimer()
+            hovered = true
+            syncChrome()
+            return
+          }
+          if (hovered) {
+            syncChrome()
+            return
+          }
+          if (hoverRevealTimer != null) return
+          hoverRevealTimer = setTimeout(function () {
+            hoverRevealTimer = null
+            if (!pointerOver || !settings || !settings.locked) return
+            hovered = true
+            syncChrome()
+          }, HOVER_REVEAL_DELAY_MS)
+        }
+
+        function revealLockedChrome() {
+          if (!settings || !settings.locked) return
+          clearHoverRevealTimer()
+          hovered = true
+          syncChrome()
+        }
+
+        function acrylicEnabled() {
+          return !settings || settings.showAcrylic !== false
+        }
+
+        function applyAcrylicBackground() {
+          if (!settings || !container.classList.contains('show-acrylic')) {
+            container.style.setProperty('--dl-acrylic-bg', 'transparent')
+            return
+          }
+          var bgAlpha = settings.bgOpacity / 100
+          container.style.setProperty(
+            '--dl-acrylic-bg',
+            settings.bgOpacity > 0 ? hexToRgba(settings.bgColor, bgAlpha) : 'rgba(16, 18, 24, 0.28)'
           )
         }
 
-        document.addEventListener('pointermove', function (event) {
-          if (!settings || !settings.locked) return
-          var next = shouldShowUnlockAffordance(event)
-          if (next !== tempInteractive) {
-            tempInteractive = next
-            container.classList.toggle('temp-unlocked', next)
-            updateTempInteraction()
+        function syncChrome() {
+          var locked = Boolean(settings && settings.locked)
+          if (locked) selected = false
+          container.classList.toggle('locked', locked)
+          container.classList.toggle('selected', !locked && selected)
+          container.classList.toggle('hovered', hovered)
+          container.classList.toggle('show-acrylic', !locked && selected && acrylicEnabled())
+          applyAcrylicBackground()
+          var wantInteractive = locked ? pointerOver : true
+          if (wantInteractive !== pendingInteractiveValue) {
+            pendingInteractiveValue = wantInteractive
+            api.setInteractive(wantInteractive)
           }
+        }
+
+        document.addEventListener('pointerenter', function () {
+          setPointerOver(true)
         })
         document.addEventListener('pointerleave', function () {
-          if (!settings || !settings.locked || !tempInteractive) return
-          tempInteractive = false
-          container.classList.remove('temp-unlocked')
-          updateTempInteraction()
+          setPointerOver(false)
         })
+        container.addEventListener('pointerdown', function (event) {
+          if (!settings || settings.locked) return
+          if (event.target && event.target.closest && event.target.closest('#toolbar')) return
+          selected = true
+          syncChrome()
+        })
+        container.addEventListener('dblclick', function (event) {
+          if (!settings || !settings.locked) return
+          if (event.target && event.target.closest && event.target.closest('#toolbar')) return
+          revealLockedChrome()
+        })
+        window.addEventListener('blur', function () {
+          selected = false
+          syncChrome()
+        })
+        if (typeof api.onHoverIntent === 'function') {
+          api.onHoverIntent(function (over) {
+            setPointerOver(over === true)
+          })
+        }
 
         // ── IPC via window.api ──
         api.onInitSettings(function (s) {
@@ -1267,15 +1407,17 @@
         document.addEventListener('click', function () {
           setColorPanelOpen(false)
         })
+        btnAcrylic.addEventListener('click', function (event) {
+          event.stopPropagation()
+          if (!settings) return
+          updateSettingsPatch({ showAcrylic: settings.showAcrylic === false })
+        })
         btnLock.addEventListener('click', function () {
           if (!settings) return
           var nextLocked = !settings.locked
+          selected = !nextLocked
+          hovered = true
           updateSettingsPatch({ locked: nextLocked, clickThrough: nextLocked })
-          if (!nextLocked && tempInteractive) {
-            tempInteractive = false
-            container.classList.remove('temp-unlocked')
-            updateTempInteraction()
-          }
         })
       })()
     </script>

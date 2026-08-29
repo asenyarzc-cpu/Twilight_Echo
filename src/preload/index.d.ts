@@ -1243,6 +1243,7 @@ interface WindowAPI {
     onTimeUpdate: (cb: (time: number) => void) => () => void
     onSettingsUpdate: (cb: (settings: DesktopLyricsSettings) => void) => () => void
     onLoadFailed: (cb: (payload: { code: number; description: string }) => void) => () => void
+    onHoverIntent: (cb: (over: boolean) => void) => () => void
     getPosition: () => void
     move: (x: number, y: number) => void
     requestClose: () => void

@@ -9,12 +9,73 @@ import { createSettingsSnapshot, normalizeDesktopLyrics, writeAppSettings } from
 import { assertTrustedIpcSender, shouldAcceptIpcEvent } from '../security/electronSecurity.ts'
 
 let moveSaveTimer: NodeJS.Timeout | null = null
+let hoverWatchTimer: NodeJS.Timeout | null = null
 let temporarilyInteractive = false
+let lastHoverIntent = false
 
 function clearMoveSaveTimer(): void {
   if (!moveSaveTimer) return
   clearTimeout(moveSaveTimer)
   moveSaveTimer = null
+}
+
+function stopLockedHoverWatch(): void {
+  if (!hoverWatchTimer) return
+  clearInterval(hoverWatchTimer)
+  hoverWatchTimer = null
+  lastHoverIntent = false
+}
+
+function sendHoverIntent(over: boolean): void {
+  const win = runtime.desktopLyricsWindow
+  if (!win || win.isDestroyed()) return
+  if (lastHoverIntent === over) return
+  lastHoverIntent = over
+  win.webContents.send('desktopLyrics:hoverIntent', over)
+}
+
+function pollLockedCursor(): void {
+  const win = runtime.desktopLyricsWindow
+  if (!win || win.isDestroyed()) {
+    stopLockedHoverWatch()
+    temporarilyInteractive = false
+    return
+  }
+  if (!runtime.appSettings.desktopLyrics.locked) {
+    if (temporarilyInteractive) {
+      temporarilyInteractive = false
+      applyDesktopLyricsMouseMode()
+    }
+    sendHoverIntent(false)
+    return
+  }
+  const point = screen.getCursorScreenPoint()
+  const bounds = win.getBounds()
+  const over =
+    point.x >= bounds.x &&
+    point.x < bounds.x + bounds.width &&
+    point.y >= bounds.y &&
+    point.y < bounds.y + bounds.height
+  if (over !== temporarilyInteractive) {
+    temporarilyInteractive = over
+    applyDesktopLyricsMouseMode()
+  }
+  sendHoverIntent(over)
+}
+
+function startLockedHoverWatch(): void {
+  if (hoverWatchTimer) return
+  pollLockedCursor()
+  hoverWatchTimer = setInterval(pollLockedCursor, 80)
+}
+
+function syncLockedHoverWatch(): void {
+  const win = runtime.desktopLyricsWindow
+  if (!win || win.isDestroyed() || !runtime.appSettings.desktopLyrics.locked) {
+    stopLockedHoverWatch()
+    return
+  }
+  startLockedHoverWatch()
 }
 
 function persistDesktopLyricsPosition(win: BrowserWindow): void {
@@ -51,6 +112,7 @@ export function syncDesktopLyricsSettings(): void {
   const settings = runtime.appSettings.desktopLyrics
   win.setAlwaysOnTop(settings.alwaysOnTop, 'screen-saver')
   applyDesktopLyricsMouseMode()
+  syncLockedHoverWatch()
   if (
     settings.windowWidth !== win.getBounds().width ||
     settings.windowHeight !== win.getBounds().height
@@ -113,6 +175,7 @@ function createDesktopLyricsWindow(): void {
 
   runtime.desktopLyricsWindow.setAlwaysOnTop(dl.alwaysOnTop, 'screen-saver')
   applyDesktopLyricsMouseMode()
+  syncLockedHoverWatch()
 
   runtime.desktopLyricsWindow.on('ready-to-show', () => {
     runtime.desktopLyricsWindow?.show()
@@ -121,6 +184,7 @@ function createDesktopLyricsWindow(): void {
 
   runtime.desktopLyricsWindow.on('closed', () => {
     clearMoveSaveTimer()
+    stopLockedHoverWatch()
     temporarilyInteractive = false
     runtime.desktopLyricsWindow = null
   })
@@ -169,6 +233,8 @@ export function showDesktopLyrics(): void {
 export function destroyDesktopLyrics(): void {
   const win = runtime.desktopLyricsWindow
   clearMoveSaveTimer()
+  stopLockedHoverWatch()
+  temporarilyInteractive = false
   if (!win || win.isDestroyed()) {
     runtime.desktopLyricsWindow = null
     return

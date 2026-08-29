@@ -9,6 +9,7 @@ const desktopLyricsSettingsUpdateCallbacks = new Set<(settings: DesktopLyricsSet
 const desktopLyricsLoadFailedCallbacks = new Set<
   (payload: { code: number; description: string }) => void
 >()
+const desktopLyricsHoverIntentCallbacks = new Set<(over: boolean) => void>()
 
 export function bindDesktopLyricsIpcEvents(): void {
   ipcRenderer.on('desktopLyrics:toggleChanged', (_event, enabled: boolean) => {
@@ -49,6 +50,12 @@ export function bindDesktopLyricsIpcEvents(): void {
       }
     }
   )
+
+  ipcRenderer.on('desktopLyrics:hoverIntent', (_event, over: boolean) => {
+    for (const cb of desktopLyricsHoverIntentCallbacks) {
+      cb(over === true)
+    }
+  })
 }
 
 export const desktopLyricsApi = {
@@ -91,6 +98,10 @@ export const desktopLyricsApi = {
   onLoadFailed: (cb: (payload: { code: number; description: string }) => void): (() => void) => {
     desktopLyricsLoadFailedCallbacks.add(cb)
     return () => desktopLyricsLoadFailedCallbacks.delete(cb)
+  },
+  onHoverIntent: (cb: (over: boolean) => void): (() => void) => {
+    desktopLyricsHoverIntentCallbacks.add(cb)
+    return () => desktopLyricsHoverIntentCallbacks.delete(cb)
   },
   getPosition: (): void => {
     ipcRenderer.send('desktopLyrics:getPosition')

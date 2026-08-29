@@ -99,10 +99,20 @@ test('desktop lyrics retain legacy click-through state as hover-unlock locking',
   )
 
   assert.match(settings, /locked:\s*\n?\s*typeof d\.locked === 'boolean'/)
+  assert.match(settings, /showAcrylic: d\.showAcrylic !== false/)
   assert.match(source, /applyDesktopLyricsMouseMode/)
   assert.match(source, /setIgnoreMouseEvents\(shouldIgnoreMouseEvents,\s*\{\s*forward:\s*true\s*\}/)
+  assert.match(source, /desktopLyrics:hoverIntent/)
+  assert.match(source, /getCursorScreenPoint/)
   assert.match(renderer, /TwilightDesktopLyricsPresentation\.resolveNetEaseRows/)
   assert.match(renderer, /desktopLyrics:setInteractive|api\.setInteractive/)
+  assert.match(renderer, /id="btn-acrylic"/)
+  assert.match(renderer, /classList\.toggle\('show-acrylic'/)
+  assert.match(renderer, /#lyrics-container\.locked #toolbar \.toolbar-surface > :not\(#btn-lock\)/)
+  assert.match(renderer, /#lyrics-container\.locked #toolbar \{[\s\S]*left:\s*50%/)
+  assert.match(renderer, /transform:\s*translate\(-50%,\s*-50%\)/)
+  assert.match(renderer, /HOVER_REVEAL_DELAY_MS = 2000/)
+  assert.match(renderer, /addEventListener\('dblclick'/)
 })
 
 test('desktop lyrics presentation survives settings normalization after restart', async () => {

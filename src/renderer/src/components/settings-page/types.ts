@@ -650,6 +650,11 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = (
     },
     {
       section: 'desktopLyrics',
+      title: '选中时显示亚克力 (Acrylic)',
+      terms: '亚克力 acrylic 毛玻璃 背景 选中 隐藏 开关'
+    },
+    {
+      section: 'desktopLyrics',
       title: '文字阴影 (Text Shadow)',
       terms: '文字 阴影 shadow 投影 歌词'
     },
@@ -685,8 +690,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = (
     },
     {
       section: 'desktopLyrics',
-      title: '鼠标穿透 (Click Through)',
-      terms: '鼠标 穿透 click through 点击 穿透 窗口'
+      title: '锁定桌面歌词 (Lock)',
+      terms: '锁定 lock 小锁 穿透 click through 双击 悬浮 2秒 解锁'
     },
     {
       section: 'desktopLyrics',
@@ -758,6 +763,7 @@ export const RESET_DESKTOP_LYRICS: DesktopLyricsSettings = {
   highlightColor: '#3b82f6',
   bgColor: '#000000',
   bgOpacity: 30,
+  showAcrylic: true,
   align: 'center',
   showTranslation: true,
   layout: 'bilingual',
