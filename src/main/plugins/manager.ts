@@ -160,6 +160,15 @@ const STATE_FILE = 'plugin-state.json'
 const PLUGIN_ACTIVATE_TIMEOUT_MS = 5000
 const PLUGIN_DEACTIVATE_TIMEOUT_MS = 1500
 const PLUGIN_UI_COMMAND_TIMEOUT_MS = 5000
+// Renderer probes (favorite state, like toggles) against providers that never
+// implemented these methods must degrade to a harmless value instead of
+// feeding the per-plugin RPC circuit breaker.
+const UNSUPPORTED_METHOD_FALLBACK = new Set<TwilightMediaProviderMethod>([
+  'isTrackLiked',
+  'likeTrack',
+  'followArtist',
+  'followUser'
+])
 const INTERNAL_NCM_PLUGIN_ID = 'com.twilightecho.provider.ncm'
 const RESERVED_PROVIDER_IDS = new Set(['local', 'ncm'])
 const PUBLIC_APP_EVENTS = new Set(['app:ready', 'app:before-quit'])
@@ -1376,9 +1385,26 @@ export class TwilightPluginManager extends EventEmitter {
       return
     }
 
+    const isUnsupportedMethod = /^Provider .+ does not implement /i.test(message.error)
+    if (isUnsupportedMethod && UNSUPPORTED_METHOD_FALLBACK.has(metadata.method)) {
+      // A capability probe for a method the provider never implemented is not
+      // a plugin failure. Resolve harmlessly so the renderer degrades
+      // gracefully and the circuit breaker is not tripped by UI polls.
+      const completion = this.rpcCalls.complete<ProviderRpcMetadata>(pluginId, message.requestId, {
+        ok: true,
+        value: metadata.method === 'isTrackLiked' ? false : undefined
+      })
+      if (completion.status !== 'settled') return
+      this.recordProviderCallSuccess(
+        completion.metadata.providerId,
+        completion.metadata.pluginId,
+        completion.metadata.method
+      )
+      return
+    }
+
     const staleBundledProvider =
-      this.isBundledPluginId(metadata.pluginId) &&
-      /^Provider .+ does not implement /i.test(message.error)
+      this.isBundledPluginId(metadata.pluginId) && isUnsupportedMethod
     const error = staleBundledProvider
       ? `${message.error}。内置音源插件尚未加载最新代码，请重启应用。`
       : message.error
