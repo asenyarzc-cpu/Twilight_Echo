@@ -2,12 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   DEFAULT_DESKTOP_LYRICS_SETTINGS,
+  DESKTOP_LYRICS_VERTICAL_WINDOW_SIZE,
   acceptsDesktopLyricsClock,
   desktopLyricsFitScale,
   desktopLyricsLineEnd,
   desktopLyricsWordProgress,
   findDesktopLyricsActiveIndex,
   normalizeDesktopLyricsSettings,
+  resolveDesktopLyricsPaletteColors,
   resolveDesktopLyricsSlots,
   type DesktopLyricsClockSnapshot,
   type DesktopLyricsLine
@@ -35,15 +37,61 @@ test('v3 migration resets appearance while retaining enable and signed position'
   assert.equal(settings.locked, false)
 })
 
-test('v3 settings normalize the curated ranges', () => {
+test('v3 settings normalize orientation-specific window ranges', () => {
   const settings = normalizeDesktopLyricsSettings(
-    { version: 3, fontSize: 99, windowWidth: 10, inactiveOpacity: 5, palette: 'warm' },
+    {
+      version: 3,
+      fontSize: 99,
+      windowWidth: 10,
+      windowHeight: 1200,
+      inactiveOpacity: 5,
+      palette: 'warm',
+      romanizationVisible: true,
+      displayMode: 'single',
+      writingMode: 'vertical',
+      textAlign: 'right',
+      textOutline: false,
+      customInactiveColor: '#234567'
+    },
     { resetLegacy: false }
   )
   assert.equal(settings.fontSize, 64)
-  assert.equal(settings.windowWidth, 480)
+  assert.equal(settings.windowWidth, 160)
+  assert.equal(settings.windowHeight, 960)
   assert.equal(settings.inactiveOpacity, 20)
   assert.equal(settings.palette, 'warm')
+  assert.equal(settings.romanizationVisible, true)
+  assert.equal(settings.displayMode, 'single')
+  assert.equal(settings.writingMode, 'vertical')
+  assert.equal(settings.textAlign, 'right')
+  assert.equal(settings.textOutline, false)
+  assert.equal(settings.customInactiveColor, '#234567')
+  assert.equal(settings.translationVisible, false)
+})
+
+test('vertical desktop lyrics migrate the previous horizontal window geometry', () => {
+  const settings = normalizeDesktopLyricsSettings(
+    { version: 3, writingMode: 'vertical', windowWidth: 960, windowHeight: 196 },
+    { resetLegacy: false }
+  )
+  assert.equal(settings.windowWidth, DESKTOP_LYRICS_VERTICAL_WINDOW_SIZE.width)
+  assert.equal(settings.windowHeight, DESKTOP_LYRICS_VERTICAL_WINDOW_SIZE.height)
+})
+
+test('desktop lyric palette presets and custom colors resolve independently', () => {
+  assert.deepEqual(resolveDesktopLyricsPaletteColors(DEFAULT_DESKTOP_LYRICS_SETTINGS), {
+    active: '#f3a6a6',
+    inactive: '#f4e4df'
+  })
+  assert.deepEqual(
+    resolveDesktopLyricsPaletteColors({
+      ...DEFAULT_DESKTOP_LYRICS_SETTINGS,
+      palette: 'custom',
+      customActiveColor: '#123456',
+      customInactiveColor: '#654321'
+    }),
+    { active: '#123456', inactive: '#654321' }
+  )
 })
 
 test('active lookup and alternating slots never retain a previous line', () => {

@@ -16,6 +16,7 @@ const emit = defineEmits<{
 const paletteOpen = ref(false)
 const palettes: Array<{ id: DesktopLyricsPalette; label: string; color: string }> = [
   { id: 'accent', label: '封面强调色', color: 'var(--dl-accent)' },
+  { id: 'sunset', label: '落日晖', color: '#f3a6a6' },
   { id: 'twilight', label: 'Twilight', color: '#7aa2ff' },
   { id: 'warm', label: '暖白', color: '#ffd27a' },
   { id: 'custom', label: '自定义', color: 'var(--dl-custom)' }

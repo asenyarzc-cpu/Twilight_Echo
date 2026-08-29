@@ -14,6 +14,7 @@ const sessionCallbacks = new Set<(session: DesktopLyricsSession) => void>()
 const clockCallbacks = new Set<(clock: DesktopLyricsClockSnapshot) => void>()
 const settingsCallbacks = new Set<(settings: DesktopLyricsSettingsV3) => void>()
 const freezeCallbacks = new Set<() => void>()
+const hoverIntentCallbacks = new Set<(pointerInside: boolean) => void>()
 
 export function bindDesktopLyricsIpcEvents(): void {
   ipcRenderer.on('desktopLyrics:enabledChanged', (_event, enabled: boolean) => {
@@ -39,6 +40,9 @@ export function bindDesktopLyricsIpcEvents(): void {
   })
   ipcRenderer.on('desktopLyrics:freezeClock', () => {
     for (const callback of freezeCallbacks) callback()
+  })
+  ipcRenderer.on('desktopLyrics:hoverIntent', (_event, pointerInside: boolean) => {
+    for (const callback of hoverIntentCallbacks) callback(pointerInside)
   })
 }
 
@@ -75,6 +79,8 @@ export const desktopLyricsWindowApi = {
     ipcRenderer.invoke('desktopLyrics:updateQuickSettings', patch),
   setLocked: (locked: boolean): Promise<DesktopLyricsSettingsV3> =>
     ipcRenderer.invoke('desktopLyrics:setLocked', locked),
+  setInteractionActive: (active: boolean): Promise<void> =>
+    ipcRenderer.invoke('desktopLyrics:setInteractionActive', active),
   transport: (action: DesktopLyricsTransportAction): void => {
     ipcRenderer.send('desktopLyrics:transport', action)
   },
@@ -105,5 +111,9 @@ export const desktopLyricsWindowApi = {
   onFreezeClock: (callback: () => void): (() => void) => {
     freezeCallbacks.add(callback)
     return () => freezeCallbacks.delete(callback)
+  },
+  onHoverIntent: (callback: (pointerInside: boolean) => void): (() => void) => {
+    hoverIntentCallbacks.add(callback)
+    return () => hoverIntentCallbacks.delete(callback)
   }
 }

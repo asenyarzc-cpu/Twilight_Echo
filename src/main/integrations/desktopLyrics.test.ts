@@ -17,6 +17,8 @@ test('desktop lyrics v3 isolates host and satellite IPC capabilities', async () 
   assert.match(main, /desktopLyrics:bootstrap/)
   assert.match(preload, /desktopLyricsHostApi/)
   assert.match(preload, /desktopLyricsWindowApi/)
+  assert.match(preload, /desktopLyrics:setInteractionActive/)
+  assert.match(preload, /desktopLyrics:hoverIntent/)
   assert.match(entry, /desktopLyrics: desktopLyricsHostApi/)
   assert.match(
     entry,
@@ -32,6 +34,7 @@ test('desktop lyrics validates payload size, shape, ranges, and message order', 
   assert.match(main, /stringifyJsonForIpcStorage\(raw, 'desktop lyrics session'/)
   assert.match(main, /lines\.length <= 10000/)
   assert.match(main, /words\.length <= 512/)
+  assert.match(main, /value\.romanization == null/)
   assert.match(main, /Number\(value\.rate\) >= 0\.5/)
   assert.match(main, /clock\.epoch < current\.epoch/)
   assert.match(main, /clock\.sequence <= current\.sequence/)
@@ -50,13 +53,18 @@ test('desktop lyrics bootstraps before reveal and performs one crash recovery', 
   assert.match(main, /runtime\.desktopLyricsCrashRestarts \+= 1/)
 })
 
-test('desktop lyrics uses constrained manual dragging and real locked click-through', async () => {
+test('desktop lyrics uses constrained dragging and locked hover unlock forwarding', async () => {
   const main = await source('./desktopLyrics.ts')
   const app = await source('../../renderer/src/desktop-lyrics/DesktopLyricsApp.vue')
 
   assert.match(main, /screen\.getDisplayMatching/)
-  assert.match(main, /win\.setIgnoreMouseEvents\(settings\.locked\)/)
-  assert.doesNotMatch(main, /forward:\s*true/)
+  assert.match(
+    main,
+    /const ignoreMouseEvents = settings\.locked && !desktopLyricsInteractionActive/
+  )
+  assert.match(main, /screen\.getCursorScreenPoint\(\)/)
+  assert.match(main, /desktopLyrics:hoverIntent/)
+  assert.match(main, /desktopLyrics:setInteractionActive/)
   assert.match(app, /setPointerCapture/)
   assert.match(app, /api\.moveTo/)
   assert.match(app, /api\.moveEnd/)

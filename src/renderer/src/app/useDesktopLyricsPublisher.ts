@@ -74,10 +74,13 @@ export function useDesktopLyricsPublisher(): void {
       override
     )
     const lines = projectDesktopLyricsLines(
-      buildLyricLines(managed.original, managed.translation, null, {
+      buildLyricLines(managed.original, managed.translation, managed.romanization, {
         replaceTtmlTranslation:
           override?.translationSelection === 'manual' ||
-          (override?.translationSelection == null && override?.source === 'manual')
+          (override?.translationSelection == null && override?.source === 'manual'),
+        replaceTtmlRomanization:
+          override?.romanizationSelection === 'manual' ||
+          (override?.romanizationSelection == null && override?.source === 'manual')
       })
     )
     const loadState = player.lyricsLoadState.value

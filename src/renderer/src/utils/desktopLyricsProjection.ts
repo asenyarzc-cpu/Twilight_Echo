@@ -4,12 +4,14 @@ import type { LyricLine } from './lyrics.ts'
 function lineText(line: LyricLine): {
   text: string
   translation: string | null
+  romanization: string | null
   words: LyricLine['words']
 } {
   const lead = line.voices?.find((voice) => voice.role === 'lead') ?? line.voices?.[0]
   return {
     text: lead?.text ?? line.text,
     translation: lead?.translation?.text ?? line.translation,
+    romanization: lead?.romanization?.text ?? line.romanization,
     words: lead?.words ?? line.words
   }
 }
@@ -49,6 +51,7 @@ export function projectDesktopLyricsLines(lines: readonly LyricLine[]): DesktopL
         endMs,
         text: projected.text.trim(),
         ...(projected.translation?.trim() ? { translation: projected.translation.trim() } : {}),
+        ...(projected.romanization?.trim() ? { romanization: projected.romanization.trim() } : {}),
         ...(words?.length ? { words } : {})
       }
     })

@@ -19,6 +19,11 @@ import { stringifyJsonForIpcStorage } from '../security/ipcValidation.ts'
 
 let destroyingWindow = false
 let resumeBound = false
+let desktopLyricsInteractionActive = false
+let desktopLyricsHoverCheckTimer: ReturnType<typeof setInterval> | null = null
+let desktopLyricsPointerInside = false
+
+const DESKTOP_LYRICS_HOVER_CHECK_INTERVAL_MS = 120
 
 function isMainSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
   return Boolean(
@@ -94,7 +99,9 @@ function applyWindowSettings(): void {
   if (!win || win.isDestroyed()) return
   const settings = runtime.appSettings.desktopLyrics
   win.setAlwaysOnTop(settings.alwaysOnTop, 'screen-saver')
-  win.setIgnoreMouseEvents(settings.locked)
+  const ignoreMouseEvents = settings.locked && !desktopLyricsInteractionActive
+  win.setIgnoreMouseEvents(ignoreMouseEvents, { forward: ignoreMouseEvents })
+  syncDesktopLyricsHoverTracking()
   const bounds = win.getBounds()
   if (bounds.width !== settings.windowWidth || bounds.height !== settings.windowHeight) {
     win.setSize(settings.windowWidth, settings.windowHeight)
@@ -120,6 +127,72 @@ function notifySettingsChanged(): void {
   runtime.refreshTrayMenu?.(true)
 }
 
+function publishDesktopLyricsHoverIntent(pointerInside: boolean): void {
+  runtime.desktopLyricsWindow?.webContents.send('desktopLyrics:hoverIntent', pointerInside)
+}
+
+function clearDesktopLyricsHoverTracking(): void {
+  if (desktopLyricsHoverCheckTimer != null) {
+    clearInterval(desktopLyricsHoverCheckTimer)
+    desktopLyricsHoverCheckTimer = null
+  }
+  if (!desktopLyricsPointerInside) return
+  desktopLyricsPointerInside = false
+  publishDesktopLyricsHoverIntent(false)
+}
+
+function refreshDesktopLyricsHoverIntent(): void {
+  const win = runtime.desktopLyricsWindow
+  if (
+    !win ||
+    win.isDestroyed() ||
+    !win.isVisible() ||
+    !runtime.appSettings.desktopLyrics.locked ||
+    desktopLyricsInteractionActive
+  ) {
+    clearDesktopLyricsHoverTracking()
+    return
+  }
+  const bounds = win.getBounds()
+  const point = screen.getCursorScreenPoint()
+  const pointerInside =
+    point.x >= bounds.x &&
+    point.x < bounds.x + bounds.width &&
+    point.y >= bounds.y &&
+    point.y < bounds.y + bounds.height
+  if (pointerInside === desktopLyricsPointerInside) return
+  desktopLyricsPointerInside = pointerInside
+  publishDesktopLyricsHoverIntent(pointerInside)
+}
+
+function syncDesktopLyricsHoverTracking(): void {
+  const win = runtime.desktopLyricsWindow
+  const shouldTrack = Boolean(
+    win &&
+    !win.isDestroyed() &&
+    win.isVisible() &&
+    runtime.appSettings.desktopLyrics.locked &&
+    !desktopLyricsInteractionActive
+  )
+  if (!shouldTrack) {
+    if (desktopLyricsInteractionActive) {
+      if (desktopLyricsHoverCheckTimer != null) {
+        clearInterval(desktopLyricsHoverCheckTimer)
+        desktopLyricsHoverCheckTimer = null
+      }
+      return
+    }
+    clearDesktopLyricsHoverTracking()
+    return
+  }
+  refreshDesktopLyricsHoverIntent()
+  if (desktopLyricsHoverCheckTimer != null) return
+  desktopLyricsHoverCheckTimer = setInterval(
+    refreshDesktopLyricsHoverIntent,
+    DESKTOP_LYRICS_HOVER_CHECK_INTERVAL_MS
+  )
+}
+
 export function syncDesktopLyricsSettings(): void {
   notifySettingsChanged()
 }
@@ -127,6 +200,7 @@ export function syncDesktopLyricsSettings(): void {
 function updateDesktopLyricsSettings(
   patch: Partial<DesktopLyricsSettingsV3>
 ): DesktopLyricsSettingsV3 {
+  if ('locked' in patch) desktopLyricsInteractionActive = false
   runtime.appSettings.desktopLyrics = normalizeDesktopLyricsSettings(
     { ...runtime.appSettings.desktopLyrics, ...patch, version: 3 },
     { resetLegacy: false }
@@ -134,6 +208,11 @@ function updateDesktopLyricsSettings(
   writeAppSettings(runtime.appSettings)
   notifySettingsChanged()
   return getEffectiveDesktopLyricsSettings()
+}
+
+function setDesktopLyricsInteractionActive(active: boolean): void {
+  desktopLyricsInteractionActive = active && runtime.appSettings.desktopLyrics.locked
+  applyWindowSettings()
 }
 
 function clampToCurrentDisplay(win: BrowserWindow, x: number, y: number): { x: number; y: number } {
@@ -169,6 +248,8 @@ function validLine(raw: unknown): raw is DesktopLyricsLine {
     value.text.length <= 4096 &&
     (value.translation == null ||
       (typeof value.translation === 'string' && value.translation.length <= 4096)) &&
+    (value.romanization == null ||
+      (typeof value.romanization === 'string' && value.romanization.length <= 4096)) &&
     (value.startMs == null || Number.isFinite(value.startMs)) &&
     (value.endMs == null || Number.isFinite(value.endMs)) &&
     (words == null ||
@@ -255,7 +336,7 @@ function validQuickSettingsPatch(raw: unknown): raw is Partial<DesktopLyricsSett
     return false
   if (
     'palette' in value &&
-    !['accent', 'twilight', 'warm', 'custom'].includes(String(value.palette))
+    !['accent', 'sunset', 'twilight', 'warm', 'custom'].includes(String(value.palette))
   )
     return false
   if (
@@ -325,7 +406,10 @@ function createDesktopLyricsWindow(): void {
     }, 250)
   })
   win.on('closed', () => {
-    if (runtime.desktopLyricsWindow === win) runtime.desktopLyricsWindow = null
+    if (runtime.desktopLyricsWindow !== win) return
+    runtime.desktopLyricsWindow = null
+    desktopLyricsInteractionActive = false
+    clearDesktopLyricsHoverTracking()
   })
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     const rendererUrl = new URL(process.env['ELECTRON_RENDERER_URL'])
@@ -344,6 +428,7 @@ export function showDesktopLyrics(): void {
     return
   }
   runtime.desktopLyricsWindow.showInactive()
+  syncDesktopLyricsHoverTracking()
 }
 
 export function destroyDesktopLyrics(): void {
@@ -355,6 +440,8 @@ export function destroyDesktopLyrics(): void {
   destroyingWindow = true
   persistDesktopLyricsPosition(win)
   runtime.desktopLyricsWindow = null
+  desktopLyricsInteractionActive = false
+  clearDesktopLyricsHoverTracking()
   win.destroy()
   destroyingWindow = false
 }
@@ -425,6 +512,13 @@ export function setupDesktopLyricsIpc(): void {
     return updateDesktopLyricsSettings({ locked: locked === true })
   })
 
+  ipcMain.handle('desktopLyrics:setInteractionActive', (event, active: unknown) => {
+    assertTrustedIpcSender(event, 'desktop lyrics IPC')
+    if (!isDesktopLyricsSender(event)) throw new Error('desktop lyrics interaction rejected')
+    if (typeof active !== 'boolean') throw new Error('invalid desktop lyrics interaction state')
+    setDesktopLyricsInteractionActive(active)
+  })
+
   ipcMain.on('desktopLyrics:publishSession', (event, session: unknown) => {
     if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC') || !isMainSender(event)) return
     if (!validSession(session)) return
@@ -482,6 +576,8 @@ export function setupDesktopLyricsIpc(): void {
   ipcMain.on('desktopLyrics:ready', (event) => {
     if (!shouldAcceptIpcEvent(event, 'desktop lyrics IPC') || !isDesktopLyricsSender(event)) return
     runtime.desktopLyricsWindow?.showInactive()
+    syncDesktopLyricsHoverTracking()
+    publishDesktopLyricsHoverIntent(desktopLyricsPointerInside)
   })
 
   ipcMain.on('desktopLyrics:close', (event) => {

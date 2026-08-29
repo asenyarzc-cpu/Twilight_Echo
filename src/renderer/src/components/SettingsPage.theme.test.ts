@@ -15,6 +15,53 @@ const liquidGlassSettingsSource = readFileSync(
   new URL('./settings-page/LiquidGlassSettings.vue', import.meta.url),
   'utf8'
 )
+const desktopLyricsSettingsSource = readFileSync(
+  new URL('./settings-page/DesktopLyricsSettingsSection.vue', import.meta.url),
+  'utf8'
+)
+
+test('desktop lyrics is a navigable settings card', () => {
+  assert.match(
+    desktopLyricsSettingsSource,
+    /<section\s+id="desktopLyrics"\s+class="glass-card preview-section settings-section">/
+  )
+  for (const label of [
+    '启用桌面歌词',
+    '启用歌词总在最前',
+    '外文歌词显示翻译',
+    '外文歌词显示音译',
+    '描边',
+    '双行显示',
+    '横排显示',
+    '居中',
+    '落日晖',
+    '已播放',
+    '未播放'
+  ]) {
+    assert.match(desktopLyricsSettingsSource, new RegExp(label))
+  }
+  assert.match(
+    desktopLyricsSettingsSource,
+    /let pendingPatch: Partial<DesktopLyricsSettings> = \{\}/
+  )
+  assert.match(desktopLyricsSettingsSource, /Object\.assign\(pendingPatch, patch\)/)
+  assert.match(desktopLyricsSettingsSource, /function flushPendingPatch\(\): void/)
+})
+
+test('vertical desktop lyric previews use a compact content-sized board', () => {
+  assert.match(
+    desktopLyricsSettingsSource,
+    /\.lyrics-preview\.is-vertical \{[\s\S]*?width: fit-content;[\s\S]*?min-height: 0;[\s\S]*?grid-template-columns: repeat\(2, max-content\);[\s\S]*?gap: min\(var\(--preview-gap\), 10px\);/
+  )
+  assert.match(
+    desktopLyricsSettingsSource,
+    /\.lyrics-preview\.is-single\.is-vertical \{\s*grid-template-columns: max-content;/
+  )
+  assert.match(
+    desktopLyricsSettingsSource,
+    /\.lyrics-preview\.is-vertical \.preview-line span \{\s*max-inline-size: 360px;/
+  )
+})
 
 test('settings option bars define dark-mode container and active option surfaces', () => {
   assert.match(

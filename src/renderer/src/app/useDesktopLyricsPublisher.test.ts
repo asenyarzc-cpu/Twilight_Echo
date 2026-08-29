@@ -8,7 +8,7 @@ test('publisher converts the canonical timeline without carrying raw lyric forma
       time: 1,
       text: 'Hello',
       translation: '你好',
-      romanization: null,
+      romanization: 'Hāi',
       timed: true,
       words: [
         { text: 'Hel', time: 1, endTime: 1.4 },
@@ -23,6 +23,7 @@ test('publisher converts the canonical timeline without carrying raw lyric forma
     endMs: 2000,
     text: 'Hello',
     translation: '你好',
+    romanization: 'Hāi',
     words: [
       { text: 'Hel', startMs: 1000, endMs: 1400 },
       { text: 'lo', startMs: 1400, endMs: 2000 }

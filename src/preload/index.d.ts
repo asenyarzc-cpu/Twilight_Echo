@@ -1220,6 +1220,7 @@ interface WindowAPI {
       patch: Partial<DesktopLyricsSettingsV3>
     ) => Promise<DesktopLyricsSettingsV3>
     setLocked: (locked: boolean) => Promise<DesktopLyricsSettingsV3>
+    setInteractionActive: (active: boolean) => Promise<void>
     transport: (action: DesktopLyricsTransportAction) => void
     moveTo: (x: number, y: number) => void
     moveEnd: () => void
@@ -1229,6 +1230,7 @@ interface WindowAPI {
     onClockChanged: (cb: (clock: DesktopLyricsClockSnapshot) => void) => () => void
     onSettingsChanged: (cb: (settings: DesktopLyricsSettingsV3) => void) => () => void
     onFreezeClock: (cb: () => void) => () => void
+    onHoverIntent: (cb: (pointerInside: boolean) => void) => () => void
   }
   miniPlayer: {
     open: () => Promise<MiniPlayerSettings>

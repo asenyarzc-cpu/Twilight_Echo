@@ -3,10 +3,14 @@ import type { MotionPreference } from './motion.ts'
 export const DESKTOP_LYRICS_SETTINGS_VERSION = 3
 export const DESKTOP_LYRICS_MAX_CONTENT_BYTES = 1024 * 1024
 export const DESKTOP_LYRICS_CLOCK_INTERVAL_MS = 250
+export const DESKTOP_LYRICS_VERTICAL_WINDOW_SIZE = { width: 176, height: 610 } as const
 
 export type DesktopLyricsStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
 export type DesktopLyricsTransportState = 'idle' | 'loading' | 'playing' | 'paused'
-export type DesktopLyricsPalette = 'accent' | 'twilight' | 'warm' | 'custom'
+export type DesktopLyricsPalette = 'accent' | 'sunset' | 'twilight' | 'warm' | 'custom'
+export type DesktopLyricsDisplayMode = 'single' | 'double'
+export type DesktopLyricsWritingMode = 'horizontal' | 'vertical'
+export type DesktopLyricsTextAlign = 'left' | 'center' | 'right'
 export type DesktopLyricsTransportAction = 'previous' | 'playPause' | 'next'
 
 export interface DesktopLyricsWord {
@@ -21,6 +25,7 @@ export interface DesktopLyricsLine {
   endMs: number | null
   text: string
   translation?: string
+  romanization?: string
   words?: DesktopLyricsWord[]
 }
 
@@ -60,8 +65,14 @@ export interface DesktopLyricsSettingsV3 {
   lineGap: number
   palette: DesktopLyricsPalette
   customActiveColor: string
+  customInactiveColor: string
   inactiveOpacity: number
   translationVisible: boolean
+  romanizationVisible: boolean
+  displayMode: DesktopLyricsDisplayMode
+  writingMode: DesktopLyricsWritingMode
+  textAlign: DesktopLyricsTextAlign
+  textOutline: boolean
   backgroundOpacity: number
   shadowStrength: number
   motionIntensity: number
@@ -94,14 +105,20 @@ export const DEFAULT_DESKTOP_LYRICS_SETTINGS: DesktopLyricsSettingsV3 = {
   windowY: -1,
   alwaysOnTop: true,
   locked: false,
-  fontFamily: 'follow',
-  fontSize: 34,
-  fontWeight: 700,
+  fontFamily: 'MiSans',
+  fontSize: 36,
+  fontWeight: 400,
   lineGap: 12,
-  palette: 'accent',
-  customActiveColor: '#7aa2ff',
+  palette: 'sunset',
+  customActiveColor: '#f3a6a6',
+  customInactiveColor: '#f4e4df',
   inactiveOpacity: 48,
-  translationVisible: true,
+  translationVisible: false,
+  romanizationVisible: false,
+  displayMode: 'double',
+  writingMode: 'horizontal',
+  textAlign: 'center',
+  textOutline: true,
   backgroundOpacity: 0,
   shadowStrength: 55,
   motionIntensity: 70,
@@ -110,6 +127,12 @@ export const DEFAULT_DESKTOP_LYRICS_SETTINGS: DesktopLyricsSettingsV3 = {
 }
 
 const COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+
+export const DESKTOP_LYRICS_PALETTE_COLORS = {
+  sunset: { active: '#f3a6a6', inactive: '#f4e4df' },
+  twilight: { active: '#9b8cff', inactive: '#ddd7ff' },
+  warm: { active: '#fff1d6', inactive: '#fff7e8' }
+} as const
 
 function record(raw: unknown): Record<string, unknown> {
   return typeof raw === 'object' && raw !== null && !Array.isArray(raw)
@@ -126,6 +149,27 @@ function color(raw: unknown, fallback: string): string {
   return typeof raw === 'string' && COLOR_RE.test(raw.trim()) ? raw.trim().toLowerCase() : fallback
 }
 
+export function resolveDesktopLyricsPaletteColors(
+  settings: Pick<
+    DesktopLyricsSettingsV3,
+    'palette' | 'customActiveColor' | 'customInactiveColor' | 'accentColor'
+  >
+): { active: string; inactive: string } {
+  if (settings.palette === 'custom') {
+    return {
+      active: settings.customActiveColor,
+      inactive: settings.customInactiveColor
+    }
+  }
+  if (settings.palette === 'accent') {
+    return {
+      active: settings.accentColor || '#7aa2ff',
+      inactive: '#ffffff'
+    }
+  }
+  return DESKTOP_LYRICS_PALETTE_COLORS[settings.palette]
+}
+
 export function normalizeDesktopLyricsSettings(
   raw: unknown,
   options: { resetLegacy?: boolean } = {}
@@ -138,14 +182,30 @@ export function normalizeDesktopLyricsSettings(
     typeof source.fontFamily === 'string' && source.fontFamily.trim()
       ? source.fontFamily.trim().slice(0, 64)
       : defaults.fontFamily
-  const palette = ['accent', 'twilight', 'warm', 'custom'].includes(String(source.palette))
+  const palette = ['accent', 'sunset', 'twilight', 'warm', 'custom'].includes(
+    String(source.palette)
+  )
     ? (source.palette as DesktopLyricsPalette)
     : defaults.palette
+  const writingMode = source.writingMode === 'vertical' ? 'vertical' : defaults.writingMode
+  const vertical = writingMode === 'vertical'
+  const verticalWindowWasHorizontal =
+    vertical && Number(source.windowWidth) >= 480 && Number(source.windowHeight) <= 320
   return {
     version: DESKTOP_LYRICS_SETTINGS_VERSION,
     enabled: value.enabled === true,
-    windowWidth: clamp(source.windowWidth, 480, 1920, defaults.windowWidth),
-    windowHeight: clamp(source.windowHeight, 140, 320, defaults.windowHeight),
+    windowWidth: clamp(
+      verticalWindowWasHorizontal ? undefined : source.windowWidth,
+      vertical ? 160 : 480,
+      vertical ? 480 : 1920,
+      vertical ? DESKTOP_LYRICS_VERTICAL_WINDOW_SIZE.width : defaults.windowWidth
+    ),
+    windowHeight: clamp(
+      verticalWindowWasHorizontal ? undefined : source.windowHeight,
+      vertical ? 360 : 140,
+      vertical ? 960 : 320,
+      vertical ? DESKTOP_LYRICS_VERTICAL_WINDOW_SIZE.height : defaults.windowHeight
+    ),
     windowX: Number.isFinite(value.windowX) ? Number(value.windowX) : defaults.windowX,
     windowY: Number.isFinite(value.windowY) ? Number(value.windowY) : defaults.windowY,
     alwaysOnTop: source.alwaysOnTop !== false,
@@ -156,8 +216,19 @@ export function normalizeDesktopLyricsSettings(
     lineGap: clamp(source.lineGap, 0, 24, defaults.lineGap),
     palette,
     customActiveColor: color(source.customActiveColor, defaults.customActiveColor),
+    customInactiveColor: color(source.customInactiveColor, defaults.customInactiveColor),
     inactiveOpacity: clamp(source.inactiveOpacity, 20, 80, defaults.inactiveOpacity),
-    translationVisible: source.translationVisible !== false,
+    translationVisible:
+      typeof source.translationVisible === 'boolean'
+        ? source.translationVisible
+        : defaults.translationVisible,
+    romanizationVisible: source.romanizationVisible === true,
+    displayMode: source.displayMode === 'single' ? 'single' : defaults.displayMode,
+    writingMode,
+    textAlign: ['left', 'center', 'right'].includes(String(source.textAlign))
+      ? (source.textAlign as DesktopLyricsTextAlign)
+      : defaults.textAlign,
+    textOutline: source.textOutline !== false,
     backgroundOpacity: clamp(source.backgroundOpacity, 0, 60, defaults.backgroundOpacity),
     shadowStrength: clamp(source.shadowStrength, 0, 100, defaults.shadowStrength),
     motionIntensity: clamp(source.motionIntensity, 0, 100, defaults.motionIntensity),

@@ -43,7 +43,7 @@ test('first-use appearance defaults to blue accents and desktop lyrics v3', () =
   )
   assert.match(desktopLyricsSource, /windowWidth: 960/)
   assert.match(desktopLyricsSource, /windowHeight: 196/)
-  assert.match(desktopLyricsSource, /translationVisible: true/)
+  assert.match(desktopLyricsSource, /translationVisible: false/)
 })
 
 test('settings chrome no longer dual-writes theme-owned CSS variables', () => {
