@@ -1403,8 +1403,7 @@ export class TwilightPluginManager extends EventEmitter {
       return
     }
 
-    const staleBundledProvider =
-      this.isBundledPluginId(metadata.pluginId) && isUnsupportedMethod
+    const staleBundledProvider = this.isBundledPluginId(metadata.pluginId) && isUnsupportedMethod
     const error = staleBundledProvider
       ? `${message.error}。内置音源插件尚未加载最新代码，请重启应用。`
       : message.error
