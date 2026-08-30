@@ -19,11 +19,11 @@ test('hidden documents pause iframe animation frames and QR polling', () => {
   assert.match(visibilityController, /if \(isHidden\(\)\) stop\(\)\s*else resume\(\)/)
   assert.match(
     iframe,
-    /window\.createVisibilityAnimationController\(\s*\(\) => document\.hidden,\s*\(\) => \{ stopSpectrumLoop\(\); stopPlayheadLoop\(\); \},\s*\(\) => \{ if \(isPlaying\) \{ startSpectrumLoop\(\); startPlayheadLoop\(\); \} \}\s*\)/
+    /window\.createVisibilityAnimationController\(\s*\(\) => document\.hidden,\s*\(\) => \{\s*stopSpectrumLoop\(\);?\s*stopPlayheadLoop\(\);?\s*\},\s*\(\) => \{\s*if \(isPlaying\) \{\s*startSpectrumLoop\(\);?\s*startPlayheadLoop\(\);?\s*\}\s*\}\s*\)/
   )
   assert.match(
     iframe,
-    /document\.addEventListener\('visibilitychange', \(\) => visibilityAnimationController\.onVisibilityChange\(\)\)/
+    /document\.addEventListener\('visibilitychange', \(\) =>\s*visibilityAnimationController\.onVisibilityChange\(\)\s*\)/
   )
   assert.match(login, /if \(document\.hidden\) return/)
   assert.match(
