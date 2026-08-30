@@ -241,7 +241,11 @@ VST3 helper executables are optional and are stripped and checked only when a re
 `strip --strip-all` only on the copied package payload at
 `win-unpacked/resources/audio-engine`; they never alter `resources/audio-engine` in the source tree.
 Set `W64DEVKIT_ROOT` or `TWILIGHT_RELEASE_STRIP` so the packaging wrapper can locate `strip.exe`.
-The release gate deliberately fails when the strip tool is absent. It does not create or simulate a
+The release gate deliberately fails when the strip tool is absent. GNU binutils >= 2.46
+zeroes the COFF symbol count but leaves `PointerToSymbolTable` pointing past the stripped
+image, so afterPack normalizes that header field to zero once the symbol table itself is
+gone; the artifact verifier still requires both fields to read zero and fails on any
+surviving symbol table. It does not create or simulate a
 signature, and release notes must disclose that Windows may show SmartScreen warnings.
 Current budgets are 192 MiB for the audio DLL, 16 MiB for the Node addon, 32 MiB for each VST3 host
 executable when staged, 64 MiB for any other shipped native DLL/EXE/NODE, and 384 MiB for the installer.

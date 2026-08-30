@@ -61,7 +61,7 @@ function peLayout(buffer) {
   const sectionTableOffset = optionalOffset + optionalHeaderSize
   assert.ok(debugEntryOffset + 8 <= sectionTableOffset, 'Invalid PE data directory')
   assert.ok(sectionTableOffset + sectionCount * 40 <= buffer.length, 'Invalid PE section table')
-  return { debugEntryOffset, sectionCount, sectionTableOffset }
+  return { coffOffset, debugEntryOffset, sectionCount, sectionTableOffset }
 }
 
 function peRvaToOffset(buffer, rva, layout) {
@@ -112,10 +112,28 @@ function clearPeDebugDirectory(filePath, dependencies = {}) {
   return true
 }
 
+// GNU binutils >= 2.46 zeroes the COFF symbol count but leaves
+// PointerToSymbolTable pointing past the stripped image. The release artifact
+// contract requires both header fields to read zero, so normalize the pointer
+// once strip removed the table itself; a table that is still present keeps a
+// non-zero count and still fails verify-release-artifacts.
+function clearPeSymbolTablePointer(filePath, dependencies = {}) {
+  const read = dependencies.read || fs.readFileSync
+  const write = dependencies.write || fs.writeFileSync
+  const buffer = Buffer.from(read(filePath))
+  const layout = peLayout(buffer)
+  if (buffer.readUInt32LE(layout.coffOffset + 12) !== 0) return false
+  if (buffer.readUInt32LE(layout.coffOffset + 8) === 0) return false
+  buffer.writeUInt32LE(0, layout.coffOffset + 8)
+  write(filePath, buffer)
+  return true
+}
+
 function stripNativeArtifacts(nativeDir, dependencies = {}) {
   const exists = dependencies.exists || fs.existsSync
   const run = dependencies.run || spawnSync
   const clearDebugDirectory = dependencies.clearDebugDirectory || clearPeDebugDirectory
+  const clearSymbolTablePointer = dependencies.clearSymbolTablePointer || clearPeSymbolTablePointer
   const stripCommand =
     dependencies.stripCommand || resolveStripCommand(dependencies.environment, exists)
   const stripped = []
@@ -140,6 +158,7 @@ function stripNativeArtifacts(nativeDir, dependencies = {}) {
       )
     }
     clearDebugDirectory(filePath)
+    clearSymbolTablePointer(filePath)
     stripped.push(filePath)
   }
   return { stripped, missing }
@@ -149,6 +168,7 @@ module.exports = {
   NATIVE_RUNTIME_FILES,
   REQUIRED_NATIVE_RUNTIME_FILES,
   clearPeDebugDirectory,
+  clearPeSymbolTablePointer,
   executableCandidates,
   resolveStripCommand,
   stripNativeArtifacts
