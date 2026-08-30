@@ -76,9 +76,7 @@ const MIXED_PREFIX = 'blur(6px) saturate(140%)'
 function probePageSource() {
   const region = (id, value) => {
     const { x, y } = REGION_ORIGIN[id]
-    const filter = value
-      ? `backdrop-filter:${value};-webkit-backdrop-filter:${value};`
-      : ''
+    const filter = value ? `backdrop-filter:${value};-webkit-backdrop-filter:${value};` : ''
     return `<div class="probe" id="${id}" style="left:${x}px;top:${y}px;${filter}"></div>`
   }
 

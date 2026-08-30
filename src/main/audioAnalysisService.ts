@@ -29,8 +29,7 @@ const nodeIpc = process as unknown as NodeIpcProcess
 const parentPort: ParentPort | null = electronParentPort
   ? {
       postMessage: (message) => electronParentPort.postMessage(message),
-      on: (_event, listener) =>
-        electronParentPort.on('message', (event) => listener(event.data))
+      on: (_event, listener) => electronParentPort.on('message', (event) => listener(event.data))
     }
   : typeof nodeIpc.send === 'function' && typeof nodeIpc.on === 'function'
     ? {

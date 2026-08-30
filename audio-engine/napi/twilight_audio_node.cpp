@@ -731,6 +731,36 @@ napi_value GetPlaybackInfo(napi_env env, napi_callback_info) {
   return readJson(env, TAE_GetPlaybackInfo);
 }
 
+napi_value GetDiagnosticLog(napi_env env, napi_callback_info info) {
+  ensureEngine();
+  clearLastError();
+  size_t argc = 2;
+  napi_value argv[2];
+  napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+  const double sinceRaw = argc > 0 ? getNumberArg(env, argv[0], 0.0) : 0.0;
+  const double maxRaw = argc > 1 ? getNumberArg(env, argv[1], 0.0) : 0.0;
+  const auto sinceSequence = static_cast<uint64_t>(sinceRaw > 0 ? sinceRaw : 0);
+  const auto maxEntries = static_cast<size_t>(maxRaw > 0 ? maxRaw : 0);
+  size_t required = 0;
+  uint64_t nextSequence = 0;
+  TAE_GetDiagnosticLog(g_engine, sinceSequence, maxEntries, nullptr, 0, &required, &nextSequence);
+  std::vector<char> buffer(required == 0 ? 1 : required);
+  TAE_Result result = TAE_RESULT_OK;
+  // New entries can land between the size probe and the fill; re-probe until a
+  // snapshot fits, mirroring readJson.
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    result = TAE_GetDiagnosticLog(
+        g_engine, sinceSequence, maxEntries, buffer.data(), buffer.size(), &required, &nextSequence);
+    if (result == TAE_RESULT_OK) break;
+    if (result != TAE_RESULT_INVALID_ARGUMENT || required <= buffer.size()) break;
+    buffer.assign(required, '\0');
+  }
+  if (result != TAE_RESULT_OK) return throwOnError(env, result);
+  napi_value json;
+  napi_create_string_utf8(env, buffer.data(), NAPI_AUTO_LENGTH, &json);
+  return json;
+}
+
 napi_value GetQueue(napi_env env, napi_callback_info) {
   return readJson(env, TAE_GetQueue);
 }
@@ -887,6 +917,7 @@ napi_value Init(napi_env env, napi_value exports) {
   define(env, exports, "GetDspPluginStatus", GetDspPluginStatus);
   define(env, exports, "GetMetadata", GetMetadata);
   define(env, exports, "GetPlaybackInfo", GetPlaybackInfo);
+  define(env, exports, "GetDiagnosticLog", GetDiagnosticLog);
   define(env, exports, "GetQueue", GetQueue);
   define(env, exports, "GetUpcomingTrack", GetUpcomingTrack);
   define(env, exports, "GetDspConfig", GetDspConfig);

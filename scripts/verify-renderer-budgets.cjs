@@ -5,9 +5,11 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 // fonts: MiSans SC subsets + Latin UI fonts
+// cssChunk: the index chunk carries all six preset layout sheets (~11 kB each
+// minified); the Solstice Ledger redesign pushed it past 400 kB.
 const BUDGETS = Object.freeze({
   jsChunk: 900 * 1024,
-  cssChunk: 400 * 1024,
+  cssChunk: 448 * 1024,
   fonts: 32 * 1024 * 1024
 })
 
@@ -77,9 +79,7 @@ function assertRendererBudgets(rendererDir) {
       /^(Inter|PlusJakartaSans)-latin(-ext)?-wght-normal\.woff2$/i.test(rel) ||
       /^(Lora|JetBrainsMono|SpaceGrotesk)-latin-wght-normal\.woff2$/i.test(rel) ||
       /^OFL-(Inter|PlusJakartaSans|Lora|JetBrainsMono|SpaceGrotesk)\.txt$/i.test(rel) ||
-      /^misans\/(MiSans-(Regular|Medium|Bold|Heavy)\.[\w-]+\.woff2|misans\.css|LICENSE)$/i.test(
-        rel
-      )
+      /^misans\/(MiSans-(Regular|Medium|Bold|Heavy)\.[\w-]+\.woff2|misans\.css|LICENSE)$/i.test(rel)
     assert.ok(ok, `Unexpected public font asset: ${rel}`)
   }
   return { files: files.length, fontBytes, manifest, budgets: BUDGETS }

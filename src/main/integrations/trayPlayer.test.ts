@@ -45,9 +45,15 @@ test('tray menu rebuilds only when visible menu state changes', () => {
   assert.match(traySource, /function createTrayMenuSignature\(\): string/)
   assert.match(traySource, /if \(!force && signature === trayMenuSignature\) return/)
   assert.doesNotMatch(traySource, /currentTime/)
+  // The lyrics window's close control routes through setDesktopLyricsEnabled,
+  // which publishes enabledChanged and then rebuilds the tray menu.
   assert.match(
     desktopLyricsSource,
-    /desktopLyrics:requestClose[\s\S]*runtime\.refreshTrayMenu\?\.\(\)/
+    /ipcMain\.on\('desktopLyrics:close'[\s\S]*?setDesktopLyricsEnabled\(false\)/
+  )
+  assert.match(
+    desktopLyricsSource,
+    /desktopLyrics:enabledChanged', enabled\)[\s\S]*?runtime\.refreshTrayMenu\?\.\(true\)/
   )
 })
 

@@ -100,20 +100,22 @@ const indexLoadedFromLabel = computed(() => {
 function pluginTrust(entry: PluginIndexEntry) {
   return presentPluginTrust(entry, indexStatus.value, trustEvaluationTimeMs.value)
 }
-const pluginGroups = computed(() => [
-  {
-    id: 'regular',
-    title: 'JS / 内容插件',
-    description: '音源、工具、UI 和主题插件运行在受控插件宿主进程中。',
-    plugins: plugins.value.filter((plugin) => !plugin.isDsp)
-  },
-  {
-    id: 'dsp',
-    title: '原生 DSP 插件',
-    description: '原生 DSP 插件加载到音频引擎进程内，故障会被旁路，硬崩溃会触发引擎恢复路径。',
-    plugins: plugins.value.filter((plugin) => plugin.isDsp)
-  }
-].filter((group) => group.plugins.length > 0))
+const pluginGroups = computed(() =>
+  [
+    {
+      id: 'regular',
+      title: 'JS / 内容插件',
+      description: '音源、工具、UI 和主题插件运行在受控插件宿主进程中。',
+      plugins: plugins.value.filter((plugin) => !plugin.isDsp)
+    },
+    {
+      id: 'dsp',
+      title: '原生 DSP 插件',
+      description: '原生 DSP 插件加载到音频引擎进程内，故障会被旁路，硬崩溃会触发引擎恢复路径。',
+      plugins: plugins.value.filter((plugin) => plugin.isDsp)
+    }
+  ].filter((group) => group.plugins.length > 0)
+)
 
 async function refreshPlugins(): Promise<void> {
   loading.value = true
@@ -125,7 +127,12 @@ async function refreshPlugins(): Promise<void> {
     nativeDspStatuses.value = Array.isArray(rawStatuses)
       ? Object.fromEntries(
           rawStatuses
-            .filter((item): item is NativeDspStatus => Boolean(item) && typeof item === 'object' && typeof (item as NativeDspStatus).id === 'string')
+            .filter(
+              (item): item is NativeDspStatus =>
+                Boolean(item) &&
+                typeof item === 'object' &&
+                typeof (item as NativeDspStatus).id === 'string'
+            )
             .map((item) => [item.id, normalizeNativeDspStatus(item)])
         )
       : {}
@@ -216,7 +223,9 @@ async function installIndexPlugin(entry: PluginIndexEntry): Promise<void> {
 }
 
 async function uninstallPlugin(plugin: PluginDescriptor): Promise<void> {
-  const removeData = window.confirm(`卸载 ${plugin.name}？\n\n选择“确定”会同时清除插件私有数据。选择“取消”仅卸载插件文件。`)
+  const removeData = window.confirm(
+    `卸载 ${plugin.name}？\n\n选择“确定”会同时清除插件私有数据。选择“取消”仅卸载插件文件。`
+  )
   busyId.value = plugin.id
   error.value = ''
   try {
@@ -265,7 +274,9 @@ function installStateLabel(entry: PluginIndexEntry): string {
   const labels: Record<PluginIndexInstallState, string> = {
     'not-installed': '可安装',
     installed: entry.installedVersion ? `已安装 v${entry.installedVersion}` : '已安装',
-    'update-available': entry.installedVersion ? `可更新 v${entry.installedVersion} → v${entry.version}` : '可更新',
+    'update-available': entry.installedVersion
+      ? `可更新 v${entry.installedVersion} → v${entry.version}`
+      : '可更新',
     incompatible: '不兼容',
     'built-in-blocked': '自带插件'
   }
@@ -273,7 +284,11 @@ function installStateLabel(entry: PluginIndexEntry): string {
 }
 
 function canInstallIndexEntry(entry: PluginIndexEntry): boolean {
-  return entry.installState === 'not-installed' || entry.installState === 'update-available' || !entry.installState
+  return (
+    entry.installState === 'not-installed' ||
+    entry.installState === 'update-available' ||
+    !entry.installState
+  )
 }
 
 function dependencyEntries(plugin: PluginDescriptor): [string, string][] {
@@ -299,7 +314,9 @@ function normalizeNativeDspStatus(status: NativeDspStatus): NativeDspStatus {
 function safeParseEnumValues(value: string): string[] {
   try {
     const parsed = JSON.parse(value)
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : []
   } catch {
     return []
   }
@@ -385,7 +402,10 @@ onUnmounted(() => {
       <div>
         <span class="plugin-kicker">Trust-based plugin runtime</span>
         <h3>插件系统</h3>
-        <p>安装前会展示权限；JS 插件运行在独立 utilityProcess，原生 DSP 插件单独标记风险并挂入音频引擎 DSP 链。</p>
+        <p>
+          安装前会展示权限；JS 插件运行在独立 utilityProcess，原生 DSP
+          插件单独标记风险并挂入音频引擎 DSP 链。
+        </p>
       </div>
       <div class="plugin-actions">
         <button class="text-button" :disabled="loading" @click="refreshPlugins">
@@ -415,7 +435,9 @@ onUnmounted(() => {
     <section class="plugin-market">
       <div class="plugin-group-head">
         <strong>插件市场</strong>
-        <span>当前索引用于发现插件；安装前展示来源、有效期、SHA-256、签名、权限与代码执行风险。</span>
+        <span
+          >当前索引用于发现插件；安装前展示来源、有效期、SHA-256、签名、权限与代码执行风险。</span
+        >
       </div>
       <div class="plugin-market-actions">
         <button class="text-button" :disabled="marketLoading" @click="refreshIndex(true)">
@@ -447,7 +469,11 @@ onUnmounted(() => {
         暂无索引插件。仍可安装本地目录或 .tep 包。
       </div>
       <div class="market-grid">
-        <article v-for="entry in indexEntries" :key="`${entry.id}:${entry.version}`" class="market-card">
+        <article
+          v-for="entry in indexEntries"
+          :key="`${entry.id}:${entry.version}`"
+          class="market-card"
+        >
           <div class="plugin-title-row">
             <h4>{{ entry.name }}</h4>
             <span class="plugin-pill" :class="entry.installState || 'not-installed'">
@@ -469,9 +495,7 @@ onUnmounted(() => {
             <span>{{ entry.author }}</span>
             <span>{{ entry.engines.twilightEcho }}</span>
             <span>签名 {{ entry.verification.signatureStatus }}</span>
-            <span
-              :title="entry.verification.keyFingerprintSha256 || entry.verification.reason"
-            >
+            <span :title="entry.verification.keyFingerprintSha256 || entry.verification.reason">
               指纹 {{ entry.verification.keyFingerprintSha256?.slice(0, 12) || '无' }}
             </span>
           </div>
@@ -514,7 +538,9 @@ onUnmounted(() => {
           <div class="plugin-card-main">
             <div class="plugin-title-row">
               <h4>{{ plugin.name }}</h4>
-              <span class="plugin-pill" :class="plugin.status">{{ statusLabel(plugin.status) }}</span>
+              <span class="plugin-pill" :class="plugin.status">{{
+                statusLabel(plugin.status)
+              }}</span>
               <span v-if="plugin.builtIn" class="plugin-pill builtin">自带基础插件</span>
               <span v-if="plugin.isDsp" class="plugin-pill native">原生 DSP 风险</span>
             </div>
@@ -537,7 +563,9 @@ onUnmounted(() => {
             <div class="plugin-permissions">
               <strong>权限</strong>
               <span v-if="plugin.permissions.length === 0">无</span>
-              <code v-for="permission in plugin.permissions" :key="permission">{{ permission }}</code>
+              <code v-for="permission in plugin.permissions" :key="permission">{{
+                permission
+              }}</code>
             </div>
             <div v-if="plugin.isDsp" class="plugin-native-note">
               原生插件与音频引擎同进程运行；处理失败会自动 bypass，硬崩溃可能触发引擎恢复。
@@ -546,27 +574,50 @@ onUnmounted(() => {
               <span>loaded: {{ nativeDspStatus(plugin)?.loaded ? 'yes' : 'no' }}</span>
               <span>active: {{ nativeDspStatus(plugin)?.active ? 'yes' : 'no' }}</span>
               <span v-if="nativeDspStatus(plugin)?.bypassed">
-                bypass: {{ nativeDspStatus(plugin)?.bypassReason || nativeDspStatus(plugin)?.lastError || 'unknown' }}
+                bypass:
+                {{
+                  nativeDspStatus(plugin)?.bypassReason ||
+                  nativeDspStatus(plugin)?.lastError ||
+                  'unknown'
+                }}
               </span>
             </div>
-            <div v-if="plugin.isDsp && nativeDspParameters(plugin).length > 0" class="plugin-native-params">
+            <div
+              v-if="plugin.isDsp && nativeDspParameters(plugin).length > 0"
+              class="plugin-native-params"
+            >
               <strong>DSP 参数</strong>
               <label
                 v-for="parameter in nativeDspParameters(plugin)"
                 :key="parameter.id"
                 class="plugin-native-param"
               >
-                <span>{{ parameter.name }}<small v-if="parameter.unit"> {{ parameter.unit }}</small></span>
+                <span
+                  >{{ parameter.name
+                  }}<small v-if="parameter.unit"> {{ parameter.unit }}</small></span
+                >
                 <input
                   v-if="parameter.type === 'bool'"
                   type="checkbox"
                   :checked="parameter.currentValue > 0"
-                  @change="updateNativeDspParameter(plugin, parameter, ($event.target as HTMLInputElement).checked)"
+                  @change="
+                    updateNativeDspParameter(
+                      plugin,
+                      parameter,
+                      ($event.target as HTMLInputElement).checked
+                    )
+                  "
                 />
                 <select
                   v-else-if="parameter.type === 'enum'"
                   :value="parameter.currentValue"
-                  @change="updateNativeDspParameter(plugin, parameter, ($event.target as HTMLSelectElement).value)"
+                  @change="
+                    updateNativeDspParameter(
+                      plugin,
+                      parameter,
+                      ($event.target as HTMLSelectElement).value
+                    )
+                  "
                 >
                   <option
                     v-for="(option, optionIndex) in parameter.enumValues || []"
@@ -583,7 +634,13 @@ onUnmounted(() => {
                   :max="parameter.maxValue"
                   :step="parameter.step || (parameter.type === 'int' ? 1 : 0.01)"
                   :value="parameter.currentValue"
-                  @change="updateNativeDspParameter(plugin, parameter, ($event.target as HTMLInputElement).value)"
+                  @change="
+                    updateNativeDspParameter(
+                      plugin,
+                      parameter,
+                      ($event.target as HTMLInputElement).value
+                    )
+                  "
                 />
               </label>
             </div>
@@ -617,7 +674,13 @@ onUnmounted(() => {
     <div v-if="selectedLogPlugin" class="plugin-log">
       <div class="plugin-log-head">
         <strong>{{ selectedLogPlugin }} 日志</strong>
-        <button class="icon-button subtle" @click="selectedLogPlugin = ''; selectedLog = ''">
+        <button
+          class="icon-button subtle"
+          @click="
+            selectedLogPlugin = ''
+            selectedLog = ''
+          "
+        >
           <i class="pi pi-times"></i>
         </button>
       </div>

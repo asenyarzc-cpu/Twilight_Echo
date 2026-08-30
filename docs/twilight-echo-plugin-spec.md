@@ -161,6 +161,15 @@ schemaVersion 3；API v3 继续接受 schemaVersion 1/2 和 `variables + stylesh
 
 - 曲目 ID 必须带 provider 前缀（如 `ncm:12345`、`local:<hash>`）。
 - 来源标识贯穿播放队列、音乐库与会话持久化。
+- 流媒体主页与“发现歌单”是 provider 无关的共享界面。宿主从插件注册时实际提供的
+  handler 派生 `supportedMethods`，只把实现了对应方法的音源放入页面切换器，不能仅凭
+  `library` / `playlist` 这类宽泛 capability 推测实现情况。
+- 主页只对显式声明 `ui.streamingSections[]` 且实际实现对应 method 的音源开放，
+  按区块的 `id/title/icon/method/args` 加载推荐内容；仅为能力兼容而提供空实现的
+  provider 不得进入主页音源列表。`fetchRecommendPlaylists` 作为已准入首页的可选歌单架。
+  发现页以 `fetchDiscoveryPlaylists` 为准入条件，
+  `fetchPlaylistCategories` 与 `fetchHighQualityPlaylists` 均为可选增强；缺失时对应分类或精品
+  控件必须隐藏。用户切换音源后，旧 provider 的迟到响应不得覆盖新页面状态。
 - 网易云音乐是 Twilight Echo 自带基础 `MediaProvider` 插件：插件 ID 为
   `com.twilightecho.provider.ncm`，provider 前缀固定为 `ncm`，随软件分发并默认启用；
   用户可停用以隔离故障或隐藏在线音源，但不可像第三方插件一样卸载。

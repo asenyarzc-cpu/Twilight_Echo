@@ -22,13 +22,13 @@
 
 ### 2.1 当前必须先处理的阻塞项
 
-| 检查 | 当前结果 | 证据 |
-| --- | --- | --- |
-| `pnpm run typecheck:web` | 失败 | `src/renderer/src/providers/mediaProvider.ts:647-648` 有字面量 `\\(`、`\\)`，不是合法 TypeScript。 |
+| 检查                              | 当前结果                        | 证据                                                                                                                |
+| --------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run typecheck:web`          | 失败                            | `src/renderer/src/providers/mediaProvider.ts:647-648` 有字面量 `\\(`、`\\)`，不是合法 TypeScript。                  |
 | `pnpm run test:lyrics-management` | 104 项中 102 通过、2 项构建失败 | `PlayingMusic.lyrics.behavior.test.ts` 与 `lyricsPlayerStore.behavior.test.ts` 都因为上面的 provider 解析错误失败。 |
-| `pnpm run test:themes` | 64 项中 63 通过、1 项失败 | `themeColorAudit.test.ts` 报告四个业务样式文件超过硬编码颜色基线。 |
-| `pnpm run test:playback-routing` | 失败 | 运行集合包含 `usePlayerStore.test.ts`，同样被 `mediaProvider.ts` 解析错误阻断。 |
-| `git diff --check` | 失败 | provider 文件末尾存在额外空行；这不是主要功能错误，但说明当前补丁未完成格式收尾。 |
+| `pnpm run test:themes`            | 64 项中 63 通过、1 项失败       | `themeColorAudit.test.ts` 报告四个业务样式文件超过硬编码颜色基线。                                                  |
+| `pnpm run test:playback-routing`  | 失败                            | 运行集合包含 `usePlayerStore.test.ts`，同样被 `mediaProvider.ts` 解析错误阻断。                                     |
+| `git diff --check`                | 失败                            | provider 文件末尾存在额外空行；这不是主要功能错误，但说明当前补丁未完成格式收尾。                                   |
 
 ### 2.2 编译错误的具体位置
 
@@ -328,13 +328,13 @@ seek/load/pause intent ──────────┘                        
 
 ### 9.1 结论概览
 
-| 原始问题 | 当前结论 | 当前代码证据 | 自动化证据 |
-| --- | --- | --- | --- |
-| 编译和回归基线被 provider 解析错误阻断 | 已恢复 | 旧的错误粘贴段已不再作为播放/歌词路径的阻塞点 | `pnpm run typecheck:web`、`pnpm run typecheck:node` 均通过 |
-| 重复或冻结的引擎 `time-pos` 让进度和歌词永久停止 | 已实施并有直接回归 | `playbackSessionClock.ts` 是唯一的播放时钟 reducer；冻结重复 sample 不会重置最后一个推进锚点，超出预测窗口进入 `stalled` 并请求重同步 | `playbackSessionClock.test.ts` 和 `PlayingMusic.lyrics.behavior.test.ts` 覆盖重复冻结 sample、进度/时间 chip/活动歌词行继续推进、seek 后再次冻结 |
-| 歌词页面有第二套预测时钟和多套行切换 timer | 已实施并有直接回归 | `PlayingMusic.vue` 与 `PlayingLyricWords.vue` 消费 `playbackClockSnapshot` / `positionAt()`；逐字高亮不再拥有独立业务时钟 | `PlayingLyricWords advances YRC fill with the shared playback clock` 及歌词管理套件通过 |
-| focus window、手动浏览和异步布局导致滚动停住或抢回 | 已实施并有直接回归 | 视口默认渲染完整歌词时间轴；`lyricViewportController.ts` 用 token 取消旧 follow，只有真实 wheel/touch 位移进入手动浏览，resize 合并后重居中 | `lyricViewportController.test.ts` 与 `PlayingMusic.test.ts` 覆盖切歌、过期布局、复用 ref、定位祖先、完整时间轴和点击歌词 seek |
-| 深色模式残留浅色/硬编码颜色 | 代码已部分清理，尚未达到可证明的“全部页面适配”结论 | `base.css`、now-playing、设置、网络来源与 HiFi 侧栏均有迁移改动，但 `PlayingMusic.vue`、`HiFiSidebar.vue` 和设置样式仍保留主题专用覆盖和颜色 fallback | `pnpm run test:themes` 通过（64/64），但其中的颜色审计只限制硬编码颜色数量，不能证明实际渲染没有浅色残留 |
+| 原始问题                                           | 当前结论                                           | 当前代码证据                                                                                                                                          | 自动化证据                                                                                                                                       |
+| -------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 编译和回归基线被 provider 解析错误阻断             | 已恢复                                             | 旧的错误粘贴段已不再作为播放/歌词路径的阻塞点                                                                                                         | `pnpm run typecheck:web`、`pnpm run typecheck:node` 均通过                                                                                       |
+| 重复或冻结的引擎 `time-pos` 让进度和歌词永久停止   | 已实施并有直接回归                                 | `playbackSessionClock.ts` 是唯一的播放时钟 reducer；冻结重复 sample 不会重置最后一个推进锚点，超出预测窗口进入 `stalled` 并请求重同步                 | `playbackSessionClock.test.ts` 和 `PlayingMusic.lyrics.behavior.test.ts` 覆盖重复冻结 sample、进度/时间 chip/活动歌词行继续推进、seek 后再次冻结 |
+| 歌词页面有第二套预测时钟和多套行切换 timer         | 已实施并有直接回归                                 | `PlayingMusic.vue` 与 `PlayingLyricWords.vue` 消费 `playbackClockSnapshot` / `positionAt()`；逐字高亮不再拥有独立业务时钟                             | `PlayingLyricWords advances YRC fill with the shared playback clock` 及歌词管理套件通过                                                          |
+| focus window、手动浏览和异步布局导致滚动停住或抢回 | 已实施并有直接回归                                 | 视口默认渲染完整歌词时间轴；`lyricViewportController.ts` 用 token 取消旧 follow，只有真实 wheel/touch 位移进入手动浏览，resize 合并后重居中           | `lyricViewportController.test.ts` 与 `PlayingMusic.test.ts` 覆盖切歌、过期布局、复用 ref、定位祖先、完整时间轴和点击歌词 seek                    |
+| 深色模式残留浅色/硬编码颜色                        | 代码已部分清理，尚未达到可证明的“全部页面适配”结论 | `base.css`、now-playing、设置、网络来源与 HiFi 侧栏均有迁移改动，但 `PlayingMusic.vue`、`HiFiSidebar.vue` 和设置样式仍保留主题专用覆盖和颜色 fallback | `pnpm run test:themes` 通过（64/64），但其中的颜色审计只限制硬编码颜色数量，不能证明实际渲染没有浅色残留                                         |
 
 ### 9.2 当前播放与歌词架构
 
@@ -395,15 +395,15 @@ pnpm run evidence:themes -- --port 9223 --output output/theme-golden-p7
 
 像素分析结果（平均亮度、近白占比、近黑占比）：
 
-| 页面 | 平均亮度 | 近白像素占比 | 近黑/深色像素占比 |
-| --- | --- | --- | --- |
-| dark-dashboard | 37 | 2.7%（文字/图标） | 90.9% |
-| dark-song-list | 30 | 0.1% | 97.7% |
-| dark-player-bar | 31 | 0.1% | 92.4% |
-| dark-playing-page | 30 | 0.0% | 88.6% |
-| dark-settings | 34 | 0.1% | 94.5% |
-| dark-network-sources | 25 | 0.1% | 98.9% |
-| light-song-list（对照） | 253 | 97.5% | 0.1% |
+| 页面                    | 平均亮度 | 近白像素占比      | 近黑/深色像素占比 |
+| ----------------------- | -------- | ----------------- | ----------------- |
+| dark-dashboard          | 37       | 2.7%（文字/图标） | 90.9%             |
+| dark-song-list          | 30       | 0.1%              | 97.7%             |
+| dark-player-bar         | 31       | 0.1%              | 92.4%             |
+| dark-playing-page       | 30       | 0.0%              | 88.6%             |
+| dark-settings           | 34       | 0.1%              | 94.5%             |
+| dark-network-sources    | 25       | 0.1%              | 98.9%             |
+| light-song-list（对照） | 253      | 97.5%             | 0.1%              |
 
 结论：深色模式下六个高风险页面没有出现大面积白色/浅色面板（近白像素占比 ≤ 2.7%，且 4x4 分块平均色全部为深色）。这为第 4.1 节的“深色模式完全适配”提供了第一版真实渲染证据。
 
@@ -428,10 +428,10 @@ pnpm run evidence:themes -- --port 9223 --output output/theme-golden-p7
 
 实测矩阵（修复后，应用模式 dark）：
 
-| 预设 | data-theme | body 背景 |
-| --- | --- | --- |
-| aurora-reference（timed，白天） | pureWhite | 浅色（设计行为） |
-| obsidian-glass / paper-light / neon-gradient / studio-split / zen-minimal | dark | 深色（`#17181a`） |
+| 预设                                                                      | data-theme | body 背景         |
+| ------------------------------------------------------------------------- | ---------- | ----------------- |
+| aurora-reference（timed，白天）                                           | pureWhite  | 浅色（设计行为）  |
+| obsidian-glass / paper-light / neon-gradient / studio-split / zen-minimal | dark       | 深色（`#17181a`） |
 
 验证：`test:themes` 69/69、`test:app` 227 项 0 失败（2 项跳过 gitignored CI 工作流）、`typecheck:web`、`typecheck:node` 均通过。
 
@@ -449,10 +449,10 @@ pnpm run evidence:themes -- --port 9223 --output output/theme-golden-p7
 
 像素统计（97 张全量）：
 
-| 分组 | 数量 | 平均亮度 | 平均近白占比 | 近白 > 5% 的异常案例 |
-| --- | --- | --- | --- | --- |
-| dark 音调（matrix 45 + preset 4） | 49 | 29.3 | 0.1% | 无 |
-| pureWhite 音调（matrix 45 + preset 3） | 48 | 38.2 | 0.2% | preset-paper-light 5.9% |
+| 分组                                   | 数量 | 平均亮度 | 平均近白占比 | 近白 > 5% 的异常案例    |
+| -------------------------------------- | ---- | -------- | ------------ | ----------------------- |
+| dark 音调（matrix 45 + preset 4）      | 49   | 29.3     | 0.1%         | 无                      |
+| pureWhite 音调（matrix 45 + preset 3） | 48   | 38.2     | 0.2%         | preset-paper-light 5.9% |
 
 结论与边界：
 
@@ -472,19 +472,19 @@ pnpm run evidence:themes -- --port 9223 --output output/theme-golden-p7
 
 ## 11. 实施完成度对照（2026-08-08 复核）
 
-| 文档项 | 状态 | 证据 |
-| --- | --- | --- |
-| Phase 0 恢复可编译基线 | 完成 | `typecheck:web` / `typecheck:node` 通过；provider 误粘贴段已清理 |
-| Phase 1 收敛播放时钟 | 完成 | `playbackSessionClock.ts` + `usePlayerStore` 单一写入口；`test:playback-routing` 295/295 |
-| Phase 2 歌词 timeline 与滚动 | 完成 | `PlayingMusic.vue` 全时间轴渲染；`lyricViewportController.ts` 三职责；`test:lyrics-management` 104/104 |
-| 4.4 视口控制器复杂度 | 完成 | controller 仅 attach/detach、follow(token)、manual；wheel/touch 才进入 manual；resize 合并；行 Map 随 track/dispose 清理 |
-| 4.5 歌词异步加载取消协议 | 完成 | provider 接口统一 `{ signal }` + `withTimeout`；`usePlayerStore` 歌词请求带 generation/AbortController/owner 守卫；track epoch 变更 abort 旧请求 |
-| 4.6 运行时边界拆分 | 未实施（文档定义为“后续”建议） | `usePlayerStore` 仍为超大模块；属架构演进项，需单独排期 |
-| Phase 3 主题 token 化 | 完成 | 单 root token schema；themeColorAudit / selectDarkThemeAudit / SettingsPage.theme / themeTokenization 全通过；深色像素证据无残留 |
-| Phase 4 回归与发布门禁 | 完成 | `test:app` 227 项 0 失败；网络源套件接入；97 组矩阵完整运行 |
-| §10 启动空白回归 | 完成 | preload 沙箱修复 + 回归测试；CDP 冷启动验证 |
-| §9.7 预设切换翻白 | 完成 | `resolveRuntimeTone` manual 分支改为读偏好；回归测试 + 实测矩阵 |
-| §9.5/9.6/9.8 视觉证据 | 完成（自动化层） | 7 页面截图 + 97 组矩阵 + 像素统计；人工终验待用户 |
+| 文档项                       | 状态                           | 证据                                                                                                                                             |
+| ---------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Phase 0 恢复可编译基线       | 完成                           | `typecheck:web` / `typecheck:node` 通过；provider 误粘贴段已清理                                                                                 |
+| Phase 1 收敛播放时钟         | 完成                           | `playbackSessionClock.ts` + `usePlayerStore` 单一写入口；`test:playback-routing` 295/295                                                         |
+| Phase 2 歌词 timeline 与滚动 | 完成                           | `PlayingMusic.vue` 全时间轴渲染；`lyricViewportController.ts` 三职责；`test:lyrics-management` 104/104                                           |
+| 4.4 视口控制器复杂度         | 完成                           | controller 仅 attach/detach、follow(token)、manual；wheel/touch 才进入 manual；resize 合并；行 Map 随 track/dispose 清理                         |
+| 4.5 歌词异步加载取消协议     | 完成                           | provider 接口统一 `{ signal }` + `withTimeout`；`usePlayerStore` 歌词请求带 generation/AbortController/owner 守卫；track epoch 变更 abort 旧请求 |
+| 4.6 运行时边界拆分           | 未实施（文档定义为“后续”建议） | `usePlayerStore` 仍为超大模块；属架构演进项，需单独排期                                                                                          |
+| Phase 3 主题 token 化        | 完成                           | 单 root token schema；themeColorAudit / selectDarkThemeAudit / SettingsPage.theme / themeTokenization 全通过；深色像素证据无残留                 |
+| Phase 4 回归与发布门禁       | 完成                           | `test:app` 227 项 0 失败；网络源套件接入；97 组矩阵完整运行                                                                                      |
+| §10 启动空白回归             | 完成                           | preload 沙箱修复 + 回归测试；CDP 冷启动验证                                                                                                      |
+| §9.7 预设切换翻白            | 完成                           | `resolveRuntimeTone` manual 分支改为读偏好；回归测试 + 实测矩阵                                                                                  |
+| §9.5/9.6/9.8 视觉证据        | 完成（自动化层）               | 7 页面截图 + 97 组矩阵 + 像素统计；人工终验待用户                                                                                                |
 
 剩余待决策项（需用户输入，未擅自实施）：
 
@@ -523,10 +523,10 @@ preload 失败后 `window.api` 没有被注入，渲染进程启动时 `App.vue`
 
 用 `--remote-debugging-port=9223` 启动真实 Electron dev 实例并抓取 DOM/控制台：
 
-| 阶段 | `#app` | 控制台 |
-| --- | --- | --- |
-| 修复前 | 0 子节点，body 文本为空 | preload `node:crypto` 错误 + `ncmCloud` TypeError |
-| 修复后 | 正常渲染（首页/侧栏文本、深色主题生效） | 仅 vite 连接日志，无异常 |
+| 阶段   | `#app`                                  | 控制台                                            |
+| ------ | --------------------------------------- | ------------------------------------------------- |
+| 修复前 | 0 子节点，body 文本为空                 | preload `node:crypto` 错误 + `ncmCloud` TypeError |
+| 修复后 | 正常渲染（首页/侧栏文本、深色主题生效） | 仅 vite 连接日志，无异常                          |
 
 通过检查：`typecheck:web`、`typecheck:node`、`test:cross-cutting-regressions`（17/17，含新沙箱测试）、`test:playback-routing`（295/295）、`test:themes`（69/69）、`useSettingsStore.test.ts`（18/18）、`git diff --check`。
 
@@ -596,15 +596,15 @@ CDP 冷启动 + 点击每日推荐第 1 首：播放条挂载、时间标签 0:0
 
 ### 12.3 回归结果
 
-| 检查 | 结果 |
-| --- | --- |
-| `test:playback-routing` | 295/295 通过（含 `listeningStatsPersistence.test.ts`、`usePlayerStore.test.ts`、`playerRuntimeOwnership`、`playerStoreHmr`） |
-| `test:lyrics-management` | 105/105 通过 |
-| `test:themes` | 71/71 通过 |
-| `test:cross-cutting-regressions` | 17/17 通过（含 `sandboxBoundary.test.ts`） |
-| `test:plugins` | 300 通过 / 1 跳过（含 `mediaProvider.test.ts`） |
-| `typecheck:web` | 通过 |
-| 真实环境（CDP 9223） | 歌词加载 + 切歌 + 进度条连续更新，0 异常 |
+| 检查                             | 结果                                                                                                                         |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `test:playback-routing`          | 295/295 通过（含 `listeningStatsPersistence.test.ts`、`usePlayerStore.test.ts`、`playerRuntimeOwnership`、`playerStoreHmr`） |
+| `test:lyrics-management`         | 105/105 通过                                                                                                                 |
+| `test:themes`                    | 71/71 通过                                                                                                                   |
+| `test:cross-cutting-regressions` | 17/17 通过（含 `sandboxBoundary.test.ts`）                                                                                   |
+| `test:plugins`                   | 300 通过 / 1 跳过（含 `mediaProvider.test.ts`）                                                                              |
+| `typecheck:web`                  | 通过                                                                                                                         |
+| 真实环境（CDP 9223）             | 歌词加载 + 切歌 + 进度条连续更新，0 异常                                                                                     |
 
 ### 12.4 高亮歌词改为“播放条上方可视区”居中
 
@@ -682,11 +682,11 @@ CDP 深色主题 + 音量 40% 截图像素采样：抽屉底 `rgb(21,26,36)`，�
 
 重启 dev（主进程重建后字段才随快照下发）后 CDP 实测小窗：
 
-| 状态 | 显示 |
-| --- | --- |
+| 状态         | 显示                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------- |
 | 鼠标移出窗口 | 当前歌词 + 翻译（如 “I can see it in your eyes / 我可以从你的眼中看出”），随播放实时换行 |
-| 鼠标悬停 UI | 歌曲名 + 歌手（in the end i'll always be there for you / kuudere / JustWarrenPeace） |
-| 过长内容 | `te-scroll-text.is-overflowing` 触发，时长按宽度缩放（16s/24s 等），无缝循环 |
+| 鼠标悬停 UI  | 歌曲名 + 歌手（in the end i'll always be there for you / kuudere / JustWarrenPeace）     |
+| 过长内容     | `te-scroll-text.is-overflowing` 触发，时长按宽度缩放（16s/24s 等），无缝循环             |
 
 回归：`test:playback-routing` 301/301（新增 `useMiniPlayerSync.test.ts` 4 例 + shared 歌词字段清洗用例）、`typecheck:web` / `typecheck:node` 通过。
 

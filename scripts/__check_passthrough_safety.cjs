@@ -16,7 +16,8 @@ const HAS_CJK = /[一-鿿]/
 function parse(file) {
   const src = readFileSync(join(ROOT, file), 'utf8')
   const out = {}
-  const re = /^\s*'([^']+)':\s*$|^\s*'([^']+)':\s*'((?:[^'\\]|\\.)*)',?\s*$|^\s*'((?:[^'\\]|\\.)*)',?\s*$/gm
+  const re =
+    /^\s*'([^']+)':\s*$|^\s*'([^']+)':\s*'((?:[^'\\]|\\.)*)',?\s*$|^\s*'((?:[^'\\]|\\.)*)',?\s*$/gm
   let pending = null
   for (const line of src.split(/\r?\n/)) {
     const keyOnly = /^\s*'([^']+)':\s*$/.exec(line)

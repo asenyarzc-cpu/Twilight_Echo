@@ -43,7 +43,10 @@ test('unified favorites prefer the local default favorite playlist when it has t
   })
 
   assert.equal(result.source, 'unified')
-  assert.deepEqual(result.tracks.map((track) => track.id), ['local:moon'])
+  assert.deepEqual(
+    result.tracks.map((track) => track.id),
+    ['local:moon']
+  )
 })
 
 test('unified favorites fall back to provider favorites when the default playlist is empty', () => {
@@ -53,7 +56,10 @@ test('unified favorites fall back to provider favorites when the default playlis
   })
 
   assert.equal(result.source, 'provider')
-  assert.deepEqual(result.tracks.map((track) => track.id), ['ncm:moon'])
+  assert.deepEqual(
+    result.tracks.map((track) => track.id),
+    ['ncm:moon']
+  )
 })
 
 test('unified favorite summary uses the first available cover and unified count', () => {

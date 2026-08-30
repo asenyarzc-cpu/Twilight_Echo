@@ -94,7 +94,11 @@ export function updateDiscordActivity(data: DiscordActivityData): void {
 export function clearDiscordActivity(): void {
   runtime.lastDiscordActivity = null
   if (!runtime.discordConnected || !runtime.discordClient) return
-  try { void runtime.discordClient.clearActivity() } catch { /* ignore */ }
+  try {
+    void runtime.discordClient.clearActivity()
+  } catch {
+    /* ignore */
+  }
 }
 
 export function applyDiscordRpcSetting(enabled: boolean): void {

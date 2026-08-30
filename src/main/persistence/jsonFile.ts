@@ -9,10 +9,7 @@ import {
   writeFileSync
 } from 'fs'
 import { dirname } from 'path'
-import {
-  isJsonNestingWithinLimit,
-  tryParseJsonWithNestingLimit
-} from '../security/jsonSafety.ts'
+import { isJsonNestingWithinLimit, tryParseJsonWithNestingLimit } from '../security/jsonSafety.ts'
 
 export interface JsonFileOptions<T> {
   label: string
@@ -94,8 +91,7 @@ export function loadJsonFileWithBackup<T>(
   }
 
   const corruptCopyPath = primary.status === 'invalid' ? preserveCorruptCopy(filePath) : null
-  const corruptBackupCopyPath =
-    backup.status === 'invalid' ? preserveCorruptCopy(backupPath) : null
+  const corruptBackupCopyPath = backup.status === 'invalid' ? preserveCorruptCopy(backupPath) : null
   throw new PersistentJsonFileError(
     filePath,
     options as JsonFileOptions<unknown>,

@@ -81,14 +81,13 @@ export function loadTrustedPluginPublisherRegistry(
   }
 }
 
-export function createTrustedPluginPublisherRegistry(
-  raw: unknown
-): TrustedPluginPublisherRegistry {
+export function createTrustedPluginPublisherRegistry(raw: unknown): TrustedPluginPublisherRegistry {
   try {
     if (!isRecord(raw) || raw.schemaVersion !== TRUST_REGISTRY_SCHEMA_VERSION) {
       throw new Error('Trusted publisher registry schemaVersion must be 1')
     }
-    if (!Array.isArray(raw.keys)) throw new Error('Trusted publisher registry keys must be an array')
+    if (!Array.isArray(raw.keys))
+      throw new Error('Trusted publisher registry keys must be an array')
     if (raw.revokedKeyIds !== undefined && !Array.isArray(raw.revokedKeyIds)) {
       throw new Error('Trusted publisher registry revokedKeyIds must be an array')
     }

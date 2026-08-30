@@ -3,17 +3,11 @@ import type {
   LocalLibraryRemoveResult
 } from '../../../../shared/localLibrary.ts'
 import type { Track } from '../../types/music.ts'
-import {
-  getProviderLocalId,
-  type MediaProviderRegistry
-} from '../../providers/mediaProvider.ts'
+import { getProviderLocalId, type MediaProviderRegistry } from '../../providers/mediaProvider.ts'
 import { getTrackSource } from '../../utils/logicalTrackModel.ts'
 
 export interface StreamingBatchRemovalDependencies {
-  removeLocalTracks: (
-    tracks: Track[],
-    mode: 'library'
-  ) => Promise<LocalLibraryRemoveResult>
+  removeLocalTracks: (tracks: Track[], mode: 'library') => Promise<LocalLibraryRemoveResult>
   removeProviderTrack: (track: Track) => Promise<void> | void
 }
 
@@ -76,7 +70,7 @@ export async function removeStreamingProviderFavorite(
     const providerTrackId =
       provider.id === 'ncm' && track.ncmSongId != null
         ? track.ncmSongId
-        : getProviderLocalId(track.id, provider.id) ?? track.id
+        : (getProviderLocalId(track.id, provider.id) ?? track.id)
     await provider.likeTrack(providerTrackId, false)
     dependencies.removeSnapshotFavorite(track)
     return

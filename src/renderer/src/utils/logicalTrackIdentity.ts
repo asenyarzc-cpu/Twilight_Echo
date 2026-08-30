@@ -10,9 +10,5 @@ export function getLogicalTrackKey(track: LogicalTrackIdentityInput): string {
 }
 
 export function normalizeLogicalTrackText(value: string | undefined): string {
-  return (value ?? '')
-    .normalize('NFKC')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
+  return (value ?? '').normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ')
 }

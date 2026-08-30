@@ -436,18 +436,35 @@ bool WasapiSharedBackend::open(const std::string& deviceId, const AudioFormat& r
     return failAfterCom();
   }
 
-  if (wasapi::isDefaultDeviceAlias(deviceId)) {
-    hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &impl_->device);
-  } else {
+  const bool usesDefaultDevice = wasapi::isDefaultDeviceAlias(deviceId);
+  auto selectOutputDevice = [&]() {
+    impl_->device.Reset();
+    if (usesDefaultDevice) {
+      return enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &impl_->device);
+    }
     const std::wstring id = Impl::utf8ToWide(deviceId);
-    hr = enumerator->GetDevice(id.c_str(), &impl_->device);
-  }
+    return enumerator->GetDevice(id.c_str(), &impl_->device);
+  };
+  hr = selectOutputDevice();
   if (!impl_->succeeded(hr, error, "无法打开输出设备", "device_not_found")) {
     return failAfterCom();
   }
   impl_->loadDeviceName();
 
-  hr = impl_->device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, &impl_->audioClient);
+  auto activateAudioClient = [&]() {
+    impl_->audioClient.Reset();
+    return impl_->device->Activate(
+        __uuidof(IAudioClient), CLSCTX_ALL, nullptr, &impl_->audioClient);
+  };
+  hr = activateAudioClient();
+  if (usesDefaultDevice && hr == AUDCLNT_E_DEVICE_INVALIDATED) {
+    hr = selectOutputDevice();
+    if (!impl_->succeeded(hr, error, "无法重新打开系统默认输出设备", "device_not_found")) {
+      return failAfterCom();
+    }
+    impl_->loadDeviceName();
+    hr = activateAudioClient();
+  }
   if (!impl_->succeeded(hr, error, "无法激活输出设备音频客户端", "backend_open_failure")) {
     return failAfterCom();
   }

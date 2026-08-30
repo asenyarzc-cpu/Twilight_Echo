@@ -31,5 +31,11 @@ test('sleep timer IPC validates untrusted payloads before configuring the main t
   const valid = createSleepTimerState('trackEnd', 1, { defaultMinutes: 30, fadeSeconds: 2 })
   assert.deepEqual(handlers.get('sleepTimer:configure')?.({}, valid), valid)
   assert.equal(handlers.get('sleepTimer:boundary')?.({}, 'trackEnd'), null)
-  assert.deepEqual(calls, ['trusted', 'trusted', 'configure:trackEnd', 'trusted', 'boundary:trackEnd'])
+  assert.deepEqual(calls, [
+    'trusted',
+    'trusted',
+    'configure:trackEnd',
+    'trusted',
+    'boundary:trackEnd'
+  ])
 })

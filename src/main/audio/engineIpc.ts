@@ -50,8 +50,10 @@ import {
   AudioDiagnosticRecorder,
   collectDsdPcmBlockers,
   createPlaybackDiagnosticEvent,
+  type AudioDiagnosticEvent,
   type AudioDiagnosticSnapshot
 } from './audioDiagnostics.ts'
+import { parseJsonWithNestingLimit } from '../security/jsonSafety.ts'
 import {
   persistAudioOutputState,
   persistAudioOutputConfig,
@@ -342,10 +344,10 @@ function summarizeHeadphoneCompensation(): Record<string, unknown> {
 
 function recordPlaybackDiagnostic(
   info: Awaited<ReturnType<AudioEngineManager['getPlaybackInfo']>>
-): void {
+): boolean {
   const engine = runtime.audioEngineManager
   const recorder = audioDiagnosticRecorder
-  if (!engine || !recorder) return
+  if (!engine || !recorder) return false
   try {
     const details = createPlaybackDiagnosticEvent({
       playback: info,
@@ -360,16 +362,82 @@ function recordPlaybackDiagnostic(
     })
     const signatureDetails = { ...details, position: 0 }
     const signature = JSON.stringify(signatureDetails)
-    if (signature === lastAudioDiagnosticPlaybackSignature) return
+    if (signature === lastAudioDiagnosticPlaybackSignature) return false
     lastAudioDiagnosticPlaybackSignature = signature
     const warning = info.isDsd && info.dsdMode === 'pcm'
     recorder.record('playback-state', details, warning ? 'warning' : 'info')
+    return true
   } catch (error) {
     recorder.record(
       'diagnostic-collection-failed',
       { phase: 'playback-state', message: error instanceof Error ? error.message : String(error) },
       'error'
     )
+    return false
+  }
+}
+
+type EngineDiagnosticEntry = {
+  sequence?: number
+  timestamp?: string
+  level?: string
+  event?: string
+  message?: string
+  details?: unknown
+}
+
+let engineDiagnosticLogCursor = 0
+let engineDiagnosticLogDrainInFlight = false
+
+/**
+ * Pull new entries out of the native engine's diagnostic ring (route decisions,
+ * probe failures, PCM fallbacks, engaged DSD routes) and fold them into the
+ * app-side JSONL log with the same timestamp/level/event shape. The cursor only
+ * advances after an entry is recorded, so a failure keeps it pending for the
+ * next drain; the in-flight guard keeps concurrent triggers from double-pulling.
+ */
+async function drainEngineDiagnosticLog(trigger: string): Promise<void> {
+  const engine = runtime.audioEngineManager
+  const recorder = audioDiagnosticRecorder
+  if (!engine || !recorder || engineDiagnosticLogDrainInFlight) return
+  engineDiagnosticLogDrainInFlight = true
+  try {
+    const raw = await engine.readEngineDiagnosticLog(engineDiagnosticLogCursor)
+    if (!raw) return
+    let entries: unknown
+    try {
+      entries = parseJsonWithNestingLimit(raw)
+    } catch {
+      return
+    }
+    if (!Array.isArray(entries) || entries.length === 0) return
+    for (const candidate of entries) {
+      const entry = candidate as EngineDiagnosticEntry
+      if (!entry || typeof entry.event !== 'string') continue
+      const level: AudioDiagnosticEvent['level'] =
+        entry.level === 'error' ? 'error' : entry.level === 'warning' ? 'warning' : 'info'
+      const extra =
+        entry.details && typeof entry.details === 'object' && !Array.isArray(entry.details)
+          ? (entry.details as Record<string, unknown>)
+          : {}
+      recorder.record(
+        entry.event,
+        {
+          source: 'engine',
+          trigger,
+          engineSequence: typeof entry.sequence === 'number' ? entry.sequence : null,
+          engineTimestamp: typeof entry.timestamp === 'string' ? entry.timestamp : '',
+          message: typeof entry.message === 'string' ? entry.message : '',
+          ...extra
+        },
+        level
+      )
+      if (typeof entry.sequence === 'number' && entry.sequence > engineDiagnosticLogCursor) {
+        engineDiagnosticLogCursor = entry.sequence
+      }
+    }
+  } finally {
+    engineDiagnosticLogDrainInFlight = false
   }
 }
 
@@ -558,6 +626,7 @@ async function initializeAudioEngineRuntime(): Promise<void> {
 
   runtime.audioEngineManager.on('error', (err: Error) => {
     audioDiagnosticRecorder?.record('engine-error', { message: err.message }, 'error')
+    void drainEngineDiagnosticLog('engine-error')
     console.error('[音频引擎]', err.message)
     runtime.mainWindow?.webContents.send(IPC.audioEngine.error, err.message)
   })
@@ -611,10 +680,11 @@ async function initializeAudioEngineRuntime(): Promise<void> {
   })
 
   runtime.audioEngineManager.on('playback-info', (info) => {
-    recordPlaybackDiagnostic(info)
+    if (recordPlaybackDiagnostic(info)) void drainEngineDiagnosticLog('playback-info')
     runtime.mainWindow?.webContents.send(IPC.audioEngine.playbackInfo, info)
     void runtime.pluginManager?.broadcastEvent('player:playback-info', info)
     broadcastPlayerLifecycleEvents(info)
+    runtime.telemetry?.observePlayback(info)
   })
 
   runtime.audioEngineManager.on('config-applied', (event) => {
@@ -1358,6 +1428,7 @@ function registerAudioEngineIpcHandlers(): void {
       : await dialog.showSaveDialog(options)
     if (result.canceled || !result.filePath) return { filePath: null }
     recorder.record('diagnostic-export-requested', { locale })
+    await drainEngineDiagnosticLog('export')
     const snapshot = await captureAudioDiagnosticSnapshot()
     const report = await recorder.buildReport(snapshot, locale)
 

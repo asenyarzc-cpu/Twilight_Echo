@@ -61,7 +61,8 @@ function parseArgs(argv) {
   if (!Number.isFinite(options.durationSeconds) || options.durationSeconds < 60) {
     throw new Error('--duration-seconds must be at least 60')
   }
-  if (!Number.isFinite(options.buffer) || options.buffer < 1) throw new Error('--buffer must be at least 1')
+  if (!Number.isFinite(options.buffer) || options.buffer < 1)
+    throw new Error('--buffer must be at least 1')
   if (!Number.isFinite(options.volume) || options.volume < 0 || options.volume > 1) {
     throw new Error('--volume must be between 0 and 1')
   }
@@ -107,7 +108,10 @@ function normalized(value) {
 }
 
 function resolveDevice(devices, query) {
-  if (!query) throw new Error('Missing --device. Select an actual WASAPI endpoint; do not use this soak in CI.')
+  if (!query)
+    throw new Error(
+      'Missing --device. Select an actual WASAPI endpoint; do not use this soak in CI.'
+    )
   const exact = devices.filter((device) => device.id === query || device.label === query)
   if (exact.length === 1) return exact[0]
   const needle = normalized(query)
@@ -116,7 +120,8 @@ function resolveDevice(devices, query) {
   )
   if (fuzzy.length === 1) return fuzzy[0]
   const available = devices.map((device) => `  - ${device.label} | id=${device.id}`).join('\n')
-  if (fuzzy.length === 0) throw new Error(`No device matched "${query}". Available devices:\n${available}`)
+  if (fuzzy.length === 0)
+    throw new Error(`No device matched "${query}". Available devices:\n${available}`)
   throw new Error(`Device selector "${query}" is ambiguous. Available devices:\n${available}`)
 }
 
@@ -200,7 +205,9 @@ function compactPlaybackInfo(info) {
 }
 
 function delta(before = {}, after = {}, fields) {
-  return Object.fromEntries(fields.map((field) => [field, Number(after[field] || 0) - Number(before[field] || 0)]))
+  return Object.fromEntries(
+    fields.map((field) => [field, Number(after[field] || 0) - Number(before[field] || 0)])
+  )
 }
 
 function performanceDelta(before = {}, after = {}) {
@@ -240,8 +247,11 @@ async function runSoak(options) {
   const device = resolveDevice(Array.isArray(devices) ? devices : [], options.device)
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'twilight-audio-performance-soak-'))
   const generatedSource = !options.source
-  const source = options.source ? path.resolve(options.source) : path.join(tempDir, 'performance-soak.wav')
-  if (!fs.existsSync(source) && !generatedSource) throw new Error(`Source fixture does not exist: ${source}`)
+  const source = options.source
+    ? path.resolve(options.source)
+    : path.join(tempDir, 'performance-soak.wav')
+  if (!fs.existsSync(source) && !generatedSource)
+    throw new Error(`Source fixture does not exist: ${source}`)
   if (generatedSource) writeLongSilenceWav(source, options.durationSeconds)
 
   try {
@@ -253,17 +263,32 @@ async function runSoak(options) {
     audio.SetDspConfig(JSON.stringify({ crossfadeSeconds: 0 }))
     audio.SetOutputBackend('wasapi-exclusive')
     audio.SetOutputDevice(device.id)
-    audio.SetOutputConfig(JSON.stringify({ preferredBufferSize: options.buffer, routingMode: 'auto' }))
+    audio.SetOutputConfig(
+      JSON.stringify({ preferredBufferSize: options.buffer, routingMode: 'auto' })
+    )
     audio.Play(source, 0)
     await sleep(1000)
-    const before = compactPlaybackInfo(parseJson(audio.GetPlaybackInfo(), 'GetPlaybackInfo before soak'))
-    expect(before.actualBackend === 'wasapi-exclusive', `Expected WASAPI Exclusive, got ${before.actualBackend}`)
-    expect(before.exclusive === true && before.accessMode === 'exclusive', 'Backend did not open an exclusive device')
+    const before = compactPlaybackInfo(
+      parseJson(audio.GetPlaybackInfo(), 'GetPlaybackInfo before soak')
+    )
+    expect(
+      before.actualBackend === 'wasapi-exclusive',
+      `Expected WASAPI Exclusive, got ${before.actualBackend}`
+    )
+    expect(
+      before.exclusive === true && before.accessMode === 'exclusive',
+      'Backend did not open an exclusive device'
+    )
     expect(before.bufferSizeFrames > 0, 'Missing actual exclusive buffer size')
-    expect(before.renderPerformance.callbackCount > 0, 'No native render callbacks observed before soak')
+    expect(
+      before.renderPerformance.callbackCount > 0,
+      'No native render callbacks observed before soak'
+    )
 
     await sleep(options.durationSeconds * 1000)
-    const after = compactPlaybackInfo(parseJson(audio.GetPlaybackInfo(), 'GetPlaybackInfo after soak'))
+    const after = compactPlaybackInfo(
+      parseJson(audio.GetPlaybackInfo(), 'GetPlaybackInfo after soak')
+    )
     const diagnostics = delta(before.diagnostics, after.diagnostics, [
       'sessionUnderrunCount',
       'sessionBufferDropCount',
@@ -274,11 +299,26 @@ async function runSoak(options) {
     const callbackLoad = callbackDeadlineLoadPercent(renderPerformance)
     expect(after.state === 'playing', `Playback stopped during soak (state=${after.state})`)
     expect(renderPerformance.callbackCount > 0, 'No render callbacks were observed during soak')
-    expect(after.position >= options.durationSeconds * 0.85, 'Playback position did not advance through the soak')
-    expect(diagnostics.sessionUnderrunCount === 0, `Observed ${diagnostics.sessionUnderrunCount} underruns`)
-    expect(diagnostics.sessionBufferDropCount === 0, `Observed ${diagnostics.sessionBufferDropCount} buffer drops`)
-    expect(diagnostics.deviceLostCount === 0, `Observed ${diagnostics.deviceLostCount} device-loss events`)
-    expect(renderPerformance.deadlineMissCount <= options.maxDeadlineMisses, `Observed ${renderPerformance.deadlineMissCount} callback deadline misses`)
+    expect(
+      after.position >= options.durationSeconds * 0.85,
+      'Playback position did not advance through the soak'
+    )
+    expect(
+      diagnostics.sessionUnderrunCount === 0,
+      `Observed ${diagnostics.sessionUnderrunCount} underruns`
+    )
+    expect(
+      diagnostics.sessionBufferDropCount === 0,
+      `Observed ${diagnostics.sessionBufferDropCount} buffer drops`
+    )
+    expect(
+      diagnostics.deviceLostCount === 0,
+      `Observed ${diagnostics.deviceLostCount} device-loss events`
+    )
+    expect(
+      renderPerformance.deadlineMissCount <= options.maxDeadlineMisses,
+      `Observed ${renderPerformance.deadlineMissCount} callback deadline misses`
+    )
     expect(
       callbackLoad <= options.maxCallbackLoad,
       `Mean callback deadline load ${callbackLoad}% exceeds ${options.maxCallbackLoad}%`
@@ -331,11 +371,15 @@ function printHumanSummary(summary) {
   const metrics = result.metrics
   console.log(`WASAPI Exclusive real-device performance soak: ${result.ok ? 'PASS' : 'FAIL'}`)
   console.log(`  device=${summary.device.label}`)
-  console.log(`  duration=${metrics.durationSeconds}s callbacks=${metrics.renderPerformance.callbackCount}`)
+  console.log(
+    `  duration=${metrics.durationSeconds}s callbacks=${metrics.renderPerformance.callbackCount}`
+  )
   console.log(
     `  deadlineLoad=${metrics.callbackDeadlineLoadPercent}% deadlineMisses=${metrics.renderPerformance.deadlineMissCount}`
   )
-  console.log(`  underruns=${metrics.diagnostics.sessionUnderrunCount} drops=${metrics.diagnostics.sessionBufferDropCount}`)
+  console.log(
+    `  underruns=${metrics.diagnostics.sessionUnderrunCount} drops=${metrics.diagnostics.sessionBufferDropCount}`
+  )
 }
 
 async function main() {

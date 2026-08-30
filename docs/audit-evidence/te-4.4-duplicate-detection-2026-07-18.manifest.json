@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-25T21:55:04.958Z",
+  "generatedAt": "2026-08-30T12:12:02.918Z",
   "evidence": {
     "path": "te-4.4-duplicate-detection-2026-07-18.json",
-    "sha256": "c06677a7db79c5e1d2dd7c3c6428c34dc87f360a6cfb1737e27c2011ba0c8cd4"
+    "sha256": "0bcff9566a1ceef5c448590c7dc0f171a1c1a9cb835b7f3946f7b871cce69671"
   },
   "provenance": {
     "algorithm": "sha256",
@@ -17,7 +17,7 @@
     },
     "runner": {
       "path": "scripts/duplicate-detection-benchmark.ts",
-      "sha256": "3495da1539ce977e113f267c1aaf8d8ee159aacb7c6955f63d9cefe7d001ae2e"
+      "sha256": "5132764ea37d8317eeaa9e15bac9f17220f1b85d3c8703a23c1e447d40ef48b7"
     },
     "runnerContract": {
       "path": "scripts/duplicate-detection-benchmark.test.ts",
@@ -25,7 +25,7 @@
     },
     "packageManifest": {
       "path": "package.json",
-      "sha256": "10b56cd9ef203877c225d7c123c3a519a9ebf10f60bfbfff50e3176933072798"
+      "sha256": "060b44c84cad8022bf8f04eba94fab4a4ea2a7775040d620db0606f8fec31267"
     },
     "lockfile": {
       "path": "pnpm-lock.yaml",
@@ -41,12 +41,12 @@
       "collisionP95Ms": 2500
     },
     "unique": {
-      "p50Ms": 38.89979999999997,
-      "p95Ms": 42.453899999999976
+      "p50Ms": 47.90960000000007,
+      "p95Ms": 59.08389999999997
     },
     "collision": {
-      "p50Ms": 50.4864,
-      "p95Ms": 53.79220000000009
+      "p50Ms": 57.58739999999989,
+      "p95Ms": 83.1431
     }
   }
 }

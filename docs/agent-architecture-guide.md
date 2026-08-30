@@ -198,8 +198,9 @@ Twilight Echo 是一款桌面 HiFi 音乐播放器：Electron + Vue 3 + TypeScri
 
 ### 4.5 独立窗口
 
-- `mini-player/`、`tray-player/`：独立 BrowserWindow，通过各自 preload API（`miniPlayer`/`trayPlayer` 域）与 main 同步状态，不直接访问主窗口 DOM。
-- 桌面歌词（main 侧 `integrations/desktopLyrics.ts`）同理，通过 `desktopLyrics:*` 域推送曲目/时间/设置。
+- `mini-player/`、`tray-player/`、`desktop-lyrics/`：独立 BrowserWindow，共用同一份 renderer bundle，靠 `?window=<kind>` 查询参数在 `main.ts` 里分发根组件；各自只拿到对应 preload 域（`miniPlayer`/`trayPlayer`/`desktopLyrics`），不直接访问主窗口 DOM。
+- 桌面歌词 v3（main 侧 `integrations/desktopLyrics.ts`）缓存版本化 `session + clock` 快照并负责窗口、锁定穿透、锁定时的悬停鼠标移动转发、跨屏约束和单次崩溃恢复。主 renderer 的 `app/useDesktopLyricsPublisher.ts` 只复用播放器已解析的权威歌词与时钟，播放中最多 4 次/秒发布 clock；卫星窗口在本地按下一句边界唤醒，逐字填充交由 WAAPI 遮罩时间轴运行，不解析 LRC/YRC/TTML，也不逐帧触发 Vue 状态更新。`sessionId + sequence + epoch` 用于拒绝旧曲目、乱序和 seek 前消息。
+- `src/shared/desktopLyrics.ts` 是桌面歌词唯一跨进程契约；preload 按文档类型暴露互斥的 host/window 最小 API。窗口先 `bootstrap()` 应用设置、session 和 clock，再发送 `ready` 显示，避免初次闪烁和事件竞态。
 
 ### 4.6 utils（纯逻辑层）
 

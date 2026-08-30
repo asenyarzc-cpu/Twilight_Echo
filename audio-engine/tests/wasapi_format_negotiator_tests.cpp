@@ -99,6 +99,25 @@ void testWasapiExclusiveDopDiagnosticsStayAllocationFreeInRenderPacket() {
   assert(outputInfoBody.find("dopBufferSummary") != std::string::npos);
 }
 
+// The first-buffer marker inspection must reach the pipeline through
+// dopRuntimeFacts() (Proven stays proven with evidence, invalid markers demote
+// the carrier) and through diagnostics.dopRuntimeEvidence — the "DoP unproven"
+// field report was precisely an evidence-transport gap.
+void testWasapiExclusiveDopRuntimeFactsFoldMarkerEvidence() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath =
+      testFilePath.parent_path().parent_path() / "output" / "wasapi" / "WasapiExclusiveBackend.cpp";
+  const std::string source = readTextFile(sourcePath);
+  const std::string factsBody =
+      extractFunctionBody(source, "DopRuntimeFacts WasapiExclusiveBackend::dopRuntimeFacts() const");
+  const std::string outputInfoBody = extractFunctionBody(source, "OutputInfo WasapiExclusiveBackend::outputInfo() const");
+
+  assert(factsBody.find("firstDopBufferObservation") != std::string::npos);
+  assert(factsBody.find("DopRuntimeFactState::Mismatch") != std::string::npos);
+  assert(factsBody.find("DoP marker sequence confirmed") != std::string::npos);
+  assert(outputInfoBody.find("dopRuntimeEvidence") != std::string::npos);
+}
+
 void testWasapiExclusiveDopBoundariesSubmitTypedCarrierWithoutSilentFlag() {
   const std::filesystem::path testFilePath(__FILE__);
   const std::filesystem::path sourcePath =
@@ -144,6 +163,21 @@ void testWasapiSharedRenderLoopUsesMmcss() {
 
   assert(renderLoopBody.find("AvSetMmThreadCharacteristicsW") != std::string::npos);
   assert(renderLoopBody.find("AvRevertMmThreadCharacteristics") != std::string::npos);
+}
+
+void testWasapiSharedOpenRefreshesInvalidatedDefaultEndpointOnce() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath =
+      testFilePath.parent_path().parent_path() / "output" / "wasapi" / "WasapiSharedBackend.cpp";
+  const std::string openBody = extractFunctionBody(
+      readTextFile(sourcePath),
+      "bool WasapiSharedBackend::open(const std::string& deviceId, const AudioFormat& requestedFormat, std::string* error)");
+
+  const size_t invalidatedRetry =
+      openBody.find("usesDefaultDevice && hr == AUDCLNT_E_DEVICE_INVALIDATED");
+  assert(invalidatedRetry != std::string::npos);
+  assert(openBody.find("selectOutputDevice()", invalidatedRetry) != std::string::npos);
+  assert(openBody.find("activateAudioClient()", invalidatedRetry) != std::string::npos);
 }
 
 void testWasapiSharedRenderLoopUsesNonBlockingFailureTelemetry() {
@@ -562,6 +596,9 @@ void testDsd64NegotiatesDopCarrier() {
   assert(info.supportsOutputPerfect);
   assert(!info.outputPerfect);
   assert(!info.pcmPassthrough);
+  // An accepted DoP carrier is the requested transport, not a conversion of
+  // the source; reporting it as resampled failed the pipeline's DoP proof.
+  assert(!info.resampled);
   assert(info.actualOutputFormat == "int24-in32");
   assert(info.perfectReason.find("DoP carrier") != std::string::npos);
 
@@ -571,6 +608,31 @@ void testDsd64NegotiatesDopCarrier() {
   assert(facts.candidateFormat.sampleRate == 176400);
   assert(facts.candidateFormat.sampleFormat == AudioSampleFormat::Int24In32Interleaved);
   assert(pcmFormatsExactMatch(facts.candidateFormat, facts.actualFormat));
+}
+
+// Regression for the field-reported "DoP 未能证明直通" on WASAPI exclusive
+// (DSD128 -> 352.8kHz carrier on an ONIX XI1): negotiation and playback were
+// healthy and the first-buffer markers proved perfect, but the negotiator
+// hardcoded `resampled = true` for every carrier-shaped request, which alone
+// failed `dopPassthroughProven` and stamped the RESAMPLED badge.
+void testDopCarrierIsNotReportedAsResampled() {
+  FakeAudioClient client({{352800, 24, 24}});
+  WasapiFormatNegotiator negotiator(&client);
+  std::string error;
+
+  assert(negotiator.negotiate(dsdSource(5644800), &error));
+  assert(error.empty());
+
+  const AudioFormat output = negotiator.outputFormat();
+  assert(output.sampleRate == 352800);
+  assert(output.sampleFormat == AudioSampleFormat::Int24Interleaved);
+
+  const OutputInfo info = negotiator.outputInfo();
+  assert(!info.resampled);
+  assert(info.perfectReasonCode == "dsd_dop");
+
+  const DopRuntimeFacts facts = negotiator.dopRuntimeFacts();
+  assert(facts.state == DopRuntimeFactState::Proven);
 }
 
 void testInt24SourceOnInt24In32OnlyDeviceIsNotReportedAsConverted() {
@@ -795,6 +857,7 @@ int main() {
   testWasapiExclusiveFloat32RenderPacketBypassesScratchPackCopy();
   testWasapiExclusiveRenderFailurePublishingStaysOffMmcssPath();
   testWasapiSharedRenderLoopUsesMmcss();
+  testWasapiSharedOpenRefreshesInvalidatedDefaultEndpointOnce();
   testWasapiSharedRenderLoopUsesNonBlockingFailureTelemetry();
   testWasapiSharedRenderLoopDefersDeviceInvalidatedCallbackUntilAfterMmcss();
   testWasapiSharedStopDoesNotJoinCurrentRenderThread();
@@ -810,6 +873,8 @@ int main() {
   testPackedInt24PackerUsesSpecializedConversion();
   testInt32PackerUsesSpecializedConversion();
   testDsd64NegotiatesDopCarrier();
+  testDopCarrierIsNotReportedAsResampled();
+  testWasapiExclusiveDopRuntimeFactsFoldMarkerEvidence();
   testInt24SourceOnInt24In32OnlyDeviceIsNotReportedAsConverted();
   testPackedInt24DeviceStillWinsForInt24Source();
   testBitDepthFallbackStillCountsAsConverted();

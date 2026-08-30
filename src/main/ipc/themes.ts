@@ -231,6 +231,7 @@ export async function synchronizeThemeSettings(snapshot: ThemeLibrarySnapshot): 
 
 export async function reconcileThemeAfterPluginChange(): Promise<void> {
   let snapshot = await loadThemeLibrary()
+  let activeThemeChanged = false
   const active = snapshot.data.activeTheme
   if (active.kind === 'plugin') {
     await runtime.pluginManagerReady
@@ -244,10 +245,15 @@ export async function reconcileThemeAfterPluginChange(): Promise<void> {
       const result = await runMutation(() =>
         setActiveTheme({ kind: 'builtin', id: TWILIGHT_DEFAULT_THEME_ID }, snapshot.revision)
       )
-      snapshot = 'data' in result ? result : await loadThemeLibrary()
+      if ('data' in result) {
+        snapshot = result
+        activeThemeChanged = true
+      } else {
+        snapshot = await loadThemeLibrary()
+      }
     }
   }
-  await synchronizeThemeSettings(snapshot)
+  if (activeThemeChanged) await synchronizeThemeSettings(snapshot)
 }
 
 export async function restoreThemeLibraryFromBackup(

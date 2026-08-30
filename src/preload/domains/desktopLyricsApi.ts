@@ -1,104 +1,119 @@
 import { ipcRenderer } from 'electron'
-import type { DesktopLyricsSettings, DesktopLyricsTrackPayload } from '../types'
+import type {
+  DesktopLyricsBootstrap,
+  DesktopLyricsClockSnapshot,
+  DesktopLyricsSession,
+  DesktopLyricsSettingsV3,
+  DesktopLyricsTransportAction
+} from '../../shared/desktopLyrics.ts'
 
-const desktopLyricsToggleCallbacks = new Set<(enabled: boolean) => void>()
-const desktopLyricsInitSettingsCallbacks = new Set<(settings: DesktopLyricsSettings) => void>()
-const desktopLyricsTrackCallbacks = new Set<(data: DesktopLyricsTrackPayload) => void>()
-const desktopLyricsTimeCallbacks = new Set<(time: number) => void>()
-const desktopLyricsSettingsUpdateCallbacks = new Set<(settings: DesktopLyricsSettings) => void>()
-const desktopLyricsLoadFailedCallbacks = new Set<
-  (payload: { code: number; description: string }) => void
->()
+const enabledCallbacks = new Set<(enabled: boolean) => void>()
+const resyncCallbacks = new Set<() => void>()
+const loadFailedCallbacks = new Set<(payload: { code: number; description: string }) => void>()
+const sessionCallbacks = new Set<(session: DesktopLyricsSession) => void>()
+const clockCallbacks = new Set<(clock: DesktopLyricsClockSnapshot) => void>()
+const settingsCallbacks = new Set<(settings: DesktopLyricsSettingsV3) => void>()
+const freezeCallbacks = new Set<() => void>()
+const hoverIntentCallbacks = new Set<(pointerInside: boolean) => void>()
 
 export function bindDesktopLyricsIpcEvents(): void {
-  ipcRenderer.on('desktopLyrics:toggleChanged', (_event, enabled: boolean) => {
-    for (const cb of desktopLyricsToggleCallbacks) {
-      cb(enabled)
-    }
+  ipcRenderer.on('desktopLyrics:enabledChanged', (_event, enabled: boolean) => {
+    for (const callback of enabledCallbacks) callback(enabled)
   })
-
-  ipcRenderer.on('desktopLyrics:initSettings', (_event, settings: DesktopLyricsSettings) => {
-    for (const cb of desktopLyricsInitSettingsCallbacks) {
-      cb(settings)
-    }
+  ipcRenderer.on('desktopLyrics:resyncRequested', () => {
+    for (const callback of resyncCallbacks) callback()
   })
-
-  ipcRenderer.on('desktopLyrics:updateTrack', (_event, data: DesktopLyricsTrackPayload) => {
-    for (const cb of desktopLyricsTrackCallbacks) {
-      cb(data)
-    }
-  })
-
-  ipcRenderer.on('desktopLyrics:updateTime', (_event, time: number) => {
-    for (const cb of desktopLyricsTimeCallbacks) {
-      cb(time)
-    }
-  })
-
-  ipcRenderer.on('desktopLyrics:updateSettings', (_event, settings: DesktopLyricsSettings) => {
-    for (const cb of desktopLyricsSettingsUpdateCallbacks) {
-      cb(settings)
-    }
-  })
-
   ipcRenderer.on(
     'desktopLyrics:loadFailed',
     (_event, payload: { code: number; description: string }) => {
-      for (const cb of desktopLyricsLoadFailedCallbacks) {
-        cb(payload)
-      }
+      for (const callback of loadFailedCallbacks) callback(payload)
     }
   )
+  ipcRenderer.on('desktopLyrics:sessionChanged', (_event, session: DesktopLyricsSession) => {
+    for (const callback of sessionCallbacks) callback(session)
+  })
+  ipcRenderer.on('desktopLyrics:clockChanged', (_event, clock: DesktopLyricsClockSnapshot) => {
+    for (const callback of clockCallbacks) callback(clock)
+  })
+  ipcRenderer.on('desktopLyrics:settingsChanged', (_event, settings: DesktopLyricsSettingsV3) => {
+    for (const callback of settingsCallbacks) callback(settings)
+  })
+  ipcRenderer.on('desktopLyrics:freezeClock', () => {
+    for (const callback of freezeCallbacks) callback()
+  })
+  ipcRenderer.on('desktopLyrics:hoverIntent', (_event, pointerInside: boolean) => {
+    for (const callback of hoverIntentCallbacks) callback(pointerInside)
+  })
 }
 
-export const desktopLyricsApi = {
-  toggle: (): Promise<boolean> => ipcRenderer.invoke('desktopLyrics:toggle'),
-  show: (): Promise<void> => ipcRenderer.invoke('desktopLyrics:show'),
-  hide: (): Promise<void> => ipcRenderer.invoke('desktopLyrics:hide'),
-  updateTrack: (data: DesktopLyricsTrackPayload): void => {
-    ipcRenderer.send('desktopLyrics:updateTrack', data)
+export const desktopLyricsHostApi = {
+  setEnabled: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('desktopLyrics:setEnabled', enabled),
+  publishSession: (session: DesktopLyricsSession): void => {
+    ipcRenderer.send('desktopLyrics:publishSession', session)
   },
-  updateTime: (time: number): void => {
-    ipcRenderer.send('desktopLyrics:updateTime', time)
+  publishClock: (clock: DesktopLyricsClockSnapshot): void => {
+    ipcRenderer.send('desktopLyrics:publishClock', clock)
   },
-  updateSettings: (settings: Partial<DesktopLyricsSettings>): void => {
-    ipcRenderer.send('desktopLyrics:updateSettings', settings)
+  onEnabledChanged: (callback: (enabled: boolean) => void): (() => void) => {
+    enabledCallbacks.add(callback)
+    return () => enabledCallbacks.delete(callback)
   },
-  listInstalledFonts: (): Promise<string[]> => ipcRenderer.invoke('fonts:listInstalled'),
-  setInteractive: (interactive: boolean): void => {
-    ipcRenderer.send('desktopLyrics:setInteractive', interactive)
+  onResyncRequested: (callback: () => void): (() => void) => {
+    resyncCallbacks.add(callback)
+    return () => resyncCallbacks.delete(callback)
   },
-  onToggle: (cb: (enabled: boolean) => void): (() => void) => {
-    desktopLyricsToggleCallbacks.add(cb)
-    return () => desktopLyricsToggleCallbacks.delete(cb)
+  onLoadFailed: (
+    callback: (payload: { code: number; description: string }) => void
+  ): (() => void) => {
+    loadFailedCallbacks.add(callback)
+    return () => loadFailedCallbacks.delete(callback)
+  }
+}
+
+export const desktopLyricsWindowApi = {
+  bootstrap: (): Promise<DesktopLyricsBootstrap> => ipcRenderer.invoke('desktopLyrics:bootstrap'),
+  updateQuickSettings: (
+    patch: Partial<DesktopLyricsSettingsV3>
+  ): Promise<DesktopLyricsSettingsV3> =>
+    ipcRenderer.invoke('desktopLyrics:updateQuickSettings', patch),
+  setLocked: (locked: boolean): Promise<DesktopLyricsSettingsV3> =>
+    ipcRenderer.invoke('desktopLyrics:setLocked', locked),
+  setInteractionActive: (active: boolean): Promise<void> =>
+    ipcRenderer.invoke('desktopLyrics:setInteractionActive', active),
+  transport: (action: DesktopLyricsTransportAction): void => {
+    ipcRenderer.send('desktopLyrics:transport', action)
   },
-  onInitSettings: (cb: (settings: DesktopLyricsSettings) => void): (() => void) => {
-    desktopLyricsInitSettingsCallbacks.add(cb)
-    return () => desktopLyricsInitSettingsCallbacks.delete(cb)
+  moveTo: (x: number, y: number): void => {
+    ipcRenderer.send('desktopLyrics:moveTo', { x, y })
   },
-  onTrackUpdate: (cb: (data: DesktopLyricsTrackPayload) => void): (() => void) => {
-    desktopLyricsTrackCallbacks.add(cb)
-    return () => desktopLyricsTrackCallbacks.delete(cb)
+  moveEnd: (): void => {
+    ipcRenderer.send('desktopLyrics:moveEnd')
   },
-  onTimeUpdate: (cb: (time: number) => void): (() => void) => {
-    desktopLyricsTimeCallbacks.add(cb)
-    return () => desktopLyricsTimeCallbacks.delete(cb)
+  ready: (): void => {
+    ipcRenderer.send('desktopLyrics:ready')
   },
-  onSettingsUpdate: (cb: (settings: DesktopLyricsSettings) => void): (() => void) => {
-    desktopLyricsSettingsUpdateCallbacks.add(cb)
-    return () => desktopLyricsSettingsUpdateCallbacks.delete(cb)
+  close: (): void => {
+    ipcRenderer.send('desktopLyrics:close')
   },
-  onLoadFailed: (cb: (payload: { code: number; description: string }) => void): (() => void) => {
-    desktopLyricsLoadFailedCallbacks.add(cb)
-    return () => desktopLyricsLoadFailedCallbacks.delete(cb)
+  onSessionChanged: (callback: (session: DesktopLyricsSession) => void): (() => void) => {
+    sessionCallbacks.add(callback)
+    return () => sessionCallbacks.delete(callback)
   },
-  getPosition: (): void => {
-    ipcRenderer.send('desktopLyrics:getPosition')
+  onClockChanged: (callback: (clock: DesktopLyricsClockSnapshot) => void): (() => void) => {
+    clockCallbacks.add(callback)
+    return () => clockCallbacks.delete(callback)
   },
-  move: (x: number, y: number): void => {
-    ipcRenderer.send('desktopLyrics:move', { x, y })
+  onSettingsChanged: (callback: (settings: DesktopLyricsSettingsV3) => void): (() => void) => {
+    settingsCallbacks.add(callback)
+    return () => settingsCallbacks.delete(callback)
   },
-  requestClose: (): void => {
-    ipcRenderer.send('desktopLyrics:requestClose')
+  onFreezeClock: (callback: () => void): (() => void) => {
+    freezeCallbacks.add(callback)
+    return () => freezeCallbacks.delete(callback)
+  },
+  onHoverIntent: (callback: (pointerInside: boolean) => void): (() => void) => {
+    hoverIntentCallbacks.add(callback)
+    return () => hoverIntentCallbacks.delete(callback)
   }
 }

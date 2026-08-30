@@ -119,7 +119,6 @@ test('BPM cache conditional rollback deletes only the exact committed analysis',
   await rm(dir, { recursive: true, force: true })
 })
 
-
 test('BPM cache rejects a valid-looking document with excessive unknown nesting', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'twilight-bpm-cache-deep-'))
   try {

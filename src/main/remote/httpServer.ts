@@ -48,8 +48,7 @@ export class RemoteHttpServer {
   constructor(options: RemoteHttpServerOptions = {}) {
     this.auth = options.auth ?? new RemoteAuthSession()
     this.mediaGrants = options.mediaGrants ?? new MediaStreamGrantStore()
-    this.staticRoot =
-      options.staticRoot ?? join(app.getAppPath(), 'resources', 'remote')
+    this.staticRoot = options.staticRoot ?? join(app.getAppPath(), 'resources', 'remote')
     this.onCommand = options.onCommand ?? null
   }
 
@@ -125,8 +124,7 @@ export class RemoteHttpServer {
       })
       server.listen(preferredPort, '0.0.0.0', () => {
         const address = server.address()
-        this.port =
-          address && typeof address === 'object' ? address.port : preferredPort || null
+        this.port = address && typeof address === 'object' ? address.port : preferredPort || null
         this.server = server
         if (desiredMode === 'full') this.startHeartbeat()
         resolve()
@@ -282,7 +280,10 @@ export class RemoteHttpServer {
         this.resolveAllowedOrigin(req.headers.origin, host)
 
       if (req.method === 'OPTIONS') {
-        res.writeHead(204, corsHeaders((res as ServerResponse & { teCorsOrigin?: string | null }).teCorsOrigin))
+        res.writeHead(
+          204,
+          corsHeaders((res as ServerResponse & { teCorsOrigin?: string | null }).teCorsOrigin)
+        )
         res.end()
         return
       }

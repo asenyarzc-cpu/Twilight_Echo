@@ -16,10 +16,7 @@ import {
   type LocalLibraryIndexCoordinatorOptions
 } from './libraryIndexCoordinator.ts'
 import type { LocalLibraryScanRunner } from './libraryScanServiceClient.ts'
-import {
-  loadMusicLibraryDocument,
-  persistMusicLibraryDocument
-} from './libraryRepository.ts'
+import { loadMusicLibraryDocument, persistMusicLibraryDocument } from './libraryRepository.ts'
 
 type ScanCall = {
   jobId: string
@@ -30,14 +27,9 @@ type ScanCall = {
 class ScriptedRunner implements LocalLibraryScanRunner {
   readonly calls: ScanCall[] = []
   readonly controls: Array<{ kind: 'pause' | 'resume' | 'cancel'; requestId: string }> = []
-  private readonly handler: (
-    call: ScanCall,
-    index: number
-  ) => Promise<LocalLibraryWorkerScanResult>
+  private readonly handler: (call: ScanCall, index: number) => Promise<LocalLibraryWorkerScanResult>
 
-  constructor(
-    handler: (call: ScanCall, index: number) => Promise<LocalLibraryWorkerScanResult>
-  ) {
+  constructor(handler: (call: ScanCall, index: number) => Promise<LocalLibraryWorkerScanResult>) {
     this.handler = handler
   }
 
@@ -214,9 +206,7 @@ test('watcher changes coalesce by canonical path before entering the scan queue'
     fixture.persist(createDocument(1, [fixture.root], []))
     const firstPath = join(fixture.root, 'first.flac')
     const secondPath = join(fixture.root, 'second.flac')
-    const runner = new ScriptedRunner(async () =>
-      scanResult({ completeIdentitySnapshot: false })
-    )
+    const runner = new ScriptedRunner(async () => scanResult({ completeIdentitySnapshot: false }))
     const coordinator = fixture.coordinator(runner, { watcherDebounceMs: 25 })
     const completed = once(coordinator, 'watch-result')
 
@@ -276,7 +266,10 @@ test('full scan exposes progress, pause, resume, and cancellation without commit
 
     assert.equal(result.state, 'cancelled')
     assert.equal(coordinator.getStatus().state, 'cancelled')
-    assert.deepEqual(runner.controls.map((control) => control.kind), ['pause', 'resume', 'cancel'])
+    assert.deepEqual(
+      runner.controls.map((control) => control.kind),
+      ['pause', 'resume', 'cancel']
+    )
     assert.deepEqual(fixture.load().tracks, [])
     coordinator.destroy()
   } finally {

@@ -197,17 +197,13 @@ function close(): void {
   display: none;
 }
 
-/* The title-bar is the reserved top strip for settings. It uses the same opaque
-   settings backdrop as the page below, while remaining above the overlay controls. */
+/* The settings title strip stays transparent: the settings overlay below it is
+   the single wallpaper painter and spans the full window, so the image reads as
+   one continuous surface through the strip. The bar keeps its own higher
+   stacking context, so the controls remain clickable. */
 .title-bar.title-bar-settings,
 .title-bar.title-bar-settings .title-bar-background {
-  background-color: var(--te-settings-backplate, #17181a) !important;
-  background-image:
-    var(--te-settings-bg-image, none), linear-gradient(var(--te-settings-bg), var(--te-settings-bg)) !important;
-  background-position: center, center;
-  background-size: cover, cover;
-  background-repeat: no-repeat, no-repeat;
-  background-attachment: fixed, fixed;
+  background: transparent !important;
 }
 
 /* Dark tone must not wrap the whole chain in `:global()`: Vue's scoped transform
@@ -219,9 +215,7 @@ function close(): void {
 html[data-theme='dark'] .title-bar,
 html[data-theme='dark'] .title-bar.title-bar-streaming,
 html[data-theme='dark']
-  .title-bar.title-bar-streaming.title-bar-menu-open:not(.title-bar-glass):not(
-    .title-bar-settings
-  ),
+  .title-bar.title-bar-streaming.title-bar-menu-open:not(.title-bar-glass):not(.title-bar-settings),
 html[data-theme='dark'] .title-bar.title-bar-glass {
   background: transparent !important;
 }
@@ -485,8 +479,7 @@ html[data-te-liquid-glass-scrolled='on'] .title-bar-liquid .title-bar-background
     0 6px 18px color-mix(in srgb, var(--te-lg-context-label) 8%, transparent);
 }
 
-.title-bar-liquid
-  :is(.menu-btn, .back-btn, .settings-btn, .plugins-btn, .login-btn, .control-btn) {
+.title-bar-liquid :is(.menu-btn, .back-btn, .settings-btn, .plugins-btn, .login-btn, .control-btn) {
   position: relative;
   overflow: hidden;
   color: inherit;

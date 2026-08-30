@@ -102,6 +102,13 @@ export interface AudioDeviceOption {
   supportsDirectHw?: boolean
   supportsDop?: boolean
   supportsNativeDsd?: boolean
+  /**
+   * Whether the backend actually interrogated the driver for the capability
+   * fields. ASIO enumeration reads the registry, which knows identity only, so
+   * an unprobed record leaves supportsDop / supportsNativeDsd absent rather than
+   * claiming false for a DAC nothing has asked yet.
+   */
+  capabilityProbed?: boolean
   dopSupportState?: AudioCapabilitySupportState
   nativeDsdSupportState?: AudioCapabilitySupportState
   supportedDsdRates?: number[]

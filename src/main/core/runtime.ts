@@ -1,8 +1,12 @@
 import { readAppSettings } from './settings'
 import type { AppSettings } from './types'
-import type { DesktopLyricsTrackPayload } from '../../shared/lyricsManagement.ts'
+import type {
+  DesktopLyricsClockSnapshot,
+  DesktopLyricsSession
+} from '../../shared/desktopLyrics.ts'
 import type { BrowserWindow, Tray } from 'electron'
 import type { AudioEngineManager, PlaybackInfo } from '../audioEngineManager'
+import type { TelemetryClient } from '../analytics/telemetryClient.ts'
 import type { AudioAnalysisServiceClient } from '../audioAnalysisServiceClient.ts'
 import type { LocalLibraryIndexCoordinator } from '../library/libraryIndexCoordinator.ts'
 import type { LocalLibraryScanServiceClient } from '../library/libraryScanServiceClient.ts'
@@ -35,6 +39,7 @@ export const runtime = {
   pluginIndexService: null as PluginIndexService | null,
   opraCatalog: null as OpraCatalog | null,
   audioEngineManager: null as AudioEngineManager | null,
+  telemetry: null as TelemetryClient | null,
   audioAnalysisService: null as AudioAnalysisServiceClient | null,
   localLibraryScanService: null as LocalLibraryScanServiceClient | null,
   localLibraryIndexCoordinator: null as LocalLibraryIndexCoordinator | null,
@@ -48,12 +53,13 @@ export const runtime = {
   pendingTrayNavigation: null as TrayNavigationTarget | null,
   latestMiniPlayerState: null as MiniPlayerStateSnapshot | null,
   desktopLyricsWindow: null as BrowserWindow | null,
-  latestDesktopLyricsTrack: null as DesktopLyricsTrackPayload | null,
-  latestDesktopLyricsTime: 0,
+  latestDesktopLyricsSession: null as DesktopLyricsSession | null,
+  latestDesktopLyricsClock: null as DesktopLyricsClockSnapshot | null,
+  desktopLyricsCrashRestarts: 0,
   ncmServer: null as import('http').Server | null,
   ncmServerPromise: null as Promise<void> | null,
   tray: null as Tray | null,
-  refreshTrayMenu: null as (() => void) | null,
+  refreshTrayMenu: null as ((force?: boolean) => void) | null,
   forceQuit: false,
   closingAfterPlaybackSessionSave: false,
   savingPlaybackSessionBeforeClose: false,

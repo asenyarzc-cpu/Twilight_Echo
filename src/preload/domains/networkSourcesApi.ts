@@ -16,9 +16,7 @@ export const networkSourcesApi = {
   networkSources: {
     listProfiles: (): Promise<NetworkSourceProfileSummary[]> =>
       ipcRenderer.invoke('networkSources:listProfiles'),
-    createProfile: (
-      input: NetworkSourceProfileInput
-    ): Promise<NetworkSourceProfileSummary> =>
+    createProfile: (input: NetworkSourceProfileInput): Promise<NetworkSourceProfileSummary> =>
       ipcRenderer.invoke('networkSources:createProfile', input),
     updateProfile: (
       id: string,
@@ -35,10 +33,7 @@ export const networkSourcesApi = {
       ok: boolean
       errorCode?: NetworkSourceErrorCode
     }> => ipcRenderer.invoke('networkSources:testConnection', profileId),
-    resolvePlayback: (
-      profileId: string,
-      entry: NetworkEntry
-    ): Promise<NetworkPlaybackPlan> =>
+    resolvePlayback: (profileId: string, entry: NetworkEntry): Promise<NetworkPlaybackPlan> =>
       ipcRenderer.invoke('networkSources:resolvePlayback', profileId, entry),
     scanDirectory: (
       profileId: string,
@@ -51,8 +46,7 @@ export const networkSourcesApi = {
       ipcRenderer.invoke('networkSources:removeLibraryEntry', profileId, entryId),
     enrichLibrary: (profileId: string): Promise<{ enriched: number; failed: number }> =>
       ipcRenderer.invoke('networkSources:enrichLibrary', profileId),
-    cacheInfo: (): Promise<{ sizeBytes: number }> =>
-      ipcRenderer.invoke('networkSources:cacheInfo'),
+    cacheInfo: (): Promise<{ sizeBytes: number }> => ipcRenderer.invoke('networkSources:cacheInfo'),
     clearCache: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('networkSources:clearCache'),
     searchLibrary: (
       query?: string
@@ -103,6 +97,7 @@ export const networkSourcesApi = {
       volume?: number
       pause?: boolean
       play?: boolean
-    }): Promise<{ ok: boolean; reason?: string }> => ipcRenderer.invoke('remote:controlCast', payload)
+    }): Promise<{ ok: boolean; reason?: string }> =>
+      ipcRenderer.invoke('remote:controlCast', payload)
   }
 }

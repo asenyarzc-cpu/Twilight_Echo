@@ -31,13 +31,10 @@ test('lyrics import rejects invalid extension and oversized selected file before
   let reads = 0
   await assert.rejects(
     () =>
-      importLyricsFromDialog(
-        { canceled: false, filePaths: ['D:/lyrics/song.exe'] },
-        async () => {
-          reads++
-          return '[00:01]unused'
-        }
-      ),
+      importLyricsFromDialog({ canceled: false, filePaths: ['D:/lyrics/song.exe'] }, async () => {
+        reads++
+        return '[00:01]unused'
+      }),
     /.lrc or .txt/
   )
   await assert.rejects(
@@ -59,10 +56,7 @@ test('lyrics import accepts decoded legacy-encoding text but rejects binary or r
   assert.equal(validateImportedLyrics('song.txt', 'Untimed lyric'), 'Untimed lyric')
   // The dialog wiring decodes GBK bytes before validation, so a legacy file
   // reaches this point as ordinary Chinese text instead of U+FFFD mojibake.
-  assert.equal(
-    validateImportedLyrics('song.lrc', '[00:01.00]歌词测试'),
-    '[00:01.00]歌词测试'
-  )
+  assert.equal(validateImportedLyrics('song.lrc', '[00:01.00]歌词测试'), '[00:01.00]歌词测试')
   assert.throws(() => validateImportedLyrics('song.txt', 'bad\0text'), /valid non-empty text/)
   assert.throws(() => validateImportedLyrics('song.txt', '\uFFFD'), /valid non-empty text/)
 })
@@ -70,8 +64,5 @@ test('lyrics import accepts decoded legacy-encoding text but rejects binary or r
 test('lyrics import rejects invalid extension, invalid LRC type, and oversize text', () => {
   assert.throws(() => validateImportedLyrics('song.exe', '[00:01]Line'), /\.lrc or \.txt/)
   assert.throws(() => validateImportedLyrics('song.lrc', 'plain text'), /LRC timestamp/)
-  assert.throws(
-    () => validateImportedLyrics('song.txt', 'x'.repeat(1024 * 1024 + 1)),
-    /1 MiB/
-  )
+  assert.throws(() => validateImportedLyrics('song.txt', 'x'.repeat(1024 * 1024 + 1)), /1 MiB/)
 })

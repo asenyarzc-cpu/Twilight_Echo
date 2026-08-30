@@ -207,10 +207,7 @@ export function resolveRasterGeometry(geometry: DisplacementGeometry): {
   const rasterHeight = Math.max(1, Math.round(height * scale))
   // The radius is clamped to the short half-axis: a pill's radius is reported as
   // 999px by `border-radius: 999px`, which would otherwise blow past the shape.
-  const radius = Math.max(
-    0,
-    Math.min(geometry.radius * scale, rasterWidth / 2, rasterHeight / 2)
-  )
+  const radius = Math.max(0, Math.min(geometry.radius * scale, rasterWidth / 2, rasterHeight / 2))
   const blurRadius = Math.max(1e-6, (geometry.blurRadius ?? geometry.radius) * scale)
 
   return {

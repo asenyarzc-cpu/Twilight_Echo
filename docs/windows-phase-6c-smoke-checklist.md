@@ -1,15 +1,18 @@
 # Phase 6C/6D Windows HiFi Smoke Checklist
 
 ## Purpose
+
 Use this checklist to validate the Windows output chain after Phase 6C changes and the Phase 6D no-real-device DSD/DoP carrier gate. The real Windows hardware smoke run is opt-in, but Phase 6C/6D release readiness is not considered complete until the automated no-real-device gate passes and one real Windows machine has been checked against the non-deferred hardware items in this list.
 
 For every scenario below, record and compare:
+
 - Native `GetPlaybackInfo()`
 - `SettingsPage` output status area
 - `PlayerBar` more panel
 - Native `GetEngineCapabilities()` once at app start
 
 The three views must agree on:
+
 - `actualBackend`
 - `accessMode`
 - `devicePathKind`
@@ -22,6 +25,7 @@ The three views must agree on:
 - `perfectReasonCode`
 
 For top-level playback fields and nested `outputInfo`, confirm these mirrors match exactly:
+
 - `actualBackend`
 - `actualOutputFormat`
 - `actualSampleRate`
@@ -45,6 +49,7 @@ For top-level playback fields and nested `outputInfo`, confirm these mirrors mat
 - `perfectReasonCode`
 
 ## Phase 6D No-Real-Device DSD/DoP Gate
+
 Run the automated mock backend gate before any real hardware smoke. This gate must not require a real DAC, ASIO driver, WASAPI exclusive device, or SACD image.
 
 1. Mock DSF and DFF DSD64/128 DoP carrier scenarios.
@@ -90,6 +95,7 @@ Run the automated mock backend gate before any real hardware smoke. This gate mu
    - The release note for Phase 6D must distinguish automated mock carrier validation from deferred real-device DoP validation.
 
 ## Shared / Exclusive
+
 1. Start playback on `WASAPI Shared`.
    Expected:
    - `actualBackend=wasapi`
@@ -111,6 +117,7 @@ Run the automated mock backend gate before any real hardware smoke. This gate mu
    - previous exclusive buffer and latency values are replaced by shared-mode actuals
 
 ## Buffer Size / Routing
+
 1. In exclusive mode, test:
    - `Auto`
    - `64`
@@ -137,6 +144,7 @@ Run the automated mock backend gate before any real hardware smoke. This gate mu
    - set `perfectReasonCode=routing_changes_semantics` for semantic routing modes
 
 ## Device Switch
+
 1. Switch from default output to another Windows device during playback.
 2. Switch back to default.
 3. Confirm after each switch:
@@ -146,6 +154,7 @@ Run the automated mock backend gate before any real hardware smoke. This gate mu
    - top-level mirrors and nested `outputInfo` stay aligned after the switch
 
 ## ASIO
+
 1. If an ASIO driver is available, start playback on `ASIO`.
 2. Confirm:
    - `actualBackend=asio`
@@ -162,7 +171,7 @@ Run the automated mock backend gate before any real hardware smoke. This gate mu
    - `Device Lost`
    - `Buffer Drop`
    - `Recovery Count`
-   update in both UI surfaces and native playback info.
+     update in both UI surfaces and native playback info.
 5. Switch from ASIO back to `WASAPI Shared`.
    Expected:
    - `actualBackend=wasapi`
@@ -171,6 +180,7 @@ Run the automated mock backend gate before any real hardware smoke. This gate mu
    - ASIO device name, ASIO path kind, ASIO buffer size, and ASIO diagnostics do not leak into the shared output status unless a new native diagnostic event reports them.
 
 ## Capabilities
+
 1. Capture `GetEngineCapabilities()` from the same build used for smoke.
 2. Confirm:
    - `pcmPassthrough=true`
@@ -189,6 +199,7 @@ Run the automated mock backend gate before any real hardware smoke. This gate mu
 These map to `pnpm run smoke:audio-evidence` optional surfaces and default to `not-run`.
 
 ### Loudnorm
+
 1. Use an untagged FLAC (no ReplayGain tags).
 2. Set volume normalization to `loudnorm`.
 3. Confirm first play reports measuring/fallback (not Track alias), `perfectReasonCode=loudnorm_active`.
@@ -196,16 +207,19 @@ These map to `pnpm run smoke:audio-evidence` optional surfaces and default to `n
 5. Without libebur128 builds, confirm unavailable + fallback (no fake success).
 
 ### Gapless Album
+
 1. Queue a same-format album; gapless ON; crossfade OFF.
 2. Confirm `gaplessActive` / `preloadReady` and seamless promote without full device reopen when formats match.
 3. Confirm blocked reasons (`format_mismatch`, `crossfade`, `dsd_path`, …) when applicable.
 
 ### Unity Volume
+
 1. Default volume remains `0.7` after install / reset.
 2. Exclusive bypass / bit-perfect path with non-unity volume shows `volume_not_unity` + Unity CTA.
 3. Unity sets volume to `1.0` as an explicit user action (never silent default change).
 
 ## Pass Criteria
+
 - Settings changes update the UI without needing app restart or manual refresh.
 - UI and native playback info stay aligned after every scenario.
 - `Buffer Size` shows the actual applied backend value.

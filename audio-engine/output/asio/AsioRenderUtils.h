@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../core/AudioTypes.h"
+#include "IAsioHost.h"
 
 #include <algorithm>
 #include <cmath>
@@ -137,6 +138,92 @@ inline int callbackFrameRate(const AudioFormat& format) {
   if (format.sampleRate <= 0) return 0;
   if (!isDsdSampleFormat(format.sampleFormat)) return format.sampleRate;
   return format.sampleRate % 8 == 0 ? format.sampleRate / 8 : 0;
+}
+
+/**
+ * The unit a driver's DSD-mode getBufferSize/createBuffers count refers to.
+ *
+ * The ASIO DSD extension describes buffers as "8 samples per byte" with the
+ * sample rate set to the DSD bit rate, so a spec-literal driver counts 1-bit
+ * samples and a buffer of N samples holds N/8 bytes. Dominant vendor drivers
+ * instead count packed byte-frames — one frame = 8 DSD bits — which is the
+ * model this backend writes with. The two interpretations differ by exactly 8x
+ * in bytes-per-buffer, and writing byte-frames into a bit-counting driver
+ * overflows its buffers 8x on every callback, so the callback cadence is the
+ * only runtime evidence of which interpretation a driver uses.
+ */
+enum class DsdCallbackUnit : uint8_t {
+  Unknown,
+  /** Buffer size counts packed byte-frames: one frame = 8 DSD bits. */
+  ByteFrames,
+  /** Buffer size counts 1-bit samples: one buffer frame = bufferSize/8 bytes. */
+  BitSamples,
+};
+
+inline DsdCallbackUnit classifyDsdCallbackUnit(double byteFramePeriodMs, double elapsedMs) {
+  if (byteFramePeriodMs <= 0.0 || elapsedMs <= 0.0) return DsdCallbackUnit::Unknown;
+  const double ratio = elapsedMs / byteFramePeriodMs;
+  // BitSamples callbacks arrive ~8x faster than the byte-frame prediction.
+  // The bands are disjoint with a gap between them, so timer jitter lands in
+  // Unknown instead of flipping the verdict.
+  if (ratio >= 0.5 && ratio <= 2.0) return DsdCallbackUnit::ByteFrames;
+  if (ratio >= 0.0625 && ratio <= 0.25) return DsdCallbackUnit::BitSamples;
+  return DsdCallbackUnit::Unknown;
+}
+
+/**
+ * Probe state for which buffer unit a Native DSD driver counts, driven from the
+ * render callback.
+ *
+ * Writes start conservative: one probe callback renders bufferSize/8 packed
+ * byte-frames, which fits both interpretations (a byte-frame driver's buffer
+ * holds 8x that; a bit-sample driver's holds exactly that), so neither
+ * interpretation can overflow the driver's buffer during calibration. Once the
+ * measured cadence latches one interpretation for `confirmCallbacks` consecutive
+ * intervals, the unit widens to full byte-frames (ByteFrames) or stays at
+ * bufferSize/8 (BitSamples). Unknown intervals never advance a streak.
+ */
+struct DsdRenderUnitProbe {
+  uint32_t byteFrameStreak = 0;
+  uint32_t bitSampleStreak = 0;
+  bool confirmed = false;
+};
+
+enum class DsdRenderUnitDecision : uint8_t {
+  /** Keep the current unit; the interval was ambiguous or below the streak. */
+  Keep,
+  /** Driver counts packed byte-frames; render the full declared buffer. */
+  UseByteFrames,
+  /** Driver counts 1-bit samples; keep rendering bufferSize/8 byte-frames. */
+  UseBitSamples
+};
+
+inline DsdRenderUnitDecision advanceDsdRenderUnitProbe(
+    DsdRenderUnitProbe& probe,
+    DsdCallbackUnit observed,
+    uint32_t confirmCallbacks) {
+  if (probe.confirmed) return DsdRenderUnitDecision::Keep;
+  switch (observed) {
+    case DsdCallbackUnit::ByteFrames:
+      ++probe.byteFrameStreak;
+      probe.bitSampleStreak = 0;
+      break;
+    case DsdCallbackUnit::BitSamples:
+      ++probe.bitSampleStreak;
+      probe.byteFrameStreak = 0;
+      break;
+    case DsdCallbackUnit::Unknown:
+      return DsdRenderUnitDecision::Keep;
+  }
+  if (probe.byteFrameStreak >= confirmCallbacks) {
+    probe.confirmed = true;
+    return DsdRenderUnitDecision::UseByteFrames;
+  }
+  if (probe.bitSampleStreak >= confirmCallbacks) {
+    probe.confirmed = true;
+    return DsdRenderUnitDecision::UseBitSamples;
+  }
+  return DsdRenderUnitDecision::Keep;
 }
 
 inline uint8_t reverseBits(uint8_t value) {

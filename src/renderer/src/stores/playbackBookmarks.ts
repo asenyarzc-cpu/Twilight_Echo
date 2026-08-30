@@ -48,9 +48,7 @@ async function persist(next: PlaybackBookmarksDocument): Promise<void> {
     if (!isPersistentDataRevisionConflict(error)) throw error
     const current = error.current
     if (!current) throw error
-    document.value = clonePlaybackBookmarksDocument(
-      current.data as PlaybackBookmarksDocument
-    )
+    document.value = clonePlaybackBookmarksDocument(current.data as PlaybackBookmarksDocument)
     revision.value = current.revision
     throw error
   }
@@ -152,10 +150,7 @@ function bookmarksFor(track: Track | null | undefined): PlaybackBookmark[] {
 
 function resumeBookmarkFor(track: Track | null | undefined): PlaybackBookmark | null {
   if (!track) return null
-  return (
-    bookmarksFor(track).find((bookmark) => bookmark.kind === 'resume') ??
-    null
-  )
+  return bookmarksFor(track).find((bookmark) => bookmark.kind === 'resume') ?? null
 }
 
 function shouldOfferLongTrackResume(track: Track | null | undefined): boolean {

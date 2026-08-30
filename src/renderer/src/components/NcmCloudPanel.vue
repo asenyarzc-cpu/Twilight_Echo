@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { NcmCloudSelectedFile } from '../../../shared/ncmCloud.ts'
-import type {
-  NcmCloudSong,
-  NcmCloudTransferTask
-} from '../stores/useNcmStore.ts'
+import type { NcmCloudSong, NcmCloudTransferTask } from '../stores/useNcmStore.ts'
 
 const props = defineProps<{
   songs: NcmCloudSong[]
@@ -33,7 +30,10 @@ const emit = defineEmits<{
 const tasks = computed(() => Object.values(props.transferTasks))
 const visibleTasks = computed(() =>
   tasks.value
-    .filter((task) => task.kind === 'download' || !props.selectedFiles.some((file) => file.handle === task.handle))
+    .filter(
+      (task) =>
+        task.kind === 'download' || !props.selectedFiles.some((file) => file.handle === task.handle)
+    )
     .reverse()
     .slice(0, 8)
 )
@@ -104,7 +104,12 @@ function progressLabel(task: NcmCloudTransferTask): string {
         <p>{{ total }} 首云盘歌曲 · 上传与下载均由主进程安全处理</p>
       </div>
       <div class="cloud-header-actions">
-        <button type="button" class="cloud-button secondary" :disabled="loading" @click="emit('refresh')">
+        <button
+          type="button"
+          class="cloud-button secondary"
+          :disabled="loading"
+          @click="emit('refresh')"
+        >
           <i :class="loading ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'"></i>
           刷新
         </button>
@@ -189,7 +194,9 @@ function progressLabel(task: NcmCloudTransferTask): string {
       <i class="pi pi-cloud"></i>
       <strong>云盘暂时为空</strong>
       <p>选择本地音频上传后，歌曲会出现在这里并复用现有播放器。</p>
-      <button type="button" class="cloud-button primary" @click="emit('chooseFiles')">选择音频</button>
+      <button type="button" class="cloud-button primary" @click="emit('chooseFiles')">
+        选择音频
+      </button>
     </div>
 
     <template v-else>
@@ -223,7 +230,9 @@ function progressLabel(task: NcmCloudTransferTask): string {
           </span>
           <span class="song-main">
             <strong>{{ song.track.title }}</strong>
-            <small>{{ song.track.artist || '未知艺术家' }} · {{ song.track.album || '未知专辑' }}</small>
+            <small
+              >{{ song.track.artist || '未知艺术家' }} · {{ song.track.album || '未知专辑' }}</small
+            >
             <small class="song-file">{{ song.fileName }}</small>
           </span>
           <span class="song-meta">

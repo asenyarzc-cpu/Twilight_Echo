@@ -9,60 +9,16 @@
   overflow-x: hidden;
   padding: 28px 48px 48px;
   /*
-   * The settings image is the first layer. Transparent PNG pixels reveal the
-   * settings color and then a dedicated opaque backplate, never the home page.
-   * This avoids relying on relative-color support or on theme colors being
-   * authored without an alpha channel.
+   * The page itself is transparent: the settings overlay root in App is the
+   * SINGLE painter of the settings wallpaper. Earlier copies of the image here
+   * relied on fixed-attachment anchoring, which Chromium silently drops on
+   * composited layers — splitting the wallpaper into mismatched title/body
+   * bands. One static painter cannot drift.
    */
-  /* The parent overlay owns the hard backplate. Keep the same independent
-     stack here as a fallback for component previews/mounts outside App. */
-  background-color: #17181a;
-  background-image:
-    var(--te-settings-bg-image, none),
-    linear-gradient(var(--te-settings-bg), var(--te-settings-bg)), linear-gradient(#17181a, #17181a);
-  background-position: center, center, center;
-  background-size: cover, cover, cover;
-  background-repeat: no-repeat, no-repeat, no-repeat;
-  /* Keep all layers pinned to the viewport as this long page scrolls. */
-  background-attachment: fixed, fixed, fixed;
+  background: transparent;
   color: var(--te-settings-text);
   font-family: var(--te-font-sans);
   scroll-behavior: smooth;
-}
-
-/* The settings route owns its own fixed backplate, so body-level ambient light
-   cannot reach its cards. Recreate the same restrained environment here when the
-   liquid material is active. The configured image stays on top; this only supplies
-   depth when the settings background is a flat color. */
-html[data-theme='pureWhite'][data-te-surface-material='liquidGlass'] .settings-preview-page {
-  background-color: #f5f7fb;
-  background-image:
-    var(--te-settings-bg-image, none),
-    radial-gradient(88% 74% at 8% -10%, rgba(116, 164, 245, 0.14) 0%, transparent 67%),
-    radial-gradient(72% 68% at 103% 92%, rgba(236, 164, 190, 0.09) 0%, transparent 70%),
-    linear-gradient(142deg, rgba(255, 255, 255, 0.72) 0%, rgba(241, 244, 250, 0.64) 100%),
-    linear-gradient(var(--te-settings-bg), var(--te-settings-bg)) !important;
-  background-position: center, center, center, center, center;
-  background-size: cover, cover, cover, cover, cover;
-  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
-  background-attachment: fixed, fixed, fixed, fixed, fixed;
-}
-
-/* Dark settings previously sampled a flat #17181a backplate, which made every
-   large pane read as the same opaque charcoal block. These muted fixed lights
-   provide depth for glass to reveal without becoming a coloured or neon theme. */
-html[data-theme='dark'][data-te-surface-material='liquidGlass'] .settings-preview-page {
-  background-color: #13161e;
-  background-image:
-    var(--te-settings-bg-image, none),
-    radial-gradient(96% 82% at 6% -14%, rgba(62, 98, 168, 0.22) 0%, transparent 68%),
-    radial-gradient(82% 78% at 106% 100%, rgba(122, 63, 120, 0.14) 0%, transparent 72%),
-    linear-gradient(145deg, rgba(32, 39, 53, 0.86), rgba(16, 18, 24, 0.9)),
-    linear-gradient(var(--te-settings-bg), var(--te-settings-bg)) !important;
-  background-position: center, center, center, center, center;
-  background-size: cover, cover, cover, cover, cover;
-  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
-  background-attachment: fixed, fixed, fixed, fixed, fixed;
 }
 
 .settings-preview-page::-webkit-scrollbar {
@@ -4210,4 +4166,95 @@ html[data-density='comfortable'] .setting-copy {
     width: 100%;
     justify-content: space-between;
   }
+}
+
+/* ── Desktop lyrics: live preview and preset management ─────────────────── */
+
+/*
+ * The preview hosts the real KaraokeLine component out of the lyrics window, so
+ * this wrapper only has to supply a legible box and let `--dl-*` do the rest.
+ */
+.desktop-lyrics-preview {
+  flex: 1 1 320px;
+  min-width: 0;
+  max-width: 460px;
+  border: 1px solid var(--te-card-border);
+  border-radius: 16px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--te-neutral-900) 88%, transparent),
+      color-mix(in srgb, var(--te-primary-500) 24%, var(--te-neutral-900))
+    ),
+    var(--te-card-bg);
+  overflow: hidden;
+}
+
+.desktop-preset-field {
+  display: grid;
+  flex: 0 0 320px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.desktop-preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.desktop-preset-input {
+  flex: 1 1 120px;
+  min-width: 96px;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--te-card-border);
+  border-radius: 8px;
+  color: var(--te-neutral-900);
+  background: var(--te-card-bg);
+  font-size: 12px;
+}
+
+/* The picker is driven by the 导入 JSON button, never shown on its own. */
+.desktop-preset-file {
+  display: none;
+}
+
+.desktop-preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.desktop-preset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--te-card-border);
+  border-radius: 999px;
+  color: var(--te-neutral-700);
+  background: color-mix(in srgb, var(--te-primary-500) 8%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.desktop-preset-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--te-neutral-500);
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.desktop-preset-remove:hover {
+  color: var(--te-neutral-900);
+  background: color-mix(in srgb, var(--te-neutral-500) 18%, transparent);
 }

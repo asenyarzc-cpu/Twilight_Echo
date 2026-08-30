@@ -129,7 +129,9 @@ async function packCommand(args) {
 }
 
 async function runCli(args) {
-  const packageJson = JSON.parse(await fs.readFile(path.join(packageRoot(), 'package.json'), 'utf-8'))
+  const packageJson = JSON.parse(
+    await fs.readFile(path.join(packageRoot(), 'package.json'), 'utf-8')
+  )
   if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
     console.log(usage())
     return

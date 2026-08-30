@@ -5,7 +5,10 @@ import {
 } from '../../../shared/miniPlayer.ts'
 import { createLegacyDspGraph } from '../../../shared/dspGraph.ts'
 import { DEFAULT_SLEEP_TIMER_SETTINGS } from '../../../shared/sleepTimer.ts'
-import { DESKTOP_LYRICS_FOLLOW_FONT } from '../../../shared/desktopLyricsFont.ts'
+import {
+  DEFAULT_DESKTOP_LYRICS_SETTINGS,
+  normalizeDesktopLyricsSettings
+} from '../../../shared/desktopLyrics.ts'
 import {
   DEFAULT_LYRICS_APPEARANCE,
   cloneLyricsAppearance,
@@ -104,7 +107,8 @@ const fallbackSettings: AppSettings = {
     previous: 'CommandOrControl+Alt+Left',
     next: 'CommandOrControl+Alt+Right',
     playPause: 'CommandOrControl+Alt+Space',
-    toggleDesktopLyrics: 'CommandOrControl+Alt+D'
+    toggleDesktopLyrics: 'CommandOrControl+Alt+D',
+    toggleDesktopLyricsLock: 'CommandOrControl+Alt+L'
   },
   musicCachePath: '',
   cachePath: '',
@@ -232,33 +236,7 @@ const fallbackSettings: AppSettings = {
   dspPinnedSceneId: null,
   headphoneCompensation: fallbackHeadphoneCompensation,
   audioEqPresets: [],
-  desktopLyrics: {
-    enabled: false,
-    fontSize: 32,
-    fontFamily: DESKTOP_LYRICS_FOLLOW_FONT,
-    fontWeight: 700,
-    color: '#ffffff',
-    highlightColor: '#3b82f6',
-    bgColor: '#000000',
-    bgOpacity: 30,
-    align: 'center',
-    showTranslation: true,
-    layout: 'bilingual',
-    presentation: 'netease',
-    lineSpacing: 1.6,
-    shadow: true,
-    shadowBlur: 8,
-    shadowColor: '#000000',
-    windowWidth: 900,
-    windowHeight: 160,
-    windowX: -1,
-    windowY: -1,
-    alwaysOnTop: true,
-    locked: false,
-    clickThrough: false,
-    maxLines: 2,
-    lineOffset: 0
-  },
+  desktopLyrics: { ...DEFAULT_DESKTOP_LYRICS_SETTINGS },
   miniPlayer: cloneMiniPlayerSettings(DEFAULT_MINI_PLAYER_SETTINGS),
   proxyMode: 'auto',
   proxyHost: '',
@@ -440,6 +418,7 @@ function applySnapshot(snapshot: SettingsSnapshot): void {
     },
     lyricsAppearance: normalizeLyricsAppearance(incoming.lyricsAppearance),
     lyricsPresets: normalizeLyricsPresetConfig(incoming.lyricsPresets),
+    desktopLyrics: normalizeDesktopLyricsSettings(incoming.desktopLyrics, { resetLegacy: false }),
     cardAppearance: {
       ...fallbackSettings.cardAppearance,
       ...(incoming.cardAppearance ?? {}),

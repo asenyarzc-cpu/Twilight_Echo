@@ -45,6 +45,7 @@ import { setupRemoteIpc, destroyRemoteIpc } from '../remote/remoteIpc.ts'
 import { setupNetworkSourceIpc } from '../network/networkIpc.ts'
 import { installElectronSecurity } from '../security/electronSecurity.ts'
 import { createRemoteMediaRequestHandler } from '../security/remoteMediaGrants.ts'
+import { destroyTelemetry, initializeTelemetry } from '../analytics/index.ts'
 import { createWindow } from './window'
 import { consumeAppSettingsLoadIssue, supportsNativeWindowTransparency } from '../core/settings'
 import type { SettingsFileLoadIssue } from '../persistence/settingsFile.ts'
@@ -344,6 +345,7 @@ export function startApp(): void {
       setupNetworkSourceIpc()
       setupOpraIpc()
       setupPluginIpc()
+      initializeTelemetry()
 
       // Linux 上透明窗口必须等合成器视觉就绪后再建窗，否则内容不渲染
       if (
@@ -376,6 +378,8 @@ export function startApp(): void {
     app.on('before-quit', () => {
       runtime.forceQuit = true
       destroyDesktopLyrics()
+      // 队列已同步落盘；退出期间的网络投递是尽力而为，未发出的事件下次启动重试。
+      void runtime.telemetry?.endSession()
       void runtime.pluginManager?.broadcastEvent('app:before-quit', null)
     })
 
@@ -394,6 +398,7 @@ export function startApp(): void {
       runtime.localLibraryScanService = null
       runtime.audioEngineManager?.destroy()
       runtime.audioEngineManager = null
+      destroyTelemetry()
       runtime.bpmAnalysisManager = null
       runtime.loudnessAnalysisManager = null
       runtime.pluginManager = null

@@ -164,11 +164,7 @@ onUnmounted(() => {
             <button class="btn-cancel" :disabled="isScanning" @click="handleAddNewFolder">
               添加文件夹
             </button>
-            <button
-              class="btn-start"
-              :disabled="isScanning"
-              @click="startScan"
-            >
+            <button class="btn-start" :disabled="isScanning" @click="startScan">
               {{ isScanning ? '正在扫描...' : '重新扫描' }}
             </button>
           </div>

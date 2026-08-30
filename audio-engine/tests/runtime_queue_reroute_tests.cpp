@@ -228,6 +228,30 @@ void testNativeDsdRenderPositionAccountsForBitsPerByte() {
   assert(renderTypedBody.find("dsdRenderedFrameUnits") != std::string::npos);
 }
 
+// A plain hi-rate 24-bit PCM stream is wire-identical to a DoP carrier, so
+// `isDopCarrierFormat(output.format)` alone cannot authorize marker writes.
+// Every marker/idle write in the typed render path must be gated on the
+// pipeline's own DSD-transport flags: a 24/192 (or 176.4/352.8/384k) PCM track
+// would otherwise lose its top byte to alternating 0x05/0xFA markers.
+void testRenderTypedGatesDopMarkerWritesOnDsdTransport() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath = testFilePath.parent_path().parent_path() / "core" / "AudioPipeline.cpp";
+  const std::string source = readTextFile(sourcePath);
+  const std::string renderTypedBody = extractFunctionBody(source, "size_t AudioPipeline::renderTyped(PcmBlock& output)");
+
+  assert(renderTypedBody.find("dsdTransportActive = dopPathActive || nativeDsdPathActive || pcmToDsdPathActive") !=
+         std::string::npos);
+  // The stopped/idle and post-read finalize sites must be transport-gated, not
+  // bare carrier-format checks.
+  assert(renderTypedBody.find("if (isDopCarrierFormat(output.format)) {\n        if (dsdTransportActive) {") !=
+         std::string::npos);
+  assert(renderTypedBody.find("if (isDopCarrierFormat(output.format)) {\n    if (dsdTransportActive) {") !=
+         std::string::npos);
+  // The mismatch fallback stays transport-gated too.
+  const size_t mismatchGate = renderTypedBody.find("typedPassthroughActive && dsdTransportActive &&");
+  assert(mismatchGate != std::string::npos);
+}
+
 void testTypedDsdFormatMismatchEmitsTransportIdleInsteadOfPcmFallback() {
   const std::filesystem::path testFilePath(__FILE__);
   const std::filesystem::path sourcePath = testFilePath.parent_path().parent_path() / "core" / "AudioPipeline.cpp";
@@ -1382,6 +1406,16 @@ float dopCarrierFloat(uint8_t first, uint8_t second, uint8_t marker) {
 
 bool bufferHasSampleAbove(const std::vector<float>& samples, float threshold);
 
+// A DSP configuration that keeps the Float32 path engaged without touching the
+// signal level. The passthrough gate judges each module by what it would do, so
+// an enabled-but-flat equalizer is transparent and would leave these tests on
+// the typed passthrough path, where software volume is not applied at all. A
+// ReplayGain stage with no tags and no offsets resolves to exactly 0 dB, so the
+// amplitude assertions below still measure software volume alone.
+constexpr const char* kUnityGainProcessingConfigJson =
+    "{\"dspEnabled\":true,\"volumeNormalization\":\"track\","
+    "\"replayGainPreamp\":0,\"replayGainFallback\":0}";
+
 void testVolumeCommandAppliesAtRenderBoundary() {
   g_backendRegistry.reset();
   AudioPipeline pipeline;
@@ -1393,7 +1427,7 @@ void testVolumeCommandAppliesAtRenderBoundary() {
           "wasapi-exclusive",
           "auto",
           1.0,
-          "{\"dspEnabled\":true,\"eqEnabled\":true}",
+          kUnityGainProcessingConfigJson,
           &error) == TAE_RESULT_OK);
   const auto backend = waitForLatestStartedBackendState();
   assert(backend);
@@ -1422,7 +1456,7 @@ void testVolumeCommandStormCoalescesToNewestValue() {
           "wasapi-exclusive",
           "auto",
           1.0,
-          "{\"dspEnabled\":true,\"eqEnabled\":true}",
+          kUnityGainProcessingConfigJson,
           &error) == TAE_RESULT_OK);
   const auto backend = waitForLatestStartedBackendState();
   assert(backend);
@@ -1707,7 +1741,7 @@ void testConfigAppliedEventFollowsRenderApplication() {
   auto& engine = harness.engine();
   ConfigEventCapture capture;
   engine.setEventCallback(captureConfigEvent, &capture);
-  assert(engine.setDspConfig("{\"dspEnabled\":true,\"eqEnabled\":true}") == TAE_RESULT_OK);
+  assert(engine.setDspConfig(kUnityGainProcessingConfigJson) == TAE_RESULT_OK);
   assert(engine.play("config-applied-event.flac", 0.0) == TAE_RESULT_OK);
   const auto backend = waitForLatestStartedBackendState();
   assert(backend);
@@ -2676,6 +2710,98 @@ void testEqEnableRequestsPcmReroute() {
   assertLatestPlaybackContains(engine, "\"perfectReason\":\"DSD processing active; falling back to PCM\"");
 }
 
+/**
+ * A scene whose nodes are all disabled must not cost a DSD source its
+ * passthrough.
+ *
+ * ApplyDspState carries two descriptions of the DSP: the graph that runs, and
+ * the renderer's legacy module toggles. A scene with the equalizer node off
+ * still ships `eqEnabled: true`, and the passthrough gate used to read the
+ * toggle - so anyone who had ever switched the EQ on lost DSD passthrough
+ * permanently while the graph processed nothing at all.
+ */
+void testDisabledGraphKeepsDsdPassthroughDespiteLegacyEqFlag() {
+  EngineHarness harness;
+  auto& engine = harness.engine();
+
+  const char* flatSceneState =
+      "{\"revision\":1,\"processing\":{\"dspEnabled\":true,\"eqEnabled\":true,\"eqMode\":\"graphic\","
+      "\"eqPreamp\":0,\"gapless\":true},\"sceneId\":\"flat\",\"graph\":{\"version\":2,\"nodes\":["
+      "{\"id\":\"equalizer\",\"type\":\"equalizer\",\"enabled\":false,"
+      "\"params\":{\"mode\":\"graphic\",\"preampDb\":0,\"bands\":[]}},"
+      "{\"id\":\"meter\",\"type\":\"meter\",\"enabled\":true,\"params\":{}}],"
+      "\"outputStage\":{\"targetSampleRate\":\"device\",\"resamplerQuality\":\"native\","
+      "\"dither\":\"off\",\"safetyClamp\":true}}}";
+  assert(engine.applyDspState(1, flatSceneState) == TAE_RESULT_OK);
+
+  assert(engine.play(harness.dsdPath(), 0.0) == TAE_RESULT_OK);
+  assert(waitForStartedBackendCount(1));
+  assertLatestPlaybackContains(engine, "\"dsdMode\":\"dop\"");
+}
+
+/**
+ * The same scene with one node switched back on must still force PCM: the graph
+ * is the authority in both directions.
+ */
+void testEnabledGraphNodeStillForcesDsdPcmFallback() {
+  EngineHarness harness;
+  auto& engine = harness.engine();
+
+  const char* activeSceneState =
+      "{\"revision\":1,\"processing\":{\"dspEnabled\":true,\"eqEnabled\":false,\"gapless\":true},"
+      "\"sceneId\":\"active\",\"graph\":{\"version\":2,\"nodes\":["
+      "{\"id\":\"equalizer\",\"type\":\"equalizer\",\"enabled\":true,"
+      "\"params\":{\"mode\":\"parametric\",\"preampDb\":0,"
+      "\"bands\":[{\"frequency\":1000,\"gain\":3,\"q\":1,\"filterType\":\"peak\"}]}}]}}";
+  assert(engine.applyDspState(1, activeSceneState) == TAE_RESULT_OK);
+
+  assert(engine.play(harness.dsdPath(), 0.0) == TAE_RESULT_OK);
+  assert(waitForStartedBackendCount(1));
+  assertLatestPlaybackContains(engine, "\"dsdMode\":\"pcm\"");
+}
+
+/**
+ * A scene generated from the module toggles enables the equalizer node as soon as
+ * the toggle is on. An untouched 10-band EQ is still bit-transparent, so it must
+ * not cost the source its passthrough either.
+ */
+void testEnabledButFlatGraphEqKeepsDsdPassthrough() {
+  EngineHarness harness;
+  auto& engine = harness.engine();
+
+  const char* flatBandsState =
+      "{\"revision\":1,\"processing\":{\"dspEnabled\":true,\"eqEnabled\":true,\"gapless\":true},"
+      "\"sceneId\":\"flat-bands\",\"graph\":{\"version\":2,\"nodes\":["
+      "{\"id\":\"equalizer\",\"type\":\"equalizer\",\"enabled\":true,"
+      "\"params\":{\"mode\":\"graphic\",\"preampDb\":0,\"bands\":["
+      "{\"frequency\":31,\"gain\":0,\"q\":1,\"filterType\":\"peak\",\"enabled\":true},"
+      "{\"frequency\":1000,\"gain\":0,\"q\":1,\"filterType\":\"peak\",\"enabled\":true}]}}]}}";
+  assert(engine.applyDspState(1, flatBandsState) == TAE_RESULT_OK);
+
+  assert(engine.play(harness.dsdPath(), 0.0) == TAE_RESULT_OK);
+  assert(waitForStartedBackendCount(1));
+  assertLatestPlaybackContains(engine, "\"dsdMode\":\"dop\"");
+}
+
+/**
+ * A flat equalizer is bit-transparent, so the legacy config-only path must not
+ * report it as processing either.
+ */
+void testFlatLegacyEqKeepsDsdPassthrough() {
+  EngineHarness harness;
+  auto& engine = harness.engine();
+
+  const char* flatEqJson =
+      "{\"dspEnabled\":true,\"eqEnabled\":true,\"eqMode\":\"graphic\",\"eqPreamp\":0,"
+      "\"eqBands\":[{\"frequency\":1000,\"gain\":0,\"q\":1,\"filterType\":\"peak\"},"
+      "{\"frequency\":4000,\"gain\":0,\"q\":1,\"filterType\":\"peak\"}]}";
+  assert(engine.setDspConfig(flatEqJson) == TAE_RESULT_OK);
+
+  assert(engine.play(harness.dsdPath(), 0.0) == TAE_RESULT_OK);
+  assert(waitForStartedBackendCount(1));
+  assertLatestPlaybackContains(engine, "\"dsdMode\":\"dop\"");
+}
+
 void testVolumeChangeRequestsPcmReroute() {
   EngineHarness harness;
   auto& engine = harness.engine();
@@ -3487,6 +3613,7 @@ int main() {
   testRenderCallbacksDoNotBlockOnPipelineMutex();
   testRenderCallbacksDoNotWaitForDecoderBuffers();
   testNativeDsdRenderPositionAccountsForBitsPerByte();
+  testRenderTypedGatesDopMarkerWritesOnDsdTransport();
   testTypedDsdFormatMismatchEmitsTransportIdleInsteadOfPcmFallback();
   testChannelRouterStateIsOwnedByRenderCallback();
   testRenderCallbacksUseNonBlockingSpectrumReset();
@@ -3553,6 +3680,10 @@ int main() {
   testInitialNonUnityVolumeUsesPcmFallback();
   testNonUnityVolumeTicksDoNotRestartDsdPlayback();
   testEqEnableRequestsPcmReroute();
+  testDisabledGraphKeepsDsdPassthroughDespiteLegacyEqFlag();
+  testEnabledGraphNodeStillForcesDsdPcmFallback();
+  testEnabledButFlatGraphEqKeepsDsdPassthrough();
+  testFlatLegacyEqKeepsDsdPassthrough();
   testVolumeChangeRequestsPcmReroute();
   testUnityVolumeReentersForcedDopFromPcm();
   testDsdOutputModePcmRequestsPcmReroute();

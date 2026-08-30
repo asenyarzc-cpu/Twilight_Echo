@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AsioRenderUtils.h"
 #include "IAsioHost.h"
 #include "../IOutputBackend.h"
 
@@ -130,6 +131,16 @@ class AsioBackend final : public IOutputBackend {
   std::vector<AsioChannelFormat> renderChannelFormatsSession_;
   std::vector<float> renderScratch_;
   std::vector<uint8_t> typedRenderScratch_;
+  bool renderTypedPathAvailableSession_ = false;
+  /**
+   * Packed byte-frames this backend renders per Native DSD callback. Native
+   * DSD sessions start at bufferSize/8 (the conservative probe unit that fits
+   * both buffer-count interpretations) and widen to the full declared size
+   * once the callback cadence confirms a byte-frame driver. Callback thread
+   * only, like the rest of the render session fields.
+   */
+  size_t renderDsdUnitFramesSession_ = 0;
+  asio::DsdRenderUnitProbe dsdRenderUnitProbe_;
   std::chrono::high_resolution_clock::time_point lastRenderTime_{};
   uint32_t renderCallbacksSeen_ = 0;
   std::atomic<uint64_t> pendingRenderUnderruns_{0};
@@ -138,6 +149,11 @@ class AsioBackend final : public IOutputBackend {
   std::atomic<uint64_t> pendingDsdIdleFrames_{0};
   std::atomic<bool> outputReadyEnabled_{true};
   std::atomic<bool> pendingNativeDsdTypedCallbackMissing_{false};
+  // Set once the callback cadence proved the driver counts DSD buffers in
+  // 1-bit samples and the render unit adapted to bufferSize/8 packed
+  // byte-frames. Surfaced as a runtime fact note instead of a failure: the
+  // conservative probe unit made every write exact, so passthrough continues.
+  std::atomic<bool> pendingDsdBufferUnitAdapted_{false};
 };
 
 bool asioBackendAvailable();

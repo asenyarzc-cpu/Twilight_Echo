@@ -82,17 +82,12 @@ export async function runDuplicateDetectionBenchmark(
   } = {}
 ): Promise<DuplicateDetectionBenchmarkResult> {
   const rows = options.rows ?? DUPLICATE_BENCHMARK_ROWS
-  const warmupIterations =
-    options.warmupIterations ?? DUPLICATE_BENCHMARK_WARMUP_ITERATIONS
+  const warmupIterations = options.warmupIterations ?? DUPLICATE_BENCHMARK_WARMUP_ITERATIONS
   const iterations = options.iterations ?? DUPLICATE_BENCHMARK_ITERATIONS
   if (!Number.isSafeInteger(rows) || rows < 10 || rows % 10 !== 0) {
     throw new Error('Duplicate detection benchmark rows must be a multiple of 10 and at least 10')
   }
-  if (
-    !Number.isSafeInteger(warmupIterations) ||
-    warmupIterations < 0 ||
-    warmupIterations > 10
-  ) {
+  if (!Number.isSafeInteger(warmupIterations) || warmupIterations < 0 || warmupIterations > 10) {
     throw new Error('Duplicate detection benchmark warmup iterations must be between 0 and 10')
   }
   if (!Number.isSafeInteger(iterations) || iterations < 1 || iterations > 50) {
@@ -393,9 +388,10 @@ function sha256(value: Uint8Array): string {
   return createHash('sha256').update(value).digest('hex')
 }
 
-export function parseDuplicateBenchmarkCli(
-  argv: string[]
-): { output: string | null; manifest: string | null } {
+export function parseDuplicateBenchmarkCli(argv: string[]): {
+  output: string | null
+  manifest: string | null
+} {
   let output: string | null = null
   let manifest: string | null = null
   for (let index = 0; index < argv.length; index++) {

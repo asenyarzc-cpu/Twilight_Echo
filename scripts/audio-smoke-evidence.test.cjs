@@ -261,7 +261,10 @@ test('audio smoke evidence does not count pass rows without artifacts as complet
   assert.deepEqual(report.json.coverage.missingArtifactSurfaces, [])
   assert.equal(report.json.actionPlan[0].surface, 'WASAPI Exclusive')
   assert.equal(report.json.actionPlan[0].status, 'insufficient-evidence')
-  assert.match(report.markdown, /only counts as passed when at least one `pass` row includes an artifact path/)
+  assert.match(
+    report.markdown,
+    /only counts as passed when at least one `pass` row includes an artifact path/
+  )
 })
 
 test('audio smoke evidence can require local pass artifacts to exist', () => {
@@ -341,7 +344,9 @@ test('audio smoke evidence CLI accepts UTF-8 BOM JSON from Windows tools', () =>
       inputPath,
       `\uFEFF${JSON.stringify({
         device: { label: 'Desk DAC' },
-        results: [{ ok: true, label: 'WASAPI Exclusive hardware smoke', backend: 'wasapi-exclusive' }]
+        results: [
+          { ok: true, label: 'WASAPI Exclusive hardware smoke', backend: 'wasapi-exclusive' }
+        ]
       })}`
     )
     const result = spawnSync(
@@ -369,14 +374,18 @@ test('audio smoke evidence can merge multiple smoke summary files', () => {
       wasapiPath,
       JSON.stringify({
         device: { label: 'Desk DAC' },
-        results: [{ ok: true, label: 'WASAPI Exclusive hardware smoke', backend: 'wasapi-exclusive' }]
+        results: [
+          { ok: true, label: 'WASAPI Exclusive hardware smoke', backend: 'wasapi-exclusive' }
+        ]
       })
     )
     fs.writeFileSync(
       asioPath,
       JSON.stringify({
         device: { label: 'Studio ASIO' },
-        results: [{ ok: false, label: 'ASIO PCM smoke', backend: 'asio', error: 'Driver rejected PCM open' }]
+        results: [
+          { ok: false, label: 'ASIO PCM smoke', backend: 'asio', error: 'Driver rejected PCM open' }
+        ]
       })
     )
 
@@ -400,7 +409,10 @@ test('audio smoke evidence accepts UTF-16 LE smoke JSON from Windows PowerShell 
       device: { name: 'Studio ASIO' },
       results: [{ ok: true, label: 'ASIO PCM smoke', backend: 'asio' }]
     })
-    fs.writeFileSync(inputPath, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(json, 'utf16le')]))
+    fs.writeFileSync(
+      inputPath,
+      Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(json, 'utf16le')])
+    )
 
     const entries = readEntriesFromInputs([inputPath])
 
@@ -421,7 +433,14 @@ test('audio smoke evidence CLI can read a directory of smoke JSON summaries', ()
       path.join(dir, 'dop.json'),
       JSON.stringify({
         device: { label: 'DoP DAC' },
-        results: [{ ok: true, label: 'DoP DAC carrier smoke', backend: 'wasapi-exclusive', info: { dsdMode: 'dop' } }]
+        results: [
+          {
+            ok: true,
+            label: 'DoP DAC carrier smoke',
+            backend: 'wasapi-exclusive',
+            info: { dsdMode: 'dop' }
+          }
+        ]
       })
     )
     fs.writeFileSync(
@@ -485,7 +504,9 @@ test('audio smoke evidence CLI treats an input entries file as the fallback arti
 })
 
 test('audio smoke evidence CLI reports missing artifact paths as incomplete evidence', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'twilight-audio-evidence-missing-artifact-test-'))
+  const dir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'twilight-audio-evidence-missing-artifact-test-')
+  )
   try {
     const inputPath = path.join(dir, 'entries.json')
     fs.writeFileSync(
@@ -528,7 +549,9 @@ test('audio smoke evidence CLI can fail when required surface evidence is incomp
       inputPath,
       JSON.stringify({
         device: { label: 'Desk DAC' },
-        results: [{ ok: true, label: 'WASAPI Exclusive hardware smoke', backend: 'wasapi-exclusive' }]
+        results: [
+          { ok: true, label: 'WASAPI Exclusive hardware smoke', backend: 'wasapi-exclusive' }
+        ]
       })
     )
     const result = spawnSync(

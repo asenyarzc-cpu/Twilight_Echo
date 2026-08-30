@@ -2,6 +2,7 @@
 
 #include "SacdIsoProbe.h"
 #include "../core/DsdRate.h"
+#include "../core/Utf8Path.h"
 
 #include <algorithm>
 #include <array>
@@ -98,6 +99,7 @@ DsdReader::~DsdReader() {
 }
 
 void DsdReader::setDstDecoderProvider(SacdDstDecoderProvider* provider) {
+  dstProvider_ = provider;
   sacd_.setDstDecoderProvider(provider);
 }
 
@@ -113,7 +115,7 @@ bool DsdReader::open(const std::string& source, std::string* error) {
     return openSacdIso(source, error);
   }
 
-  file_.open(source, std::ios::binary);
+  file_.open(utf8Path(source), std::ios::binary);
   if (!file_) {
     if (error) *error = "Unable to open DSD source";
     return false;
@@ -135,6 +137,14 @@ void DsdReader::close() {  if (file_.is_open()) file_.close();
   readOffset_ = 0;
   eof_ = false;
   sacdActive_ = false;
+  dstActive_ = false;
+  dstFrameRate_ = 0;
+  dstFrameIndex_ = 0;
+  decodedOffset_ = 0;
+  decodedSize_ = 0;
+  dstFrames_.clear();
+  decodedDsdBuffer_.clear();
+  compressedFrameBuffer_.clear();
 }
 
 bool DsdReader::seek(double seconds, std::string* error) {
@@ -146,6 +156,25 @@ bool DsdReader::seek(double seconds, std::string* error) {
   if (!file_.is_open() || info_.dataOffset == 0) {
     if (error) *error = "DSD reader is not open";
     return false;
+  }
+  if (dstActive_) {
+    // Frame-indexed seek: each DSTF sub-chunk is one 1/frameRate access unit,
+    // so seconds map directly onto the frame table.
+    const double clamped = std::max(0.0, seconds);
+    if (dstFrameRate_ > 0) {
+      const auto frame = static_cast<size_t>(clamped * static_cast<double>(dstFrameRate_));
+      dstFrameIndex_ = std::min<size_t>(frame, dstFrames_.size());
+    } else {
+      dstFrameIndex_ = 0;
+    }
+    decodedOffset_ = 0;
+    decodedSize_ = 0;
+    const size_t frameBytes = dstProvider_ ? dstProvider_->frameBytesPerChannel(info_.dsdSampleRate) : 0;
+    const size_t channels = static_cast<size_t>(std::max(1, info_.channelCount));
+    readOffset_ = std::min<uint64_t>(
+        static_cast<uint64_t>(dstFrameIndex_) * frameBytes * channels, info_.dataSize);
+    eof_ = dstFrameIndex_ >= dstFrames_.size();
+    return true;
   }
 
   const double clamped = std::max(0.0, seconds);
@@ -174,6 +203,7 @@ size_t DsdReader::readBytes(uint8_t* output, size_t maxBytes) {
     return read;
   }
   if (!output || maxBytes == 0 || !file_.is_open() || eof_) return 0;
+  if (dstActive_) return readDstBytes(output, maxBytes);
   const uint64_t remaining = info_.dataSize > readOffset_ ? info_.dataSize - readOffset_ : 0;
   const size_t toRead = static_cast<size_t>(std::min<uint64_t>(remaining, maxBytes));
   if (toRead == 0) {
@@ -259,14 +289,18 @@ bool DsdReader::openDff(std::string* error) {
   char id[4] = {};
   uint64_t formSize = 0;
   char formType[4] = {};
+  // FRM8 form type 'DSD ' = uncompressed interleaved DSD; 'DST ' = DST frames
+  // (foo_input_sacd additionally marks compression inside CMPR, so both
+  // signals are honored below).
   if (!readChunkHeaderBe(file_, id, &formSize) || !idEquals(id, "FRM8") || !readExact(file_, formType, 4) ||
-      !idEquals(formType, "DSD ")) {
+      (!idEquals(formType, "DSD ") && !idEquals(formType, "DST "))) {
     if (error) *error = "Invalid DFF header";
     return false;
   }
 
   const uint64_t formEnd = 12 + formSize;
   bool sawData = false;
+  bool cmprDst = false;
   while (file_ && tell(file_) + 12 <= formEnd) {
     const uint64_t headerStart = tell(file_);
     uint64_t chunkSize = 0;
@@ -291,6 +325,12 @@ bool DsdReader::openDff(std::string* error) {
           if (readExact(file_, raw, sizeof(raw))) {
             info_.channelCount = (static_cast<int>(raw[0]) << 8) | static_cast<int>(raw[1]);
           }
+        } else if (idEquals(subId, "CMPR") && subSize >= 4) {
+          uint8_t raw[4] = {};
+          if (readExact(file_, raw, sizeof(raw)) &&
+              idEquals(reinterpret_cast<const char*>(raw), "DST ")) {
+            cmprDst = true;
+          }
         }
         skipTo(file_, subNext);
       }
@@ -298,15 +338,67 @@ bool DsdReader::openDff(std::string* error) {
       info_.dataOffset = payloadStart;
       info_.dataSize = chunkSize;
       sawData = true;
+    } else if (idEquals(id, "DST ")) {
+      // DST-compressed sound chunk: an FRTE frame-rate header followed by one
+      // DSTF sub-chunk per access unit (DSTC CRC blocks and the optional DSTI
+      // index are skipped; the DSTF walk is itself the frame table).
+      info_.dataOffset = payloadStart;
+      const uint64_t dstEnd = payloadStart + chunkSize;
+      while (file_ && tell(file_) + 12 <= dstEnd) {
+        uint64_t subSize = 0;
+        char subId[4] = {};
+        if (!readChunkHeaderBe(file_, subId, &subSize)) break;
+        const uint64_t subPayload = tell(file_);
+        const uint64_t subNext = subPayload + subSize + (subSize & 1);
+        if (idEquals(subId, "FRTE") && subSize >= 6) {
+          uint8_t raw[6] = {};
+          if (readExact(file_, raw, sizeof(raw))) {
+            dstFrameRate_ = (static_cast<int>(raw[4]) << 8) | static_cast<int>(raw[5]);
+          }
+        } else if (idEquals(subId, "DSTF")) {
+          dstFrames_.push_back({subPayload, subSize});
+        }
+        skipTo(file_, subNext);
+      }
+      dstActive_ = !dstFrames_.empty();
+      sawData = dstActive_;
     }
     skipTo(file_, std::max(next, headerStart + 12));
   }
 
+  const bool dstCompressed = dstActive_ || cmprDst;
   info_.container = "DFF";
   info_.dsdRate = dsdRateFromSampleRate(info_.dsdSampleRate);
   info_.bitOrder = DsdBitOrder::MsbFirst;
   info_.packing = DsdPacking::DffInterleaved;
-  if (info_.dsdSampleRate > 0 && info_.channelCount > 0 && info_.dataSize > 0) {
+  if (dstCompressed) {
+    if (!dstActive_) {
+      if (error) *error = "Unsupported or incomplete DFF stream (DST compression marker without DST frames)";
+      return false;
+    }
+    if (dstProvider_ == nullptr) {
+      if (error) *error = "DST-compressed DFF requires the DSD-preserving DST decoder provider";
+      return false;
+    }
+    std::string dstError;
+    if (!dstProvider_->open(info_.channelCount, info_.dsdSampleRate, &dstError)) {
+      if (error) *error = dstError.empty() ? "DST decoder failed to initialize" : dstError;
+      return false;
+    }
+    const size_t frameBytesPerChannel = dstProvider_->frameBytesPerChannel(info_.dsdSampleRate);
+    if (frameBytesPerChannel == 0 || info_.channelCount <= 0) {
+      if (error) *error = "Invalid DST frame geometry";
+      return false;
+    }
+    const uint64_t decodedFrameBytes =
+        frameBytesPerChannel * static_cast<uint64_t>(info_.channelCount);
+    info_.dataSize = static_cast<uint64_t>(dstFrames_.size()) * decodedFrameBytes;
+    info_.durationSeconds =
+        dstFrameRate_ > 0
+            ? static_cast<double>(dstFrames_.size()) / static_cast<double>(dstFrameRate_)
+            : static_cast<double>(info_.dataSize * 8) /
+                  static_cast<double>(info_.dsdSampleRate * static_cast<uint64_t>(info_.channelCount));
+  } else if (info_.dsdSampleRate > 0 && info_.channelCount > 0 && info_.dataSize > 0) {
     info_.durationSeconds =
         static_cast<double>(info_.dataSize * 8) /
         static_cast<double>(info_.dsdSampleRate * static_cast<uint64_t>(info_.channelCount));
@@ -317,6 +409,68 @@ bool DsdReader::openDff(std::string* error) {
     return false;
   }
   return true;
+}
+
+size_t DsdReader::readDstBytes(uint8_t* output, size_t maxBytes) {
+  if (dstProvider_ == nullptr) {
+    eof_ = true;
+    return 0;
+  }
+  const size_t frameBytesPerChannel = dstProvider_->frameBytesPerChannel(info_.dsdSampleRate);
+  const size_t channels = static_cast<size_t>(std::max(1, info_.channelCount));
+  if (frameBytesPerChannel == 0) {
+    eof_ = true;
+    return 0;
+  }
+  const size_t decodedFrameBytes = frameBytesPerChannel * channels;
+
+  size_t delivered = 0;
+  while (delivered < maxBytes) {
+    // Drain the current frame's decoded bytes before touching the next one.
+    if (decodedOffset_ < decodedSize_) {
+      const size_t available = decodedSize_ - decodedOffset_;
+      const size_t copyBytes = std::min(available, maxBytes - delivered);
+      std::memcpy(output + delivered, decodedDsdBuffer_.data() + decodedOffset_, copyBytes);
+      decodedOffset_ += copyBytes;
+      delivered += copyBytes;
+      readOffset_ += copyBytes;
+      continue;
+    }
+    if (dstFrameIndex_ >= dstFrames_.size()) {
+      eof_ = true;
+      break;
+    }
+    const DstFrameEntry& frame = dstFrames_[dstFrameIndex_];
+    if (frame.size == 0 || frame.size > (64ULL << 20)) {
+      eof_ = true;
+      break;
+    }
+    compressedFrameBuffer_.resize(static_cast<size_t>(frame.size));
+    skipTo(file_, frame.offset);
+    if (!readExact(file_, compressedFrameBuffer_.data(), compressedFrameBuffer_.size())) {
+      eof_ = true;
+      break;
+    }
+    decodedDsdBuffer_.assign(decodedFrameBytes, 0);
+    std::string decodeError;
+    // Each DSTF sub-chunk is exactly one access unit; a short decode fails
+    // closed rather than emitting a partial frame into the bit-perfect path.
+    const size_t written = dstProvider_->decodeFrame(
+        compressedFrameBuffer_.data(),
+        compressedFrameBuffer_.size(),
+        decodedDsdBuffer_.data(),
+        decodedDsdBuffer_.size(),
+        &decodeError);
+    if (written != decodedFrameBytes) {
+      eof_ = true;
+      break;
+    }
+    decodedOffset_ = 0;
+    decodedSize_ = decodedFrameBytes;
+    ++dstFrameIndex_;
+  }
+  if (delivered == 0) eof_ = true;
+  return delivered;
 }
 
 bool DsdReader::openSacdIso(const std::string& source, std::string* error) {

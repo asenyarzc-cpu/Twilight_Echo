@@ -27,7 +27,8 @@ export type SftpBatchRunner = (
   signal?: AbortSignal
 ) => Promise<SftpBatchResult>
 
-const LS_LINE = /^([-dl])([rwxsStT-]{9})\s+\d+\s+\S+\s+\S+\s+(\d+)\s+[A-Za-z]{3}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\d{4})\s+(.+)$/
+const LS_LINE =
+  /^([-dl])([rwxsStT-]{9})\s+\d+\s+\S+\s+\S+\s+(\d+)\s+[A-Za-z]{3}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\d{4})\s+(.+)$/
 
 /** 解析 OpenSSH `sftp ls -l` 输出（与 Unix `ls -l` 同格式）。 */
 export function parseLsOutput(output: string): SftpLsItem[] {
@@ -64,7 +65,10 @@ async function defaultRunBatch(
         resolve({
           stdout,
           stderr,
-          code: typeof error === 'object' && error !== null ? (error as { code?: number }).code ?? 1 : 0
+          code:
+            typeof error === 'object' && error !== null
+              ? ((error as { code?: number }).code ?? 1)
+              : 0
         })
       }
     )
@@ -112,12 +116,16 @@ export function createSftpSystemAdapter(deps?: {
 
       async function run(commands: string, signal?: AbortSignal): Promise<string> {
         if (signal?.aborted) throw new NetworkSourceFailure('timeout', '网络操作已取消')
-        const result = await runBatch(commands, {
-          host: profile.host,
-          port: profile.port ?? 22,
-          username,
-          keyPath
-        }, signal)
+        const result = await runBatch(
+          commands,
+          {
+            host: profile.host,
+            port: profile.port ?? 22,
+            username,
+            keyPath
+          },
+          signal
+        )
         if (signal?.aborted) throw new NetworkSourceFailure('timeout', '网络操作已取消')
         const stderr = result.stderr
         if (/permission denied|authentication|publickey/i.test(stderr)) {

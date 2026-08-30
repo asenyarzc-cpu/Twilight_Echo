@@ -6,8 +6,9 @@ const {
   isJsonNestingWithinLimit,
   parseJsonWithNestingLimit,
   tryParseJsonWithNestingLimit
-} =
-  (await import(new URL('./jsonSafety.ts', import.meta.url).href)) as typeof import('./jsonSafety')
+} = (await import(
+  new URL('./jsonSafety.ts', import.meta.url).href
+)) as typeof import('./jsonSafety')
 
 function deeplyNestedJson(depth: number): string {
   return `${'['.repeat(depth)}0${']'.repeat(depth)}`
@@ -32,7 +33,6 @@ test('bounds untrusted JSON text without counting brackets in quoted strings', (
   assert.deepEqual(parseJsonWithNestingLimit('{"ok":true}'), { ok: true })
   assert.throws(() => parseJsonWithNestingLimit(deeplyNestedJson(128)), /too deeply nested/)
 })
-
 
 test('bounds in-memory JSON values before they cross a trust boundary', () => {
   assert.deepEqual(inspectJsonValueWithLimits({ ok: true, label: 'short' }, 1024), { ok: true })

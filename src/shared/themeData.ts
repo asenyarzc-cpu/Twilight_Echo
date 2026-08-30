@@ -14,7 +14,7 @@ export interface BuiltInThemeFont {
 }
 
 export const lightFont =
-    "'Inter', 'Plus Jakarta Sans', 'MiSans', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+  "'Inter', 'Plus Jakarta Sans', 'MiSans', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
 export const BUILT_IN_THEME_FONTS: readonly BuiltInThemeFont[] = Object.freeze([
   { id: 'system', label: '系统与 MiSans', category: 'system', value: lightFont },
@@ -28,8 +28,7 @@ export const BUILT_IN_THEME_FONTS: readonly BuiltInThemeFont[] = Object.freeze([
     id: 'jakarta',
     label: 'Plus Jakarta Sans',
     category: 'sans',
-    value:
-      "'Plus Jakarta Sans', 'MiSans', 'Microsoft YaHei UI', system-ui, sans-serif"
+    value: "'Plus Jakarta Sans', 'MiSans', 'Microsoft YaHei UI', system-ui, sans-serif"
   },
   {
     id: 'lora',

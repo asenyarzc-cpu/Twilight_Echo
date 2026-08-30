@@ -18,7 +18,10 @@ import type { TwilightPluginDescriptor, TwilightPluginIndexEntry } from './types
 
 const require = createRequire(import.meta.url)
 const { createZip } = require('../../../packages/create-twilight-plugin/lib/zip.cjs') as {
-  createZip: (root: string, outputFile: string) => Promise<{ fileCount: number; outputFile: string }>
+  createZip: (
+    root: string,
+    outputFile: string
+  ) => Promise<{ fileCount: number; outputFile: string }>
 }
 
 const baseManifest = {
@@ -49,10 +52,7 @@ test('loads a valid plugin index and describes install state', async () => {
   const entries = await service.list()
   assert.equal(entries.length, 1)
   assert.equal(entries[0].id, baseManifest.id)
-  assert.equal(
-    service.describeInstallState(entries[0], []),
-    'not-installed'
-  )
+  assert.equal(service.describeInstallState(entries[0], []), 'not-installed')
   assert.equal(
     service.describeInstallState(entries[0], [descriptor({ version: '1.0.0' })]),
     'installed'
@@ -64,27 +64,21 @@ test('loads a valid plugin index and describes install state', async () => {
 })
 
 test('rejects invalid sourceUrl protocols and escaping paths', async () => {
-  await assert.rejects(
-    async () => {
-      const fixture = await createIndexFixture({ sourceUrl: 'ftp://example.test/plugin.tep' })
-      await new PluginIndexService({
-        appVersion: '0.20.0',
-        localIndexPath: fixture.indexPath
-      }).list()
-    },
-    /sourceUrl/
-  )
+  await assert.rejects(async () => {
+    const fixture = await createIndexFixture({ sourceUrl: 'ftp://example.test/plugin.tep' })
+    await new PluginIndexService({
+      appVersion: '0.20.0',
+      localIndexPath: fixture.indexPath
+    }).list()
+  }, /sourceUrl/)
 
-  await assert.rejects(
-    async () => {
-      const fixture = await createIndexFixture({ sourceUrl: '../outside.tep' })
-      await new PluginIndexService({
-        appVersion: '0.20.0',
-        localIndexPath: fixture.indexPath
-      }).list()
-    },
-    /索引目录外/
-  )
+  await assert.rejects(async () => {
+    const fixture = await createIndexFixture({ sourceUrl: '../outside.tep' })
+    await new PluginIndexService({
+      appVersion: '0.20.0',
+      localIndexPath: fixture.indexPath
+    }).list()
+  }, /索引目录外/)
 })
 
 test('rejects checksum mismatch during package download', async () => {
@@ -170,13 +164,17 @@ test('downloads a valid package after checksum validation', async () => {
 test('uses the default GitHub index URL unless an override is provided', () => {
   assert.equal(resolvePluginIndexUrl(undefined), DEFAULT_PLUGIN_INDEX_URL)
   assert.equal(resolvePluginIndexUrl('  '), DEFAULT_PLUGIN_INDEX_URL)
-  assert.equal(resolvePluginIndexUrl('https://example.test/plugins.json'), 'https://example.test/plugins.json')
+  assert.equal(
+    resolvePluginIndexUrl('https://example.test/plugins.json'),
+    'https://example.test/plugins.json'
+  )
 })
 
 test('loads remote index, records source status, and writes cache', async () => {
   const fixture = await createIndexFixture()
   const cachePath = join(fixture.root, 'cache', 'plugins.json')
-  const remoteUrl = 'https://raw.githubusercontent.com/asenyarzc-cpu/Twilight-Echo-plugins/main/plugins.json'
+  const remoteUrl =
+    'https://raw.githubusercontent.com/asenyarzc-cpu/Twilight-Echo-plugins/main/plugins.json'
   const service = new PluginIndexService({
     appVersion: '0.20.0',
     localIndexPath: fixture.indexPath,
@@ -560,10 +558,7 @@ for (const boundary of ['status', 'list', 'download'] as const) {
 
     if (boundary === 'status') {
       assert.equal(harness.service.getStatus().expired, false)
-      assert.equal(
-        residentEntries(harness.service)[0].verification.signatureStatus,
-        'key-expired'
-      )
+      assert.equal(residentEntries(harness.service)[0].verification.signatureStatus, 'key-expired')
       return
     }
     if (boundary === 'list') {
@@ -603,7 +598,8 @@ test('download rejects when a concurrent refresh changes the expected package ha
     localIndexPath: fixture.indexPath,
     remoteIndexUrl: remoteUrl,
     fetchImpl: async (input) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (url === remoteUrl) {
         // list() + downloadPackage force-refresh both pin indexA; later refresh flips to indexB.
         const body = indexRequests++ < 2 ? indexA : indexB
@@ -617,7 +613,6 @@ test('download rejects when a concurrent refresh changes the expected package ha
     }
   })
   await service.list()
-
   ;(service as unknown as { indexValidatedAt: number }).indexValidatedAt = 0
   const download = service.downloadPackage(baseManifest.id)
   await packageRequested.promise
@@ -655,7 +650,8 @@ test('download binds the complete index entry fingerprint even when checksum is 
     localIndexPath: fixture.indexPath,
     remoteIndexUrl: remoteUrl,
     fetchImpl: async (input) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (url === remoteUrl) {
         // list() + downloadPackage force-refresh both pin indexA; later refresh flips to indexB.
         return new Response(new Uint8Array(indexRequests++ < 2 ? indexA : indexB))
@@ -668,7 +664,6 @@ test('download binds the complete index entry fingerprint even when checksum is 
     }
   })
   await service.list()
-
   ;(service as unknown as { indexValidatedAt: number }).indexValidatedAt = 0
   const download = service.downloadPackage(baseManifest.id)
   await packageRequested.promise
@@ -1131,13 +1126,15 @@ test('bundled plugin index does not carry third-party tep packages', async () =>
   )
 })
 
-async function createIndexFixture(options: {
-  manifest?: typeof baseManifest
-  indexManifest?: typeof baseManifest
-  sourceUrl?: string
-  checksumSha256?: string
-  entryTransform?: (entry: Record<string, unknown>) => Record<string, unknown>
-} = {}): Promise<{ root: string; indexPath: string; packagePath: string }> {
+async function createIndexFixture(
+  options: {
+    manifest?: typeof baseManifest
+    indexManifest?: typeof baseManifest
+    sourceUrl?: string
+    checksumSha256?: string
+    entryTransform?: (entry: Record<string, unknown>) => Record<string, unknown>
+  } = {}
+): Promise<{ root: string; indexPath: string; packagePath: string }> {
   const root = await mkdtemp(join(tmpdir(), 'twilight-index-test-'))
   const packageRoot = join(root, 'plugin')
   const packageDir = join(root, 'packages')
@@ -1151,8 +1148,7 @@ async function createIndexFixture(options: {
   const packagePath = join(packageDir, packageFileName)
   await createZip(packageRoot, packagePath)
   const buffer = await readFile(packagePath)
-  const checksumSha256 =
-    options.checksumSha256 ?? createHash('sha256').update(buffer).digest('hex')
+  const checksumSha256 = options.checksumSha256 ?? createHash('sha256').update(buffer).digest('hex')
   const indexPath = join(root, 'plugins.json')
   const indexEntry: Record<string, unknown> = {
     ...indexManifest,
@@ -1168,9 +1164,7 @@ async function createIndexFixture(options: {
     JSON.stringify(
       {
         schemaVersion: 1,
-        plugins: [
-          options.entryTransform ? options.entryTransform(indexEntry) : indexEntry
-        ]
+        plugins: [options.entryTransform ? options.entryTransform(indexEntry) : indexEntry]
       },
       null,
       2
@@ -1268,9 +1262,8 @@ async function createResidentOfficialHarness(options: {
 }
 
 function residentEntries(service: PluginIndexService): TwilightPluginIndexEntry[] {
-  const entries = (
-    service as unknown as { cachedEntries: TwilightPluginIndexEntry[] | null }
-  ).cachedEntries
+  const entries = (service as unknown as { cachedEntries: TwilightPluginIndexEntry[] | null })
+    .cachedEntries
   assert.ok(entries)
   return entries
 }

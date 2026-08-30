@@ -152,8 +152,8 @@ export class PluginIndexService {
       options.trustedPublisherRegistry ??
       loadTrustedPluginPublisherRegistry(
         options.trustedPublisherRegistryPath ??
-           join(dirname(this.localIndexPath), 'trusted-publishers.json')
-       )
+          join(dirname(this.localIndexPath), 'trusted-publishers.json')
+      )
     this.packageStagingDir = options.packageStagingDir?.trim() || tmpdir()
     this.currentBaseUrl = this.remoteIndexUrl || pathToFileURL(this.localIndexPath).toString()
     const configuredSourceUrl = this.currentBaseUrl
@@ -432,7 +432,8 @@ export class PluginIndexService {
     installed: TwilightPluginDescriptor[]
   ): 'not-installed' | 'installed' | 'update-available' | 'incompatible' | 'built-in-blocked' {
     if (this.bundledPluginIds.has(entry.id)) return 'built-in-blocked'
-    if (!isCompatibleTwilightRange(entry.engines.twilightEcho, this.appVersion)) return 'incompatible'
+    if (!isCompatibleTwilightRange(entry.engines.twilightEcho, this.appVersion))
+      return 'incompatible'
     const descriptor = installed.find((plugin) => plugin.id === entry.id)
     if (!descriptor) return 'not-installed'
     if (compareSemver(entry.version, descriptor.version) > 0) return 'update-available'
@@ -618,7 +619,8 @@ export class PluginIndexService {
     trustContext: PluginIndexTrustContext,
     verificationTime: Date = this.currentTime()
   ): TwilightPluginIndexEntry[] {
-    if (!isPluginIndexRaw(raw)) throw new Error('插件索引必须是包含 schemaVersion 和 plugins 的对象')
+    if (!isPluginIndexRaw(raw))
+      throw new Error('插件索引必须是包含 schemaVersion 和 plugins 的对象')
     if (raw.schemaVersion !== INDEX_SCHEMA_VERSION) {
       throw new Error(`不支持的插件索引 schemaVersion：${raw.schemaVersion}`)
     }
@@ -786,9 +788,8 @@ export class PluginIndexService {
   }> {
     const result = await this.withRemoteResponse(
       url,
-      async (response, controller) =>
-      this.readResponseBuffer(response, limitBytes, controller)
-      , headers
+      async (response, controller) => this.readResponseBuffer(response, limitBytes, controller),
+      headers
     )
     return {
       buffer: result.value,
@@ -812,14 +813,11 @@ export class PluginIndexService {
     if (isHttpUrl(source)) {
       let serverAcceptsRanges = false
       try {
-        const result = await this.withRemoteResponse(
-          source,
-          async (response, controller) => {
-            serverAcceptsRanges =
-              response.headers.get('accept-ranges')?.toLowerCase().includes('bytes') === true
-            return await this.writeResponsePackage(response, packagePath, controller)
-          }
-        )
+        const result = await this.withRemoteResponse(source, async (response, controller) => {
+          serverAcceptsRanges =
+            response.headers.get('accept-ranges')?.toLowerCase().includes('bytes') === true
+          return await this.writeResponsePackage(response, packagePath, controller)
+        })
         return { checksum: result.value, responseUrl: result.responseUrl }
       } catch (error) {
         const partialSize = existsSync(packagePath) ? (await stat(packagePath)).size : 0
@@ -937,7 +935,10 @@ export class PluginIndexService {
       return {
         response,
         responseUrl: reportedUrl.toString(),
-        redirected: redirected || response.redirected === true || reportedUrl.toString() !== currentUrl.toString()
+        redirected:
+          redirected ||
+          response.redirected === true ||
+          reportedUrl.toString() !== currentUrl.toString()
       }
     }
   }
@@ -948,9 +949,14 @@ export class PluginIndexService {
     controller: AbortController
   ): Promise<Buffer> {
     const chunks: Buffer[] = []
-    const totalBytes = await consumeResponseBody(response, limitBytes, controller, async (chunk) => {
-      chunks.push(Buffer.from(chunk))
-    })
+    const totalBytes = await consumeResponseBody(
+      response,
+      limitBytes,
+      controller,
+      async (chunk) => {
+        chunks.push(Buffer.from(chunk))
+      }
+    )
     return Buffer.concat(chunks, totalBytes)
   }
 
@@ -998,7 +1004,11 @@ export class PluginIndexService {
           const { bytesRead } = await source.read(chunk, 0, chunk.byteLength, null)
           if (bytesRead === 0) return
           const data = chunk.subarray(0, bytesRead)
-          receivedBytes = addBoundedBytes(receivedBytes, data.byteLength, this.packageSizeLimitBytes)
+          receivedBytes = addBoundedBytes(
+            receivedBytes,
+            data.byteLength,
+            this.packageSizeLimitBytes
+          )
           await writeChunk(data)
         }
       } finally {
@@ -1040,7 +1050,11 @@ export class PluginIndexService {
   private resolveSourceUrl(sourceUrl: string, baseUrl: string): string {
     const trimmed = sourceUrl.trim()
     if (!trimmed) throw new Error('插件索引 sourceUrl 不能为空')
-    if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(trimmed) && !isHttpUrl(trimmed) && !trimmed.startsWith('file://')) {
+    if (
+      /^[A-Za-z][A-Za-z0-9+.-]*:/.test(trimmed) &&
+      !isHttpUrl(trimmed) &&
+      !trimmed.startsWith('file://')
+    ) {
       throw new Error('插件包 sourceUrl 协议不受支持')
     }
     if (isHttpUrl(trimmed)) {
@@ -1071,8 +1085,8 @@ export class PluginIndexService {
     const manifest = validatePluginManifest(
       parseJsonWithNestingLimit(await readFile(join(extractedRoot, 'plugin.json'), 'utf-8'))
     )
-    const mismatches = manifestComparisonKeys.filter((key) =>
-      JSON.stringify(manifest[key]) !== JSON.stringify(entry[key])
+    const mismatches = manifestComparisonKeys.filter(
+      (key) => JSON.stringify(manifest[key]) !== JSON.stringify(entry[key])
     )
     if (mismatches.length > 0) {
       throw new Error(`插件包 manifest 与索引 entry 不一致：${entry.id} (${mismatches.join(', ')})`)
@@ -1258,9 +1272,7 @@ function normalizeCacheTimestamp(value: unknown, field: string): string {
 
 function isPluginIndexRaw(value: unknown): value is PluginIndexRaw {
   return (
-    isRecord(value) &&
-    value.schemaVersion === INDEX_SCHEMA_VERSION &&
-    Array.isArray(value.plugins)
+    isRecord(value) && value.schemaVersion === INDEX_SCHEMA_VERSION && Array.isArray(value.plugins)
   )
 }
 
@@ -1326,5 +1338,8 @@ function compareSemver(left: string, right: string): number {
 
 function isInsidePath(child: string, parent: string): boolean {
   const pathBetween = relative(resolve(parent), resolve(child))
-  return pathBetween === '' || (pathBetween !== '..' && !pathBetween.startsWith(`..${sep}`) && !isAbsolute(pathBetween))
+  return (
+    pathBetween === '' ||
+    (pathBetween !== '..' && !pathBetween.startsWith(`..${sep}`) && !isAbsolute(pathBetween))
+  )
 }

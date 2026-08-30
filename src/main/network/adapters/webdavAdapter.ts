@@ -4,10 +4,7 @@ import type { IncomingMessage } from 'node:http'
 import { buildNetworkEntryId, normalizeRemotePath } from '../networkPath.ts'
 import { NetworkSourceFailure } from '../errors.ts'
 import { entryKind } from '../entryKinds.ts'
-import type {
-  NetworkEntry,
-  NetworkSourceProfile
-} from '../../../shared/networkSources.ts'
+import type { NetworkEntry, NetworkSourceProfile } from '../../../shared/networkSources.ts'
 import type { NetworkAuth, NetworkSourceAdapter, NetworkSourceSession } from './types.ts'
 
 function isCollectionBlock(block: string): boolean {
@@ -19,28 +16,32 @@ function extractTag(block: string, tag: string): string | null {
   return match ? match[1].trim() : null
 }
 
-function parseMultistatus(xml: string): Array<{ href: string; directory: boolean; size?: number; mime?: string; mtimeMs?: number }> {
+function parseMultistatus(
+  xml: string
+): Array<{ href: string; directory: boolean; size?: number; mime?: string; mtimeMs?: number }> {
   const blocks: string[] = []
   const pattern = /<(?:\w+:)?response[^>]*>([\s\S]*?)<\/(?:\w+:)?response>/gi
   let match: RegExpExecArray | null
   while ((match = pattern.exec(xml)) !== null) blocks.push(match[1])
 
-  return blocks.map((block) => {
-    const href = extractTag(block, 'href')
-    if (!href) return null
-    const sizeText = extractTag(block, 'getcontentlength')
-    const size = sizeText ? Number.parseInt(sizeText, 10) : undefined
-    const mime = extractTag(block, 'getcontenttype') ?? undefined
-    const mtimeText = extractTag(block, 'getlastmodified')
-    const mtimeMs = mtimeText ? Date.parse(mtimeText) : undefined
-    return {
-      href: decodeURIComponent(href),
-      directory: isCollectionBlock(block),
-      size: Number.isFinite(size) ? size : undefined,
-      mime,
-      mtimeMs: Number.isFinite(mtimeMs as number) ? mtimeMs : undefined
-    }
-  }).filter((item): item is NonNullable<typeof item> => item !== null)
+  return blocks
+    .map((block) => {
+      const href = extractTag(block, 'href')
+      if (!href) return null
+      const sizeText = extractTag(block, 'getcontentlength')
+      const size = sizeText ? Number.parseInt(sizeText, 10) : undefined
+      const mime = extractTag(block, 'getcontenttype') ?? undefined
+      const mtimeText = extractTag(block, 'getlastmodified')
+      const mtimeMs = mtimeText ? Date.parse(mtimeText) : undefined
+      return {
+        href: decodeURIComponent(href),
+        directory: isCollectionBlock(block),
+        size: Number.isFinite(size) ? size : undefined,
+        mime,
+        mtimeMs: Number.isFinite(mtimeMs as number) ? mtimeMs : undefined
+      }
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
 }
 
 function nameOf(path: string): string {
@@ -62,7 +63,10 @@ function mergeSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortS
 export function createWebDavAdapter(): NetworkSourceAdapter {
   return {
     protocol: 'webdav',
-    async createSession(profile: NetworkSourceProfile, auth: NetworkAuth): Promise<NetworkSourceSession> {
+    async createSession(
+      profile: NetworkSourceProfile,
+      auth: NetworkAuth
+    ): Promise<NetworkSourceSession> {
       const scheme = profile.webdavScheme ?? (profile.port === 443 ? 'https' : 'http')
       const port = profile.port ?? (scheme === 'https' ? 443 : 80)
       const cleanHost = profile.host.replace(/^https?:\/\//i, '')
@@ -110,11 +114,15 @@ export function createWebDavAdapter(): NetworkSourceAdapter {
         if (!status || (status >= 200 && status < 300)) return
         if (status === 401) throw new NetworkSourceFailure('auth', '认证失败，请检查用户名或密码')
         if (status === 403) throw new NetworkSourceFailure('denied', '没有权限访问该目录')
-        if (status === 404) throw new NetworkSourceFailure('notFound', `远程路径不存在：${remotePath}`)
+        if (status === 404)
+          throw new NetworkSourceFailure('notFound', `远程路径不存在：${remotePath}`)
         throw new NetworkSourceFailure('network', `远程服务器返回错误状态 ${status}`)
       }
 
-      async function collectBody(res: IncomingMessage, limitBytes = 8 * 1024 * 1024): Promise<string> {
+      async function collectBody(
+        res: IncomingMessage,
+        limitBytes = 8 * 1024 * 1024
+      ): Promise<string> {
         const chunks: Buffer[] = []
         let total = 0
         for await (const chunk of res) {
@@ -191,9 +199,7 @@ export function createWebDavAdapter(): NetworkSourceAdapter {
           options?: { start?: number }
         ): Promise<NodeJS.ReadableStream> {
           const headers: Record<string, string> =
-            options?.start != null && options.start > 0
-              ? { Range: `bytes=${options.start}-` }
-              : {}
+            options?.start != null && options.start > 0 ? { Range: `bytes=${options.start}-` } : {}
           const res = await perform('GET', remotePath, headers, signal)
           throwForStatus(res.statusCode, remotePath)
           return res

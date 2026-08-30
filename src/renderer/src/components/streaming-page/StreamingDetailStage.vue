@@ -375,7 +375,9 @@ function shuffleAndPlay(): void {
               :aria-label="`播放 ${track.title}`"
               @click="onPlayRow(track, trackIndex(index), $event)"
             >
-              <span class="row-index-num">{{ String(trackIndex(index) + 1).padStart(2, '0') }}</span>
+              <span class="row-index-num">{{
+                String(trackIndex(index) + 1).padStart(2, '0')
+              }}</span>
               <i class="pi pi-play row-play-icon"></i>
             </button>
           </div>

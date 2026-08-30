@@ -141,9 +141,7 @@ export function createMusicLibraryDocument(
   }).document
 }
 
-export function enforceMusicLibraryExclusionInvariant(
-  document: LocalMusicLibraryDocument
-): {
+export function enforceMusicLibraryExclusionInvariant(document: LocalMusicLibraryDocument): {
   document: LocalMusicLibraryDocument
   removedTrackIds: string[]
   changed: boolean
@@ -196,12 +194,7 @@ export function persistMusicLibraryDocument(
   document: LocalMusicLibraryDocument
 ): void {
   const normalized = createMusicLibraryDocument(document, document.exclusions)
-  writeJsonFileAtomic(
-    filePath,
-    JSON.stringify(normalized),
-    MUSIC_LIBRARY_JSON_OPTIONS,
-    normalized
-  )
+  writeJsonFileAtomic(filePath, JSON.stringify(normalized), MUSIC_LIBRARY_JSON_OPTIONS, normalized)
   replaceActiveLibraryExclusions(normalized.exclusions)
 }
 
@@ -366,7 +359,9 @@ function normalizeLibraryExclusion(value: unknown): LocalLibraryExclusion | null
   return {
     filePath: value.filePath,
     title:
-      typeof value.title === 'string' && value.title ? value.title : fileNameFromPath(value.filePath),
+      typeof value.title === 'string' && value.title
+        ? value.title
+        : fileNameFromPath(value.filePath),
     artist: typeof value.artist === 'string' ? value.artist : '',
     excludedAt:
       typeof value.excludedAt === 'string' && value.excludedAt

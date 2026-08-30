@@ -29,7 +29,6 @@ export type {
   UiDensity,
   ProxyMode,
   NowPlayingBackground,
-  LyricAlign,
   StreamingAudioCachePolicy,
   AppBackgroundPage,
   AppBackgroundKind,
@@ -43,8 +42,7 @@ export type {
   BackgroundEffectSettings,
   CardAppearanceSettings,
   WindowTransparencyEffectSettings,
-  DesktopLyricsLayout,
-  DesktopLyricsPresentation,
+  DesktopLyricsPalette,
   DesktopLyricsSettings,
   MusicCachePolicySettings,
   AudioEqPreset,
@@ -82,6 +80,7 @@ export type PlayerShortcutAction =
   | 'play'
   | 'pause'
   | 'toggleDesktopLyrics'
+  | 'toggleDesktopLyricsLock'
   | { action: 'seek'; positionSeconds: number }
   | { action: 'setVolume'; volume: number }
   | { action: 'jumpQueue'; index: number }

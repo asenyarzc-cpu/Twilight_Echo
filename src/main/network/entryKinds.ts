@@ -21,7 +21,7 @@ export function entryKind(
   options: { mime?: string; directory?: boolean }
 ): NetworkEntry['kind'] {
   if (options.directory) return 'directory'
-  const extension = name.includes('.') ? name.split('.').pop()?.toLowerCase() ?? '' : ''
+  const extension = name.includes('.') ? (name.split('.').pop()?.toLowerCase() ?? '') : ''
   if (options.mime?.startsWith('audio/') || AUDIO_EXTENSIONS.has(extension)) return 'audio'
   return 'file'
 }

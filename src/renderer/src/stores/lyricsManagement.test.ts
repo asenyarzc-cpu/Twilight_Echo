@@ -24,7 +24,10 @@ let rejectNextSave = false
         savedAt: '2026-07-18T00:00:00.000Z',
         data: structuredClone(authoritative)
       }),
-      saveLyricsManagement: async (document: LyricsManagementDocument, expectedRevision: number) => {
+      saveLyricsManagement: async (
+        document: LyricsManagementDocument,
+        expectedRevision: number
+      ) => {
         if (rejectNextSave) {
           rejectNextSave = false
           throw Object.assign(new Error('conflict'), {

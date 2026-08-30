@@ -17,6 +17,7 @@
 
 ## 音频、设备与发布
 
+- [ASIO DSD 直通行业调研](./asio-dsd-passthrough-research.md)
 - [Windows 发布门禁](./windows-release-gate.md)
 - [Windows HiFi 真实设备检查](./windows-phase-6c-smoke-checklist.md)
 - [真实设备音频证据规则](./audio-smoke-evidence.md)
@@ -50,6 +51,10 @@
 
 - [Apple Music Inspired HiFi Player 设计系统](./apple-music-inspired-hifi-player-design-system.md)
 - [Apple Music Provider 实施与安全计划](./apple-music-provider-plan.md)
+
+## 统计与运营
+
+- [日活与使用统计契约](./telemetry-dau.md)
 
 ## 法律与验证证据
 

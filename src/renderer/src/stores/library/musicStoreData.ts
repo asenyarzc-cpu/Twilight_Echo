@@ -182,9 +182,7 @@ export function toPlaylistTrackSnapshot(track: Track): Track {
     ...(track.audioFingerprint !== undefined
       ? { audioFingerprint: { ...track.audioFingerprint } }
       : {}),
-    ...(source === 'local' && track.streamUrl !== undefined
-      ? { streamUrl: track.streamUrl }
-      : {}),
+    ...(source === 'local' && track.streamUrl !== undefined ? { streamUrl: track.streamUrl } : {}),
     ...(track.streamQuality !== undefined ? { streamQuality: track.streamQuality } : {}),
     ...(track.format !== undefined ? { format: track.format } : {}),
     ...(track.sampleRate !== undefined ? { sampleRate: track.sampleRate } : {}),

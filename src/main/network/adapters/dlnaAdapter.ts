@@ -82,12 +82,21 @@ async function defaultGet(url: string): Promise<DlnaHttpResponse> {
   return requestText('GET', url)
 }
 
-async function defaultPost(url: string, soapAction: string, body: string): Promise<DlnaHttpResponse> {
-  return requestText('POST', url, {
-    SOAPACTION: `"${soapAction}"`,
-    'Content-Type': 'text/xml; charset="utf-8"',
-    'Content-Length': Buffer.byteLength(body)
-  }, body)
+async function defaultPost(
+  url: string,
+  soapAction: string,
+  body: string
+): Promise<DlnaHttpResponse> {
+  return requestText(
+    'POST',
+    url,
+    {
+      SOAPACTION: `"${soapAction}"`,
+      'Content-Type': 'text/xml; charset="utf-8"',
+      'Content-Length': Buffer.byteLength(body)
+    },
+    body
+  )
 }
 
 async function requestText(
@@ -99,29 +108,22 @@ async function requestText(
   return new Promise((resolve, reject) => {
     const parsed = new URL(url)
     const requestFn = parsed.protocol === 'https:' ? httpsRequest : httpRequest
-    const req = requestFn(
-      parsed,
-      { method, headers },
-      (res) => {
-        const chunks: Buffer[] = []
-        res.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
-        res.on('end', () =>
-          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) })
-        )
-      }
-    )
+    const req = requestFn(parsed, { method, headers }, (res) => {
+      const chunks: Buffer[] = []
+      res.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }))
+    })
     req.on('error', reject)
     if (body) req.write(body)
     req.end()
   })
 }
 
-function toEntry(
-  profile: NetworkSourceProfile,
-  item: DidlEntry
-): NetworkEntry {
+function toEntry(profile: NetworkSourceProfile, item: DidlEntry): NetworkEntry {
   const path = `/${item.id}`
-  const kind = item.container ? 'directory' : entryKind(item.title, { mime: item.audioItem ? 'audio/unknown' : undefined })
+  const kind = item.container
+    ? 'directory'
+    : entryKind(item.title, { mime: item.audioItem ? 'audio/unknown' : undefined })
   return {
     id: buildNetworkEntryId(profile.protocol, profile.id, path),
     profileId: profile.id,

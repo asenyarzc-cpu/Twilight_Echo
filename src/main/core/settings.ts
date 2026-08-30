@@ -74,7 +74,10 @@ import {
   cloneLyricsAppearance,
   normalizeLyricsAppearance
 } from '../../shared/lyricsAppearance.ts'
-import { DESKTOP_LYRICS_FOLLOW_FONT } from '../../shared/desktopLyricsFont.ts'
+import {
+  DEFAULT_DESKTOP_LYRICS_SETTINGS,
+  normalizeDesktopLyricsSettings
+} from '../../shared/desktopLyrics.ts'
 import { normalizeAppFontFamily } from '../../shared/appFont.ts'
 import {
   DEFAULT_LYRICS_PRESET_CONFIG,
@@ -90,33 +93,7 @@ import {
 
 let appSettingsLoadIssue: SettingsFileLoadIssue | null = null
 
-export const DEFAULT_DESKTOP_LYRICS: DesktopLyricsSettings = {
-  enabled: false,
-  fontSize: 32,
-  fontFamily: DESKTOP_LYRICS_FOLLOW_FONT,
-  fontWeight: 700,
-  color: '#ffffff',
-  highlightColor: '#3b82f6',
-  bgColor: '#000000',
-  bgOpacity: 30,
-  align: 'center',
-  showTranslation: true,
-  layout: 'bilingual',
-  presentation: 'netease',
-  lineSpacing: 1.6,
-  shadow: true,
-  shadowBlur: 8,
-  shadowColor: '#000000',
-  windowWidth: 900,
-  windowHeight: 160,
-  windowX: -1,
-  windowY: -1,
-  alwaysOnTop: true,
-  locked: false,
-  clickThrough: false,
-  maxLines: 2,
-  lineOffset: 0
-}
+export const DEFAULT_DESKTOP_LYRICS: DesktopLyricsSettings = DEFAULT_DESKTOP_LYRICS_SETTINGS
 
 export const DEFAULT_MUSIC_CACHE_POLICY: MusicCachePolicySettings = {
   cover: true,
@@ -129,7 +106,8 @@ export const DEFAULT_GLOBAL_SHORTCUT_BINDINGS: GlobalShortcutSettings = {
   previous: 'CommandOrControl+Alt+Left',
   next: 'CommandOrControl+Alt+Right',
   playPause: 'CommandOrControl+Alt+Space',
-  toggleDesktopLyrics: 'CommandOrControl+Alt+D'
+  toggleDesktopLyrics: 'CommandOrControl+Alt+D',
+  toggleDesktopLyricsLock: 'CommandOrControl+Alt+L'
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -395,6 +373,10 @@ export function normalizeGlobalShortcutBindings(raw: unknown): GlobalShortcutSet
     toggleDesktopLyrics: normalizeShortcutAccelerator(
       value.toggleDesktopLyrics,
       DEFAULT_GLOBAL_SHORTCUT_BINDINGS.toggleDesktopLyrics
+    ),
+    toggleDesktopLyricsLock: normalizeShortcutAccelerator(
+      value.toggleDesktopLyricsLock,
+      DEFAULT_GLOBAL_SHORTCUT_BINDINGS.toggleDesktopLyricsLock
     )
   }
 }
@@ -639,49 +621,7 @@ export function normalizeOutputConfig(config: unknown): OutputConfig {
 }
 
 export function normalizeDesktopLyrics(raw: unknown): DesktopLyricsSettings {
-  const d = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
-  return {
-    enabled: d.enabled === true,
-    fontSize: clampNumber(d.fontSize, 12, 80, DEFAULT_DESKTOP_LYRICS.fontSize),
-    fontFamily:
-      typeof d.fontFamily === 'string' && d.fontFamily.trim()
-        ? d.fontFamily.trim().slice(0, 64)
-        : DEFAULT_DESKTOP_LYRICS.fontFamily,
-    fontWeight: clampNumber(d.fontWeight, 100, 900, DEFAULT_DESKTOP_LYRICS.fontWeight),
-    color: typeof d.color === 'string' ? d.color : DEFAULT_DESKTOP_LYRICS.color,
-    highlightColor:
-      typeof d.highlightColor === 'string'
-        ? d.highlightColor
-        : DEFAULT_DESKTOP_LYRICS.highlightColor,
-    bgColor: typeof d.bgColor === 'string' ? d.bgColor : DEFAULT_DESKTOP_LYRICS.bgColor,
-    bgOpacity: clampNumber(d.bgOpacity, 0, 100, DEFAULT_DESKTOP_LYRICS.bgOpacity),
-    align: d.align === 'left' ? 'left' : 'center',
-    showTranslation: d.showTranslation !== false,
-    layout:
-      d.layout === 'multi'
-        ? 'multi'
-        : d.layout === 'bilingual'
-          ? 'bilingual'
-          : DEFAULT_DESKTOP_LYRICS.layout,
-    presentation:
-      d.presentation === 'classic' || d.presentation === 'netease'
-        ? d.presentation
-        : DEFAULT_DESKTOP_LYRICS.presentation,
-    lineSpacing: clampNumber(d.lineSpacing, 1.0, 3.0, DEFAULT_DESKTOP_LYRICS.lineSpacing),
-    shadow: d.shadow !== false,
-    shadowBlur: clampNumber(d.shadowBlur, 0, 30, DEFAULT_DESKTOP_LYRICS.shadowBlur),
-    shadowColor:
-      typeof d.shadowColor === 'string' ? d.shadowColor : DEFAULT_DESKTOP_LYRICS.shadowColor,
-    windowWidth: clampNumber(d.windowWidth, 200, 3000, DEFAULT_DESKTOP_LYRICS.windowWidth),
-    windowHeight: clampNumber(d.windowHeight, 60, 800, DEFAULT_DESKTOP_LYRICS.windowHeight),
-    windowX: typeof d.windowX === 'number' ? d.windowX : -1,
-    windowY: typeof d.windowY === 'number' ? d.windowY : -1,
-    alwaysOnTop: d.alwaysOnTop !== false,
-    locked: typeof d.locked === 'boolean' ? d.locked : d.clickThrough === true || d.locked === true,
-    clickThrough: typeof d.locked === 'boolean' ? d.locked : d.clickThrough === true,
-    maxLines: clampNumber(d.maxLines, 1, 5, DEFAULT_DESKTOP_LYRICS.maxLines),
-    lineOffset: clampNumber(d.lineOffset, -200, 200, DEFAULT_DESKTOP_LYRICS.lineOffset)
-  }
+  return normalizeDesktopLyricsSettings(raw)
 }
 
 export function normalizeSleepTimerSettings(raw: unknown): SleepTimerSettings {

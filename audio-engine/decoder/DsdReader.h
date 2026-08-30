@@ -11,6 +11,8 @@
 
 namespace twilight::audio {
 
+class SacdDstDecoderProvider;
+
 enum class DsdBitOrder {
   LsbFirst,
   MsbFirst
@@ -56,20 +58,39 @@ class DsdReader {
   const DsdStreamInfo& streamInfo() const;
 
   // Forward a DSD-preserving DST decoder provider to the SACD ISO demuxer so
-  // DST-compressed tracks become playable. No-op for DSF/DFF sources.
+  // DST-compressed tracks become playable. Also enables DST-compressed DFF
+  // (DSDIFF) decoding inside this reader. No-op for DSF and uncompressed DFF.
   void setDstDecoderProvider(SacdDstDecoderProvider* provider);
 
  private:
+  struct DstFrameEntry {
+    uint64_t offset = 0;
+    uint64_t size = 0;
+  };
+
   bool openDsf(std::string* error);
   bool openDff(std::string* error);
   bool openSacdIso(const std::string& source, std::string* error);
+  size_t readDstBytes(uint8_t* output, size_t maxBytes);
 
   std::ifstream file_;
   SacdIsoDemuxer sacd_;
+  SacdDstDecoderProvider* dstProvider_ = nullptr;
   DsdStreamInfo info_;
   uint64_t readOffset_ = 0;
   bool eof_ = false;
   bool sacdActive_ = false;
+  // DST-compressed DFF state: the DST sound chunk is a sequence of DSTF
+  // sub-chunks, each an independently decodable access unit. Frames are
+  // decoded on demand into decodedDsdBuffer_ and drained from there.
+  bool dstActive_ = false;
+  int dstFrameRate_ = 0;
+  size_t dstFrameIndex_ = 0;
+  size_t decodedOffset_ = 0;
+  size_t decodedSize_ = 0;
+  std::vector<DstFrameEntry> dstFrames_;
+  std::vector<uint8_t> decodedDsdBuffer_;
+  std::vector<uint8_t> compressedFrameBuffer_;
 };
 
 }  // namespace twilight::audio

@@ -26,6 +26,7 @@ class RealAsioHost final : public IAsioHost {
   AudioSampleFormat outputSampleFormat(long channel) const override;
   AsioChannelFormat outputChannelFormat(long channel) const override;
   bool outputReady() override;
+  long activeBufferSize() const override;
 
  private:
   struct Impl;

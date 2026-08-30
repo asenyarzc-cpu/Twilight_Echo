@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -14,6 +15,7 @@
 #include <fstream>
 #include <limits>
 #include <optional>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -181,6 +183,10 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
   AsioEventCallback eventCallback;
   std::atomic<bool> running = false;
   std::atomic<uint32_t> pendingEvents = 0;
+  // Set while the init-compatibility "Cubase dance" runs its dummy engine
+  // round: the dummy buffers fire real callbacks that must neither reach the
+  // render pipeline nor raise spurious buffer-failure events.
+  std::atomic<bool> danceInProgress = false;
   int32_t bufferSize = 0;
   int32_t latency = 0;
   asio_abi::AsioIoFormat originalIoFormat{};
@@ -192,6 +198,7 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
   bool ioFormatRestoreRequired = false;
   bool originalIoFormatKnown = false;
   bool sampleRateRestoreRequired = false;
+  bool nativeDsdCanDoReported = false;
 
   bool selectNativeDsdSemanticRate(int driverRate, const char* order, std::string* error) {
     const double requestedRate = static_cast<double>(driverRate);
@@ -217,15 +224,18 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
     requestedIoFormat.formatType = asio_abi::kAsioIoFormatDsd;
     const auto canFormatResult = driver->future(asio_abi::kFutureCanDoIoFormat, &requestedIoFormat);
     traceNativeDsdResult(driver, (std::string(order) + " can-io-format").c_str(), canFormatResult, std::nullopt, &requestedIoFormat);
-    if (!asio_abi::asioErrorIsSuccess(canFormatResult)) {
+    if (!asio_abi::asioErrorIsSuccess(canFormatResult) ||
+        requestedIoFormat.formatType == asio_abi::kAsioIoFormatInvalid) {
       if (error) *error = "ASIO driver rejected Native DSD I/O format";
       return false;
     }
+    nativeDsdCanDoReported = true;
 
     ioFormatRestoreRequired = true;
     const auto setFormatResult = driver->future(asio_abi::kFutureSetIoFormat, &requestedIoFormat);
     traceNativeDsdResult(driver, (std::string(order) + " set-io-format").c_str(), setFormatResult, std::nullopt, &requestedIoFormat);
-    if (!asio_abi::asioErrorIsSuccess(setFormatResult)) {
+    if (!asio_abi::asioErrorIsSuccess(setFormatResult) ||
+        requestedIoFormat.formatType == asio_abi::kAsioIoFormatInvalid) {
       if (error) *error = "ASIO driver could not switch to Native DSD I/O format";
       return false;
     }
@@ -249,6 +259,7 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
       if (error) *error = "Native DSD configuration requires a raw DSD format";
       return false;
     }
+    nativeDsdCanDoReported = false;
     const int driverRate = asio::driverSampleRate(format);
     if (driverRate <= 0) {
       if (error) *error = "Native DSD requested an invalid ASIO semantic sample rate";
@@ -302,9 +313,32 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
     }
 
     restoreNativeDsdConfiguration();
+
+    // A third driver family never implemented the IoFormat futures at all and
+    // switches its channel sample type to raw DSD purely from the semantic DSD
+    // sample rate (the Amanero-era USB class). Setting the rate alone is safe:
+    // the getChannelInfo DSD-type check later in open() is the actual proof, so
+    // a driver that ignored the rate fails there instead of emitting PCM into
+    // a DSD stream.
+    std::string rateOnlyError;
+    if (selectNativeDsdSemanticRate(driverRate, "rate-only", &rateOnlyError)) {
+      nativeDsdNegotiation = "rate-only";
+      return true;
+    }
+
+    restoreNativeDsdConfiguration();
     nativeDsdNegotiation = "all-orders-failed";
     if (error) {
-      *error = "ASIO Native DSD negotiation failed (format-first: " + formatFirstError + "; rate-first: " + rateFirstError + ")";
+      *error = "ASIO Native DSD negotiation failed (format-first: " + formatFirstError +
+               "; rate-first: " + rateFirstError + "; rate-only: " + rateOnlyError + ")";
+      if (nativeDsdCanDoReported) {
+        // Can-do answered yes while both sets were refused. Field-verified
+        // shape of a device held by another audio client — the same driver
+        // accepts every switch the moment the other client closes — not of
+        // missing DSD capability. Say so instead of implying the DAC cannot.
+        *error += "; the driver claims DSD support but refused the switch, so another audio client "
+                  "likely holds the device";
+      }
     }
     return false;
   }
@@ -326,6 +360,7 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
   }
 
   void onAsioBufferSwitch(int32_t bufferIndex) noexcept override {
+    if (danceInProgress.load(std::memory_order_acquire)) return;
     if (bufferIndex < 0 || bufferIndex > 1 || !running.load(std::memory_order_acquire)) {
       pendingEvents.fetch_or(kEventBufferFailure, std::memory_order_release);
       return;
@@ -473,20 +508,67 @@ bool AsioDriverSession::open(const AsioOpenConfig& config, AsioOpenResult* resul
           return outcome;
         }
 
+        if (nativeDsdRequested) {
+          // A driver's valid buffer-size range can change once the DSD I/O
+          // format is active; handing createBuffers a PCM-mode size then fails
+          // with ASE_InvalidParameter on exactly those drivers. Re-read the
+          // range and re-choose. A failed re-read or an invalid DSD-mode range
+          // keeps the PCM-mode choice instead of failing an otherwise working
+          // open.
+          traceAsioDriverCall("before getBufferSize (native DSD)");
+          if (asio_abi::asioErrorIsSuccess(
+                  state->driver->getBufferSize(&minimum, &maximum, &preferred, &granularity))) {
+            traceNativeDsdText(
+                "buffer-size-dsd",
+                "minimum=" + std::to_string(minimum) + " maximum=" + std::to_string(maximum) +
+                    " preferred=" + std::to_string(preferred) + " granularity=" +
+                    std::to_string(granularity));
+            const int32_t dsdBufferSize =
+                chooseBufferSize(config.bufferSizeFrames, minimum, maximum, preferred, granularity);
+            if (dsdBufferSize > 0) state->bufferSize = dsdBufferSize;
+          }
+          traceAsioDriverCall("after getBufferSize (native DSD)");
+        }
+
         const int driverRate = asio::driverSampleRate(config.format);
         const double requestedRate = static_cast<double>(driverRate);
         traceAsioDriverCall("before sample rate negotiation");
-        if (requestedRate <= 0 ||
-            (!nativeDsdRequested &&
-             (!asio_abi::asioErrorIsSuccess(state->driver->canSampleRate(requestedRate)) ||
-              !asio_abi::asioErrorIsSuccess(state->driver->setSampleRate(requestedRate))))) {
-          // The single most common refusal, and exactly the one that used to end
-          // playback outright. Another candidate rate may be accepted.
+        if (requestedRate <= 0) {
           outcome.result.failureKind = AsioOpenFailureKind::Format;
           outcome.error = driverError(state->driver, "ASIO sample rate is unsupported");
           return outcome;
         }
+        if (!nativeDsdRequested) {
+          // PortAudio/RtAudio only set the rate when it differs: a redundant
+          // setSampleRate can disturb some drivers and re-triggers the
+          // exclusive-format arbitration on multi-client devices.
+          double currentRate = 0;
+          const bool alreadyAtRate =
+              asio_abi::asioErrorIsSuccess(state->driver->getSampleRate(&currentRate)) &&
+              std::abs(currentRate - requestedRate) <= 0.01;
+          if (!alreadyAtRate &&
+              (!asio_abi::asioErrorIsSuccess(state->driver->canSampleRate(requestedRate)) ||
+               !asio_abi::asioErrorIsSuccess(state->driver->setSampleRate(requestedRate)))) {
+            outcome.result.failureKind = AsioOpenFailureKind::Format;
+            outcome.error = driverError(state->driver, "ASIO sample rate is unsupported");
+            return outcome;
+          }
+        }
         traceAsioDriverCall("after sample rate negotiation");
+        // JUCE re-reads the channel count after the rate switch: on a few
+        // drivers it changes, and createBuffers with a stale count then fails
+        // obscurely. A failed re-read is not fatal - the original count stands.
+        traceAsioDriverCall("before getChannels (post-rate)");
+        int32_t postRateInputs = 0;
+        int32_t postRateOutputs = 0;
+        if (asio_abi::asioErrorIsSuccess(
+                state->driver->getChannels(&postRateInputs, &postRateOutputs)) &&
+            config.format.channelCount > postRateOutputs) {
+          outcome.result.failureKind = AsioOpenFailureKind::Format;
+          outcome.error = "ASIO output channel configuration changed after the rate switch";
+          return outcome;
+        }
+        traceAsioDriverCall("after getChannels (post-rate)");
         double actualRate = 0;
         traceAsioDriverCall("before getSampleRate");
         if (!asio_abi::asioErrorIsSuccess(state->driver->getSampleRate(&actualRate)) || actualRate <= 0) {
@@ -738,8 +820,11 @@ bool AsioDriverSession::probe(AsioDeviceInfo* info, std::string* error) {
         }
 
         // DoP rides a normal PCM carrier, so any driver taking a 24-bit type at
-        // a DoP carrier rate can attempt it.
-        for (int rate : {176400, 352800, 705600}) {
+        // a DoP carrier rate can attempt it. Both rate families are probed to
+        // match dopCarrierFormatForDsd's carrier table: a 48k-family source
+        // needs 192k/384k/768k/1536k carriers, and understating them here
+        // mislabels capable devices.
+        for (int rate : {176400, 192000, 352800, 384000, 705600, 768000, 1411200, 1536000}) {
           if (std::find(
                   outcome.info.supportedSampleRates.begin(),
                   outcome.info.supportedSampleRates.end(),
@@ -757,6 +842,7 @@ bool AsioDriverSession::probe(AsioDeviceInfo* info, std::string* error) {
 
         if (originalRateKnown) driver->setSampleRate(originalRate);
         driver->Release();
+        outcome.info.capabilityProbed = true;
         outcome.ok = outcome.info.outputChannels > 0 || !outcome.info.supportedSampleRates.empty();
         if (!outcome.ok) outcome.error = "ASIO driver did not report any usable capability";
         return outcome;
@@ -790,25 +876,103 @@ bool AsioDriverSession::createBuffers(
         if (!state->driver || !state->initialized || state->buffersCreated) return false;
         state->bufferSwitch = std::move(bufferSwitch);
         state->eventCallback = std::move(eventCallback);
-        state->buffers.assign(state->channelFormats.size(), {});
-        for (size_t channel = 0; channel < state->buffers.size(); ++channel) {
-          state->buffers[channel].isInput = asio_abi::kAsioFalse;
-          state->buffers[channel].channelNum = static_cast<int32_t>(channel);
-        }
+        const auto prepareBuffers = [state]() {
+          state->buffers.assign(state->channelFormats.size(), {});
+          for (size_t channel = 0; channel < state->buffers.size(); ++channel) {
+            state->buffers[channel].isInput = asio_abi::kAsioFalse;
+            state->buffers[channel].channelNum = static_cast<int32_t>(channel);
+          }
+        };
+        prepareBuffers();
         std::string installError;
         if (!AsioCallbackRouter::install(state.get(), &installError)) return false;
         state->callbacks = AsioCallbackRouter::callbacks();
+        const auto attemptCreateBuffers = [state](int32_t size) {
+          return state->driver->createBuffers(
+              state->buffers.data(),
+              static_cast<int32_t>(state->buffers.size()),
+              size,
+              &state->callbacks);
+        };
         traceAsioDriverCall("before createBuffers");
-        const auto createBuffersResult = state->driver->createBuffers(
-                state->buffers.data(),
-                static_cast<int32_t>(state->buffers.size()),
-                state->bufferSize,
-                &state->callbacks);
+        auto createBuffersResult = attemptCreateBuffers(state->bufferSize);
         traceNativeDsdResult(
             state->driver,
             "create-buffers",
             createBuffersResult,
             static_cast<double>(state->bufferSize));
+        if (!asio_abi::asioErrorIsSuccess(createBuffersResult)) {
+          // JUCE and PortAudio both carry this retry: some drivers report a
+          // range but only accept createBuffers at their preferred size (the
+          // Hoontech DSP24 class). One bounded retry at preferred, then fail.
+          int32_t retryMinimum = 0;
+          int32_t retryMaximum = 0;
+          int32_t retryPreferred = 0;
+          int32_t retryGranularity = 0;
+          if (asio_abi::asioErrorIsSuccess(state->driver->getBufferSize(
+                  &retryMinimum, &retryMaximum, &retryPreferred, &retryGranularity))) {
+            const int32_t preferredSize =
+                chooseBufferSize(0, retryMinimum, retryMaximum, retryPreferred, retryGranularity);
+            if (preferredSize > 0 && preferredSize != state->bufferSize) {
+              prepareBuffers();
+              state->bufferSize = preferredSize;
+              traceAsioDriverCall("before createBuffers (preferred retry)");
+              createBuffersResult = attemptCreateBuffers(state->bufferSize);
+              traceNativeDsdResult(
+                  state->driver,
+                  "create-buffers-retry",
+                  createBuffersResult,
+                  static_cast<double>(state->bufferSize));
+            }
+          }
+        }
+        if (!asio_abi::asioErrorIsSuccess(createBuffersResult)) {
+          // Last resort mirroring JUCE's init-time "Cubase dance": some
+          // drivers only complete internal initialization after one dummy
+          // engine round (dummy buffers -> start -> 80ms -> stop -> dispose)
+          // and refuse every createBuffers until then. Bounded to this
+          // failure path so healthy drivers never pay the 80ms.
+          int32_t danceMinimum = 0;
+          int32_t danceMaximum = 0;
+          int32_t dancePreferred = 0;
+          int32_t danceGranularity = 0;
+          int32_t danceSize = state->bufferSize;
+          if (asio_abi::asioErrorIsSuccess(state->driver->getBufferSize(
+                  &danceMinimum, &danceMaximum, &dancePreferred, &danceGranularity))) {
+            const int32_t preferredSize =
+                chooseBufferSize(0, danceMinimum, danceMaximum, dancePreferred, danceGranularity);
+            if (preferredSize > 0) danceSize = preferredSize;
+          }
+          state->danceInProgress.store(true, std::memory_order_release);
+          traceAsioDriverCall("before cubase dance");
+          std::array<asio_abi::AsioBufferInfo, 2> danceBuffers{};
+          const int32_t danceChannels =
+              std::min<int32_t>(2, static_cast<int32_t>(state->channelFormats.size()));
+          for (int32_t channel = 0; channel < danceChannels; ++channel) {
+            danceBuffers[static_cast<size_t>(channel)].isInput = asio_abi::kAsioFalse;
+            danceBuffers[static_cast<size_t>(channel)].channelNum = channel;
+          }
+          const auto danceCreateResult = state->driver->createBuffers(
+              danceBuffers.data(), danceChannels, danceSize, &state->callbacks);
+          traceNativeDsdResult(
+              state->driver, "dance-create-buffers", danceCreateResult, static_cast<double>(danceSize));
+          if (asio_abi::asioErrorIsSuccess(danceCreateResult)) {
+            const auto danceStartResult = state->driver->start();
+            traceNativeDsdResult(state->driver, "dance-start", danceStartResult);
+            std::this_thread::sleep_for(std::chrono::milliseconds(80));
+            state->driver->stop();
+            state->driver->disposeBuffers();
+          }
+          traceAsioDriverCall("after cubase dance");
+          state->danceInProgress.store(false, std::memory_order_release);
+          prepareBuffers();
+          createBuffersResult = attemptCreateBuffers(state->bufferSize);
+          traceNativeDsdResult(
+              state->driver,
+              "create-buffers-after-dance",
+              createBuffersResult,
+              static_cast<double>(state->bufferSize));
+        }
         if (!asio_abi::asioErrorIsSuccess(createBuffersResult)) {
           AsioCallbackRouter::uninstall(state.get(), nullptr);
           state->buffers.clear();
@@ -934,5 +1098,7 @@ bool AsioDriverSession::outputReady() {
   if (!state_->running.load(std::memory_order_acquire) || !state_->driver) return false;
   return asio_abi::asioErrorIsSuccess(state_->driver->outputReady());
 }
+
+long AsioDriverSession::activeBufferSize() const { return state_->bufferSize; }
 
 }  // namespace twilight::audio::asio_windows

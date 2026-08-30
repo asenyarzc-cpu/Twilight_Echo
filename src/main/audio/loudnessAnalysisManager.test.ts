@@ -131,13 +131,15 @@ test('LoudnessAnalysisManager.peekCached returns cache hits without re-analyzing
   })
 
   assert.equal(await manager.peekCached({ trackId: 'local:1', filePath }), null)
-  assert.equal((await manager.requestAnalysis({ trackId: 'local:1', filePath })).status, 'completed')
+  assert.equal(
+    (await manager.requestAnalysis({ trackId: 'local:1', filePath })).status,
+    'completed'
+  )
   const cached = await manager.peekCached({ trackId: 'local:1', filePath })
   assert.equal(cached?.integratedLufs, -20)
   assert.equal(analyzeCount, 1)
   await rm(dir, { recursive: true, force: true })
 })
-
 
 test('LoudnessAnalysisManager.cancel skips pending analysis without writing cache', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'twilight-loudness-cancel-'))

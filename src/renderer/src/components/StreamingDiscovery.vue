@@ -1,19 +1,29 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { NcmPlaylistCatalogue, NcmPlaylistSummary } from '../stores/useNcmStore'
+import type {
+  MediaProviderPlaylistCatalogue,
+  MediaProviderPlaylistSummary
+} from '../providers/mediaProvider'
+import type { StreamingProviderOption } from '../utils/streamingNavigation'
 import type { DiscoveryOrder } from './streaming-page/useStreamingDiscovery'
 import type { PageState } from './streaming-page/types'
 import CoverImg from './CoverImg.vue'
+import StreamingProviderSwitcher from './streaming-page/StreamingProviderSwitcher.vue'
 
 const props = defineProps<{
-  catalogue: NcmPlaylistCatalogue | null
+  providerId: string
+  providerLabel: string
+  providerOptions: StreamingProviderOption[]
+  supportsCategories: boolean
+  supportsHighQuality: boolean
+  catalogue: MediaProviderPlaylistCatalogue | null
   catalogueLoading: boolean
   catalogueError: string
   selectedTag: string
   order: DiscoveryOrder
   highQuality: boolean
   panelExpanded: boolean
-  playlists: NcmPlaylistSummary[]
+  playlists: MediaProviderPlaylistSummary[]
   total: number
   offset: number
   hasMore: boolean
@@ -29,8 +39,9 @@ const emit = defineEmits<{
   togglePanel: []
   pageChange: [event: PageState]
   loadMore: []
-  openPlaylist: [playlist: NcmPlaylistSummary]
+  openPlaylist: [playlist: MediaProviderPlaylistSummary]
   retry: []
+  selectProvider: [providerId: string]
 }>()
 
 const pageSize = 30
@@ -48,7 +59,7 @@ const subline = computed(() => {
   if (props.listLoading && props.playlists.length === 0) return '正在为你整理歌单…'
   if (props.listError && props.playlists.length === 0) return '加载遇到了一点问题'
   if (props.total > 0) {
-    if (props.highQuality) return `网易云编辑精选 · 共 ${totalLabel.value} 张`
+    if (props.highQuality) return `${props.providerLabel} 精选 · 共 ${totalLabel.value} 张`
     return `共 ${totalLabel.value} 张歌单 · 按${props.order === 'hot' ? '最热' : '最新'}排列`
   }
   return '每一张歌单，都是一次有主张的收藏'
@@ -112,6 +123,11 @@ function emitPage(nextOffset: number): void {
       </div>
 
       <div class="disc-tools">
+        <StreamingProviderSwitcher
+          :model-value="providerId"
+          :options="providerOptions"
+          @change="emit('selectProvider', $event)"
+        />
         <div v-if="!highQuality" class="disc-order" role="group" aria-label="排序方式">
           <button
             type="button"
@@ -135,6 +151,7 @@ function emitPage(nextOffset: number): void {
           </button>
         </div>
         <button
+          v-if="supportsHighQuality"
           type="button"
           class="disc-hq"
           data-te-interactive
@@ -149,7 +166,7 @@ function emitPage(nextOffset: number): void {
     </header>
 
     <!-- ── Channel rail ─────────────────────────────────────────────── -->
-    <nav class="disc-rail" role="tablist" aria-label="热门歌单标签">
+    <nav v-if="supportsCategories" class="disc-rail" role="tablist" aria-label="热门歌单标签">
       <button
         v-for="tag in railTags"
         :key="tag"

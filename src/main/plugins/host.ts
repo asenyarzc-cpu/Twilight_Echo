@@ -302,6 +302,7 @@ function createContext(
           id: provider.id,
           name: provider.name,
           capabilities: provider.capabilities,
+          supportedMethods: Object.keys(handlers),
           ui: provider.ui,
           health: provider.health
         })

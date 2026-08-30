@@ -30,7 +30,10 @@ test('loudness cache key changes when file identity, algorithm, or targets chang
     truePeakCeilingDb: LOUDNORM_DEFAULT_TRUE_PEAK_CEILING_DB
   }
 
-  assert.notEqual(buildLoudnessAnalysisCacheKey(base), buildLoudnessAnalysisCacheKey({ ...base, size: 124 }))
+  assert.notEqual(
+    buildLoudnessAnalysisCacheKey(base),
+    buildLoudnessAnalysisCacheKey({ ...base, size: 124 })
+  )
   assert.notEqual(
     buildLoudnessAnalysisCacheKey(base),
     buildLoudnessAnalysisCacheKey({ ...base, mtimeMs: 789 })
@@ -131,7 +134,6 @@ test('loudness cache conditional rollback deletes only the exact committed analy
   await rm(dir, { recursive: true, force: true })
 })
 
-
 test('loudness cache prunes oldest entries when over maxEntries', async () => {
   const entries: Record<string, LoudnessAnalysisResult> = {
     old: {
@@ -183,7 +185,6 @@ test('loudness cache prunes oldest entries when over maxEntries', async () => {
   assert.equal(await cache.getEntryCount(), 2)
   await rm(dir, { recursive: true, force: true })
 })
-
 
 test('loudness cache rejects a valid-looking document with excessive unknown nesting', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'twilight-loudness-cache-deep-'))

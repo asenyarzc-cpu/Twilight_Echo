@@ -112,12 +112,7 @@ export class LyricSpring {
   private resetSolver(): void {
     const velocity = this.getVelocity(this.currentTime)
     this.currentTime = 0
-    this.solver = solveLyricSpring(
-      this.currentPosition,
-      velocity,
-      this.targetPosition,
-      this.params
-    )
+    this.solver = solveLyricSpring(this.currentPosition, velocity, this.targetPosition, this.params)
     this.getVelocity = derivative(this.solver)
     this.getAcceleration = derivative(this.getVelocity)
   }

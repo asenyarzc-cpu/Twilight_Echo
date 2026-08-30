@@ -24,10 +24,7 @@ test('the vertical spring is underdamped so lines overshoot and settle back', ()
   spring.setTargetPosition(100)
   const positions = advance(spring, 240)
 
-  assert.ok(
-    Math.max(...positions) > 102,
-    'an underdamped line must still pass its target slightly'
-  )
+  assert.ok(Math.max(...positions) > 102, 'an underdamped line must still pass its target slightly')
   assert.ok(
     Math.abs(spring.getCurrentPosition() - 100) < 0.01,
     'the line must still settle exactly on target'

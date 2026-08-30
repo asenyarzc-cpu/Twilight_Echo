@@ -73,10 +73,10 @@ function runtimeEntrySource(): string {
     workspaceRoot,
     'src/renderer/src/components/song-list/usePlaylistLifecycleActions.ts'
   ).replaceAll('\\', '/')
-  const storePath = join(
-    workspaceRoot,
-    'src/renderer/src/stores/useMusicStore.ts'
-  ).replaceAll('\\', '/')
+  const storePath = join(workspaceRoot, 'src/renderer/src/stores/useMusicStore.ts').replaceAll(
+    '\\',
+    '/'
+  )
   const lifecyclePath = join(
     workspaceRoot,
     'src/renderer/src/utils/playlistLifecycle.ts'

@@ -69,26 +69,49 @@ function isHttpOrHttpsUrl(value: string, maxLength = MAX_PODCAST_URL_LENGTH): bo
 export function isPodcastEpisode(value: unknown): value is PodcastEpisode {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const record = value as Record<string, unknown>
-  if (typeof record.guid !== 'string' || !record.guid.trim() || record.guid.length > MAX_PODCAST_GUID_LENGTH) {
+  if (
+    typeof record.guid !== 'string' ||
+    !record.guid.trim() ||
+    record.guid.length > MAX_PODCAST_GUID_LENGTH
+  ) {
     return false
   }
-  if (typeof record.title !== 'string' || !record.title.trim() || record.title.length > MAX_PODCAST_TITLE_LENGTH) {
+  if (
+    typeof record.title !== 'string' ||
+    !record.title.trim() ||
+    record.title.length > MAX_PODCAST_TITLE_LENGTH
+  ) {
     return false
   }
   if (typeof record.mediaUrl !== 'string' || !isHttpOrHttpsUrl(record.mediaUrl)) return false
-  if (typeof record.durationSeconds !== 'number' || !Number.isFinite(record.durationSeconds) || record.durationSeconds < 0) {
+  if (
+    typeof record.durationSeconds !== 'number' ||
+    !Number.isFinite(record.durationSeconds) ||
+    record.durationSeconds < 0
+  ) {
     return false
   }
   if (record.description !== undefined && record.description !== null) {
-    if (typeof record.description !== 'string' || record.description.length > MAX_PODCAST_DESCRIPTION_LENGTH) {
+    if (
+      typeof record.description !== 'string' ||
+      record.description.length > MAX_PODCAST_DESCRIPTION_LENGTH
+    ) {
       return false
     }
   }
-  if (record.publishedAt !== undefined && record.publishedAt !== null && typeof record.publishedAt !== 'string') {
+  if (
+    record.publishedAt !== undefined &&
+    record.publishedAt !== null &&
+    typeof record.publishedAt !== 'string'
+  ) {
     return false
   }
   if (record.progressSeconds !== undefined && record.progressSeconds !== null) {
-    if (typeof record.progressSeconds !== 'number' || !Number.isFinite(record.progressSeconds) || record.progressSeconds < 0) {
+    if (
+      typeof record.progressSeconds !== 'number' ||
+      !Number.isFinite(record.progressSeconds) ||
+      record.progressSeconds < 0
+    ) {
       return false
     }
   }
@@ -103,28 +126,45 @@ export function isPodcastSubscription(value: unknown): value is PodcastSubscript
   const record = value as Record<string, unknown>
   if (typeof record.id !== 'string' || !record.id.trim()) return false
   if (typeof record.feedUrl !== 'string' || !isHttpOrHttpsUrl(record.feedUrl)) return false
-  if (typeof record.title !== 'string' || !record.title.trim() || record.title.length > MAX_PODCAST_TITLE_LENGTH) {
+  if (
+    typeof record.title !== 'string' ||
+    !record.title.trim() ||
+    record.title.length > MAX_PODCAST_TITLE_LENGTH
+  ) {
     return false
   }
   if (typeof record.createdAt !== 'string' || typeof record.updatedAt !== 'string') return false
-  if (!Array.isArray(record.episodes) || record.episodes.length > MAX_PODCAST_EPISODES_PER_FEED) return false
+  if (!Array.isArray(record.episodes) || record.episodes.length > MAX_PODCAST_EPISODES_PER_FEED)
+    return false
   if (!record.episodes.every(isPodcastEpisode)) return false
   if (record.description !== undefined && record.description !== null) {
-    if (typeof record.description !== 'string' || record.description.length > MAX_PODCAST_DESCRIPTION_LENGTH) {
+    if (
+      typeof record.description !== 'string' ||
+      record.description.length > MAX_PODCAST_DESCRIPTION_LENGTH
+    ) {
       return false
     }
   }
-  if (record.author !== undefined && record.author !== null && typeof record.author !== 'string') return false
+  if (record.author !== undefined && record.author !== null && typeof record.author !== 'string')
+    return false
   if (record.coverUrl !== undefined && record.coverUrl !== null) {
     if (typeof record.coverUrl !== 'string' || !isHttpOrHttpsUrl(record.coverUrl)) return false
   }
   if (record.homepage !== undefined && record.homepage !== null) {
     if (typeof record.homepage !== 'string' || !isHttpOrHttpsUrl(record.homepage)) return false
   }
-  if (record.lastRefreshedAt !== undefined && record.lastRefreshedAt !== null && typeof record.lastRefreshedAt !== 'string') {
+  if (
+    record.lastRefreshedAt !== undefined &&
+    record.lastRefreshedAt !== null &&
+    typeof record.lastRefreshedAt !== 'string'
+  ) {
     return false
   }
-  if (record.feedEtag !== undefined && record.feedEtag !== null && typeof record.feedEtag !== 'string') {
+  if (
+    record.feedEtag !== undefined &&
+    record.feedEtag !== null &&
+    typeof record.feedEtag !== 'string'
+  ) {
     return false
   }
   if (
@@ -134,13 +174,19 @@ export function isPodcastSubscription(value: unknown): value is PodcastSubscript
   ) {
     return false
   }
-  if (record.lastError !== undefined && record.lastError !== null && typeof record.lastError !== 'string') {
+  if (
+    record.lastError !== undefined &&
+    record.lastError !== null &&
+    typeof record.lastError !== 'string'
+  ) {
     return false
   }
   return true
 }
 
-export function isPodcastSubscriptionsDocument(value: unknown): value is PodcastSubscriptionsDocument {
+export function isPodcastSubscriptionsDocument(
+  value: unknown
+): value is PodcastSubscriptionsDocument {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const record = value as Record<string, unknown>
   if (record.schemaVersion !== PODCAST_SUBSCRIPTIONS_SCHEMA_VERSION) return false

@@ -24,7 +24,12 @@ export function shouldUseNativePlaybackTarget(source: TrackSource, target: strin
   if (schemeMatch) {
     return NATIVE_SUPPORTED_URI_SCHEMES.has(schemeMatch[0].slice(0, -1).toLowerCase())
   }
-  return source === 'local' || normalized.includes('/') || normalized.includes('\\') || /\.[a-z0-9]{2,5}(?:$|[?#])/i.test(normalized)
+  return (
+    source === 'local' ||
+    normalized.includes('/') ||
+    normalized.includes('\\') ||
+    /\.[a-z0-9]{2,5}(?:$|[?#])/i.test(normalized)
+  )
 }
 
 export function shouldReuseResolvedStreamUrl(source: TrackSource): boolean {

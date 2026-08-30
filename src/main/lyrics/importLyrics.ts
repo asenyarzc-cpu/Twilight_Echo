@@ -26,7 +26,10 @@ export function validateImportedLyrics(filePath: string, contents: string): stri
   if (!normalized.trim() || /\0/.test(normalized) || normalized.includes('\uFFFD')) {
     throw new Error('Imported lyrics must be valid non-empty text (UTF-8, GBK, or GB18030)')
   }
-  if (extension === '.lrc' && !/(?:\[\d{1,3}:\d{2}(?:[.:]\d{2,3})?\]|\[[a-z]+:)/i.test(normalized)) {
+  if (
+    extension === '.lrc' &&
+    !/(?:\[\d{1,3}:\d{2}(?:[.:]\d{2,3})?\]|\[[a-z]+:)/i.test(normalized)
+  ) {
     throw new Error('An .lrc import must contain an LRC timestamp or metadata tag')
   }
   return normalized

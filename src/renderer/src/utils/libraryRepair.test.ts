@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-const {
-  repairMovedLocalTracks,
-  findProviderRematchCandidate
-} = (await import(
+const { repairMovedLocalTracks, findProviderRematchCandidate } = (await import(
   new URL('./libraryRepair.ts', import.meta.url).href
 )) as typeof import('./libraryRepair')
 

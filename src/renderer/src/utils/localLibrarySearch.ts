@@ -30,14 +30,7 @@ export function getTrackSearchBlob(track: Track): string {
     const titleInitials = getPinyinInitials(track.title)
     const artistInitials = getPinyinInitials(track.artist)
     const albumInitials = getPinyinInitials(track.album)
-    blob = [
-      title,
-      artist,
-      album,
-      titleInitials,
-      artistInitials,
-      albumInitials
-    ].join('\u0000')
+    blob = [title, artist, album, titleInitials, artistInitials, albumInitials].join('\u0000')
     searchBlobByTrack.set(track, blob)
   }
   return blob

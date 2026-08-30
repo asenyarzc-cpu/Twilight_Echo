@@ -41,6 +41,11 @@ inline constexpr AsioSampleType kAsioSampleDsdInt8Lsb1 = 32;
 inline constexpr AsioSampleType kAsioSampleDsdInt8Msb1 = 33;
 inline constexpr AsioSampleType kAsioSampleDsdInt8Ner8 = 40;
 
+// The SDK's contract for kAsioCanDoIoFormat / kAsioSetIoFormat: the caller fills
+// in the requested type, and a driver that cannot honor it rewrites that field
+// to Invalid. Return codes vary between drivers, so the rewritten field is the
+// only unambiguous refusal.
+inline constexpr AsioIoFormatType kAsioIoFormatInvalid = -1;
 inline constexpr AsioIoFormatType kAsioIoFormatPcm = 0;
 inline constexpr AsioIoFormatType kAsioIoFormatDsd = 1;
 

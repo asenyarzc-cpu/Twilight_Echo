@@ -35,25 +35,13 @@ const emit = defineEmits<{
           <span>只重置选中的设置分组，不清空媒体库、插件和本地数据。</span>
         </div>
         <div class="inline-controls reset-group-actions">
-          <button
-            type="button"
-            class="muted-button"
-            @click="emit('resetGroup', 'appearance')"
-          >
+          <button type="button" class="muted-button" @click="emit('resetGroup', 'appearance')">
             外观
           </button>
-          <button
-            type="button"
-            class="muted-button"
-            @click="emit('resetGroup', 'playback')"
-          >
+          <button type="button" class="muted-button" @click="emit('resetGroup', 'playback')">
             播放
           </button>
-          <button
-            type="button"
-            class="muted-button"
-            @click="emit('resetGroup', 'desktopLyrics')"
-          >
+          <button type="button" class="muted-button" @click="emit('resetGroup', 'desktopLyrics')">
             桌面歌词
           </button>
         </div>

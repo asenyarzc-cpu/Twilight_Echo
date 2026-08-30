@@ -85,6 +85,7 @@ class MockAsioHost final : public IAsioHost {
   AudioSampleFormat outputSampleFormat(long channel) const override;
   AsioChannelFormat outputChannelFormat(long channel) const override;
   bool outputReady() override;
+  long activeBufferSize() const override;
 
   void triggerBufferSwitch(long bufferIndex);
   void triggerEvent(AsioHostEvent event, const std::string& message);

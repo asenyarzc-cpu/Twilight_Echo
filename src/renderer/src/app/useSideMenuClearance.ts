@@ -13,9 +13,9 @@ export function useSideMenuClearance(options: SideMenuClearanceOptions) {
   /**
    * Where the open side menu's right edge actually sits, so a bar that spans the
    * window can start after it. Not derivable in CSS: `--te-menu-width` is only
-   * the menu's width, and a preset layout is free to float the menu inward
-   * (aurora-reference insets it ~21px), which leaves a width-based `left` short
-   * by exactly that inset and the bar overlapping the menu.
+   * the menu's width, and a preset layout is free to inset the menu from the
+   * window edge, which leaves a width-based `left` short by exactly that inset
+   * and the bar overlapping the menu.
    */
   const sideMenuInlineEnd = ref(0)
   let sideMenuMonitorFrame: number | null = null
@@ -65,9 +65,9 @@ export function useSideMenuClearance(options: SideMenuClearanceOptions) {
      * during the 0.32s slide. A rect would, and the bar would chase it.
      *
      * `--te-menu-width` cannot answer this: it is only the menu's own width, and
-     * a preset may float the menu as an inset island (aurora-reference sets
-     * `left: clamp(10px, 1.4vw, 22px)`), which puts its edge ~21px further right
-     * than the token implies. Measuring covers every preset, plugin ones too.
+     * a preset may inset the menu from the window edge, which puts its edge that
+     * much further right than the token implies. Measuring covers every preset,
+     * plugin ones too.
      */
     setSideMenuInlineEnd(sideMenu.offsetLeft + sideMenu.offsetWidth)
 

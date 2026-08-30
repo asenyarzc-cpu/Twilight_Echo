@@ -93,10 +93,13 @@ test('nfs mount maps access denied and only supports anonymous auth on linux', a
       mountBaseDir: mountBase
     })
     const session = await adapter.createSession(makeProfile(), { kind: 'anonymous' })
-    await assert.rejects(async () => session.list('/'), (err: unknown) => {
-      assert.equal((err as { code: string }).code, 'auth')
-      return true
-    })
+    await assert.rejects(
+      async () => session.list('/'),
+      (err: unknown) => {
+        assert.equal((err as { code: string }).code, 'auth')
+        return true
+      }
+    )
 
     await assert.rejects(
       () =>

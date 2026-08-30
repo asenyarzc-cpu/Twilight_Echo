@@ -22,21 +22,23 @@ export function stringifyJsonWithNestingLimit(value: unknown, field: string): st
   let json: string | undefined
 
   try {
-    json = JSON.stringify(value, function jsonDepthReplacer(
-      this: object,
-      _key: string,
-      candidate: unknown
-    ): unknown {
-      if (typeof candidate === 'bigint') throw JSON_SERIALIZATION_REJECTED
-      if (candidate === null || (typeof candidate !== 'object' && typeof candidate !== 'function')) {
+    json = JSON.stringify(
+      value,
+      function jsonDepthReplacer(this: object, _key: string, candidate: unknown): unknown {
+        if (typeof candidate === 'bigint') throw JSON_SERIALIZATION_REJECTED
+        if (
+          candidate === null ||
+          (typeof candidate !== 'object' && typeof candidate !== 'function')
+        ) {
+          return candidate
+        }
+
+        const depth = (depths.get(this) ?? 0) + 1
+        if (depth > MAX_JSON_NESTING_DEPTH) throw JSON_NESTING_TOO_DEEP
+        depths.set(candidate, depth)
         return candidate
       }
-
-      const depth = (depths.get(this) ?? 0) + 1
-      if (depth > MAX_JSON_NESTING_DEPTH) throw JSON_NESTING_TOO_DEEP
-      depths.set(candidate, depth)
-      return candidate
-    })
+    )
   } catch (error) {
     if (error === JSON_NESTING_TOO_DEEP) throw new Error(`${field} is too deeply nested`)
     throw new Error(`${field} must be JSON serializable`)
@@ -83,49 +85,48 @@ export function inspectJsonValueWithLimits(value: unknown, maxBytes: number): Js
   }
 
   try {
-    json = JSON.stringify(value, function jsonValueLimitReplacer(
-      this: object,
-      key: string,
-      candidate: unknown
-    ): unknown {
-      if (key && !Array.isArray(this)) reserve(jsonEscapedUtf8ByteLength(key) + 4)
+    json = JSON.stringify(
+      value,
+      function jsonValueLimitReplacer(this: object, key: string, candidate: unknown): unknown {
+        if (key && !Array.isArray(this)) reserve(jsonEscapedUtf8ByteLength(key) + 4)
 
-      if (candidate === null) {
-        reserve(5)
-        return candidate
-      }
-
-      switch (typeof candidate) {
-        case 'string':
-          reserve(jsonEscapedUtf8ByteLength(candidate) + 3)
-          return candidate
-        case 'number':
-          // A finite JSON number needs at most 24 bytes; leave a little
-          // structural slack without rejecting the largest visualization data.
-          reserve(16)
-          return candidate
-        case 'boolean':
-          reserve(6)
-          return candidate
-        case 'bigint':
-          throw JSON_SERIALIZATION_REJECTED
-        case 'undefined':
-        case 'function':
-        case 'symbol':
-          // JSON omits these in objects and encodes them as null in arrays.
-          if (Array.isArray(this)) reserve(5)
-          return candidate
-        case 'object': {
-          const depth = (depths.get(this) ?? 0) + 1
-          if (depth > MAX_JSON_NESTING_DEPTH) throw JSON_NESTING_TOO_DEEP
-          depths.set(candidate, depth)
-          reserve(2)
+        if (candidate === null) {
+          reserve(5)
           return candidate
         }
-        default:
-          return candidate
+
+        switch (typeof candidate) {
+          case 'string':
+            reserve(jsonEscapedUtf8ByteLength(candidate) + 3)
+            return candidate
+          case 'number':
+            // A finite JSON number needs at most 24 bytes; leave a little
+            // structural slack without rejecting the largest visualization data.
+            reserve(16)
+            return candidate
+          case 'boolean':
+            reserve(6)
+            return candidate
+          case 'bigint':
+            throw JSON_SERIALIZATION_REJECTED
+          case 'undefined':
+          case 'function':
+          case 'symbol':
+            // JSON omits these in objects and encodes them as null in arrays.
+            if (Array.isArray(this)) reserve(5)
+            return candidate
+          case 'object': {
+            const depth = (depths.get(this) ?? 0) + 1
+            if (depth > MAX_JSON_NESTING_DEPTH) throw JSON_NESTING_TOO_DEEP
+            depths.set(candidate, depth)
+            reserve(2)
+            return candidate
+          }
+          default:
+            return candidate
+        }
       }
-    })
+    )
   } catch (error) {
     if (error === JSON_NESTING_TOO_DEEP) return { ok: false, reason: 'too-deep' }
     if (error === JSON_VALUE_TOO_LARGE) return { ok: false, reason: 'too-large' }
@@ -146,7 +147,8 @@ function jsonEscapedUtf8ByteLength(value: string): number {
     if (code === JSON_QUOTE || code === JSON_BACKSLASH) {
       bytes += 1
     } else if (code <= 0x1f) {
-      bytes += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 1 : 5
+      bytes +=
+        code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 1 : 5
     }
   }
   return bytes

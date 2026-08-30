@@ -49,9 +49,34 @@ export interface MediaProviderPlaylistSummary {
   coverSmall?: string | null
   coverSmallSource?: string | null
   trackCount: number
+  playCount?: number
   creatorName?: string
   /** True when the signed-in user owns (created) the playlist. */
   owned?: boolean
+}
+
+export interface MediaProviderPlaylistCatalogue {
+  hotTags: string[]
+  groups: Array<{
+    id: number
+    name: string
+    tags: Array<{ name: string; hot: boolean }>
+  }>
+}
+
+export interface MediaProviderDiscoveryPlaylistPage {
+  items: MediaProviderPlaylistSummary[]
+  total: number
+  hasMore: boolean
+  offset: number
+  limit: number
+}
+
+export interface MediaProviderHighQualityPlaylistPage {
+  items: MediaProviderPlaylistSummary[]
+  total: number
+  hasMore: boolean
+  lasttime: number
 }
 
 export interface MediaProviderAlbumSummary {
@@ -172,6 +197,18 @@ export interface MediaProvider {
   fetchLikedTracks?: (force?: boolean) => Promise<Track[]>
   fetchRecommendSongs?: () => Promise<Track[]>
   fetchRecommendPlaylists?: () => Promise<MediaProviderPlaylistSummary[]>
+  fetchPlaylistCategories?: () => Promise<MediaProviderPlaylistCatalogue>
+  fetchDiscoveryPlaylists?: (
+    cat?: string,
+    order?: 'hot' | 'new',
+    limit?: number,
+    offset?: number
+  ) => Promise<MediaProviderDiscoveryPlaylistPage>
+  fetchHighQualityPlaylists?: (
+    cat?: string,
+    limit?: number,
+    before?: number
+  ) => Promise<MediaProviderHighQualityPlaylistPage>
   fetchPersonalFm?: () => Promise<Track[]>
   fetchPrivateContent?: () => Promise<Track[]>
   fetchArtistTopSongs?: (artistId: number | string) => Promise<Track[]>

@@ -21,7 +21,7 @@ const scanText = computed(() => {
 const desktopLyricsOn = computed(() => settings.value.desktopLyrics.enabled)
 
 async function toggleDesktopLyrics(): Promise<void> {
-  const enabled = await window.api.desktopLyrics.toggle()
+  const enabled = await window.api.desktopLyrics.setEnabled(!settings.value.desktopLyrics.enabled)
   await updateSettings({ desktopLyrics: { ...settings.value.desktopLyrics, enabled } })
 }
 

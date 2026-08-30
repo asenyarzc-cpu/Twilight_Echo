@@ -30,6 +30,7 @@ const MINGW_EXPECTED_CTESTS = Object.freeze([
   'twilight_channel_router_unit',
   'twilight_wsola_unit',
   'twilight_audio_buffer_unit',
+  'twilight_diagnostic_log_unit',
   'twilight_native_dsp_plugin_unit',
   'twilight_native_dsp_plugin_crash_fixture',
   'twilight_metadata_unit',

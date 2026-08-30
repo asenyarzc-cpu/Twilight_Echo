@@ -19,12 +19,14 @@ import type {
   BpmAnalysisResult,
   LoudnessAnalysisResult
 } from '../shared/audioEngineTypes.ts'
+import type { PlaybackResumeMode, AudioEqPreset, AppSettings } from '../shared/appSettings.ts'
 import type {
-  PlaybackResumeMode,
-  DesktopLyricsSettings,
-  AudioEqPreset,
-  AppSettings
-} from '../shared/appSettings.ts'
+  DesktopLyricsBootstrap,
+  DesktopLyricsClockSnapshot,
+  DesktopLyricsSession,
+  DesktopLyricsSettingsV3,
+  DesktopLyricsTransportAction
+} from '../shared/desktopLyrics.ts'
 import type { TrackData } from '../shared/track.ts'
 import type {
   DspAsset,
@@ -94,6 +96,7 @@ type PlayerShortcutAction =
   | 'play'
   | 'pause'
   | 'toggleDesktopLyrics'
+  | 'toggleDesktopLyricsLock'
   | { action: 'seek'; positionSeconds: number }
   | { action: 'setVolume'; volume: number }
   | { action: 'jumpQueue'; index: number }
@@ -630,6 +633,7 @@ interface TwilightMediaProviderRegistration {
   id: string
   name: string
   capabilities: TwilightMediaProviderCapability[]
+  supportedMethods?: TwilightMediaProviderMethod[]
   ui?: TwilightProviderUiMetadata
   health?: TwilightMediaProviderHealth
 }
@@ -1206,46 +1210,28 @@ interface WindowAPI {
     readThemeStylesheet: (stylesheetPath: string) => Promise<string>
   }
   desktopLyrics: {
-    toggle: () => Promise<boolean>
-    show: () => Promise<void>
-    hide: () => Promise<void>
-    setInteractive: (interactive: boolean) => void
-    listInstalledFonts: () => Promise<string[]>
-    updateTrack: (data: {
-      lyrics: string | null
-      translatedLyrics?: string | null
-      lyricsSource?: 'embedded' | 'local' | 'provider' | 'amll' | 'manual' | 'online' | null
-      translatedLyricsSource?:
-        | 'embedded'
-        | 'local'
-        | 'provider'
-        | 'amll'
-        | 'manual'
-        | 'online'
-        | null
-      title?: string
-      artist?: string
-    }) => void
-    updateTime: (time: number) => void
-    updateSettings: (settings: Partial<DesktopLyricsSettings>) => void
-    onToggle: (cb: (enabled: boolean) => void) => () => void
-    onInitSettings: (cb: (settings: DesktopLyricsSettings) => void) => () => void
-    onTrackUpdate: (
-      cb: (data: {
-        lyrics: string | null
-        translatedLyrics?: string | null
-        lyricsSource?: 'embedded' | 'local' | 'provider' | 'amll' | 'manual' | null
-        translatedLyricsSource?: 'embedded' | 'local' | 'provider' | 'amll' | 'manual' | null
-        title?: string
-        artist?: string
-      }) => void
-    ) => () => void
-    onTimeUpdate: (cb: (time: number) => void) => () => void
-    onSettingsUpdate: (cb: (settings: DesktopLyricsSettings) => void) => () => void
+    setEnabled: (enabled: boolean) => Promise<boolean>
+    publishSession: (session: DesktopLyricsSession) => void
+    publishClock: (clock: DesktopLyricsClockSnapshot) => void
+    onEnabledChanged: (cb: (enabled: boolean) => void) => () => void
+    onResyncRequested: (cb: () => void) => () => void
     onLoadFailed: (cb: (payload: { code: number; description: string }) => void) => () => void
-    getPosition: () => void
-    move: (x: number, y: number) => void
-    requestClose: () => void
+    bootstrap: () => Promise<DesktopLyricsBootstrap>
+    updateQuickSettings: (
+      patch: Partial<DesktopLyricsSettingsV3>
+    ) => Promise<DesktopLyricsSettingsV3>
+    setLocked: (locked: boolean) => Promise<DesktopLyricsSettingsV3>
+    setInteractionActive: (active: boolean) => Promise<void>
+    transport: (action: DesktopLyricsTransportAction) => void
+    moveTo: (x: number, y: number) => void
+    moveEnd: () => void
+    ready: () => void
+    close: () => void
+    onSessionChanged: (cb: (session: DesktopLyricsSession) => void) => () => void
+    onClockChanged: (cb: (clock: DesktopLyricsClockSnapshot) => void) => () => void
+    onSettingsChanged: (cb: (settings: DesktopLyricsSettingsV3) => void) => () => void
+    onFreezeClock: (cb: () => void) => () => void
+    onHoverIntent: (cb: (pointerInside: boolean) => void) => () => void
   }
   miniPlayer: {
     open: () => Promise<MiniPlayerSettings>

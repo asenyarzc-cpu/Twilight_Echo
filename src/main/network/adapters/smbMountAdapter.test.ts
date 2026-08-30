@@ -31,7 +31,9 @@ function makeProfile(overrides: Partial<NetworkSourceProfile> = {}): NetworkSour
   }
 }
 
-function makeRunner(overrides: { failAuth?: boolean; notFound?: boolean } = {}): MountCommandRunner & {
+function makeRunner(
+  overrides: { failAuth?: boolean; notFound?: boolean } = {}
+): MountCommandRunner & {
   calls: Array<{ command: string; args: string[] }>
 } {
   const calls: Array<{ command: string; args: string[] }> = []
@@ -41,7 +43,11 @@ function makeRunner(overrides: { failAuth?: boolean; notFound?: boolean } = {}):
       return { code: 2, stdout: '', stderr: 'System error 5.\r\nAccess is denied.' }
     }
     if (overrides.notFound) {
-      return { code: 2, stdout: '', stderr: 'System error 67.\r\nThe network name cannot be found.' }
+      return {
+        code: 2,
+        stdout: '',
+        stderr: 'System error 67.\r\nThe network name cannot be found.'
+      }
     }
     return { code: 0, stdout: 'The command completed successfully.', stderr: '' }
   }
@@ -133,10 +139,13 @@ test('smb maps access denied and missing share errors to structured codes', asyn
       username: 'alice',
       password: 'wrong'
     })
-    await assert.rejects(async () => authSession.list('/'), (err: unknown) => {
-      assert.equal((err as { code: string }).code, 'auth')
-      return true
-    })
+    await assert.rejects(
+      async () => authSession.list('/'),
+      (err: unknown) => {
+        assert.equal((err as { code: string }).code, 'auth')
+        return true
+      }
+    )
 
     const missingSession = await createSmbMountAdapter({
       platform: 'win32',
@@ -147,10 +156,13 @@ test('smb maps access denied and missing share errors to structured codes', asyn
       username: 'alice',
       password: 's3cret'
     })
-    await assert.rejects(async () => missingSession.list('/'), (err: unknown) => {
-      assert.equal((err as { code: string }).code, 'notFound')
-      return true
-    })
+    await assert.rejects(
+      async () => missingSession.list('/'),
+      (err: unknown) => {
+        assert.equal((err as { code: string }).code, 'notFound')
+        return true
+      }
+    )
   } finally {
     await rm(shareRoot, { recursive: true, force: true })
   }
@@ -172,10 +184,13 @@ test('linux gio mount is anonymous-only and rejects password auth', async () => 
     }
   )
   const anonymous = await adapter.createSession(makeProfile(), { kind: 'anonymous' })
-  await assert.rejects(() => anonymous.list('/'), (err: unknown) => {
-    assert.equal((err as { code: string }).code, 'notFound')
-    return true
-  })
+  await assert.rejects(
+    () => anonymous.list('/'),
+    (err: unknown) => {
+      assert.equal((err as { code: string }).code, 'notFound')
+      return true
+    }
+  )
   assert.deepEqual(runner.calls[0], { command: 'gio', args: ['mount', 'smb://nas.local/music'] })
 })
 

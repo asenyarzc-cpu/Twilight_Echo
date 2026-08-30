@@ -221,7 +221,11 @@ function isAudioField(key: string): boolean {
   return key === 'streamUrl' || key === 'audioUrl'
 }
 
-function grantIfRemote(source: string, kind: RemoteMediaKind, grants: RemoteMediaGrantService): string {
+function grantIfRemote(
+  source: string,
+  kind: RemoteMediaKind,
+  grants: RemoteMediaGrantService
+): string {
   const normalized = normalizeProviderRemoteUrl(source)
   return normalized ? grants.grant(normalized, kind) : source
 }
@@ -432,7 +436,13 @@ function maxResponseBytesFor(kind: RemoteMediaKind): number {
 
 function filteredResponseHeaders(headers: Headers): Headers {
   const filtered = new Headers()
-  for (const name of ['accept-ranges', 'cache-control', 'content-length', 'content-range', 'content-type']) {
+  for (const name of [
+    'accept-ranges',
+    'cache-control',
+    'content-length',
+    'content-range',
+    'content-type'
+  ]) {
     const value = headers.get(name)
     if (value) filtered.set(name, value)
   }

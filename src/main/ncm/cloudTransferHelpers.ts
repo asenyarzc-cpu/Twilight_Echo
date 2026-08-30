@@ -29,7 +29,8 @@ export function normalizeCloudSongId(value: unknown, maxLength = 128): string {
         : ''
   if (!normalized) throw new Error('NCM cloud song id is required')
   if (normalized.length > maxLength) throw new Error('NCM cloud song id is too long')
-  if (/[^\x21-\x7e]/.test(normalized)) throw new Error('NCM cloud song id contains invalid characters')
+  if (/[^\x21-\x7e]/.test(normalized))
+    throw new Error('NCM cloud song id contains invalid characters')
   return normalized
 }
 

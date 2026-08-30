@@ -22,8 +22,13 @@ test('mini player window shape removes the transparent corner regions', async ()
 
   assert.equal(typeof module.createMiniPlayerWindowShape, 'function')
   const shape = module.createMiniPlayerWindowShape!(200, 100, 20)
-  assert.ok(shape.some((rectangle) => rectangle.x === 0 && rectangle.y === 20 && rectangle.height === 60))
-  assert.equal(shape.some((rectangle) => rectangle.x === 0 && rectangle.y === 0), false)
+  assert.ok(
+    shape.some((rectangle) => rectangle.x === 0 && rectangle.y === 20 && rectangle.height === 60)
+  )
+  assert.equal(
+    shape.some((rectangle) => rectangle.x === 0 && rectangle.y === 0),
+    false
+  )
   const topRow = shape.find((rectangle) => rectangle.y === 0)
   assert.ok(topRow)
   assert.ok(topRow!.x >= 1)

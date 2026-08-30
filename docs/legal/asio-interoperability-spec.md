@@ -4,7 +4,7 @@ Status: experimental contract frozen for hardware validation; not approved for r
 
 Scope: internal Windows x64 compatibility contract.
 
-Contract revision: `2`.
+Contract revision: `3`.
 
 Revision 1 defines a two-buffer output path, a single active session, little-endian PCM formats
 (Int16, packed Int24, Int24-in-Int32, Int32, and Float32), callback routing, and the
@@ -26,7 +26,7 @@ with the following Windows x64 data contract:
 | set I/O format selector        | `0x23111961`                                                     |
 | get I/O format selector        | `0x23111983`                                                     |
 | can-do I/O format selector     | `0x23112004`                                                     |
-| success                        | error value `0` or `0x3f4847a0`                                 |
+| success                        | error value `0` or `0x3f4847a0`                                  |
 
 The request block is represented internally as `AsioIoFormat`. Its `sizeof`, alignment, and field
 offsets are part of `audio-engine/output/asio/abi/asio-abi-manifest.json` and are asserted by both
@@ -40,10 +40,21 @@ For a Native DSD request, the control thread must use this sequence before buffe
 1. Read and retain the current PCM sample rate and I/O format. The current format must report PCM.
 2. Call can-do for DSD, set DSD, then get and require DSD as the active format.
 3. Call can-sample-rate and set-sample-rate for the raw DSD transport rate.
-4. Read back the transport rate and query every output channel. Every channel must report the exact
+4. Re-read the buffer-size range and re-choose the buffer size. A driver's valid buffer range in
+   DSD mode may differ from its PCM-mode range (observed in the field: createBuffers rejecting
+   PCM-mode sizes with ASE_InvalidParameter after the DSD switch). A failed re-read or an invalid
+   re-read range keeps the PCM-mode choice rather than failing the open.
+5. Read back the transport rate and query every output channel. Every channel must report the exact
    requested raw DSD sample type.
-5. Only then create buffers and start. Runtime proof still requires a successful typed raw DSD
+6. Only then create buffers and start. Runtime proof still requires a successful typed raw DSD
    callback, so an open alone is not `nativeDsdRuntimeState=proven`.
+
+Revision 3 adds step 4 only; the revision-2 data layout and selector contract are unchanged.
+
+When can-do reported DSD support but both set attempts were refused, the negotiation failure text
+must note that another audio client likely holds the device: that refusal shape is
+field-verified as a multi-client format lock (the same driver accepts every switch the moment
+the other client closes), not as missing DSD capability.
 
 No Native DSD probe runs during device enumeration or while the driver is already playing. The
 whole request runs on the bounded ASIO control command; a timeout marks the session unhealthy and

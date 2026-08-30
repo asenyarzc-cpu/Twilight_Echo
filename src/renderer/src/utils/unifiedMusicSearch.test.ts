@@ -147,7 +147,10 @@ test('logical music items group matching local and provider variants without mer
     ['local:flac', 'ncm:123']
   )
   assert.equal(items[0].preferredTrack.id, 'local:flac')
-  assert.deepEqual(items[1].variants.map((variant) => variant.track.id), ['bili:BV1:80'])
+  assert.deepEqual(
+    items[1].variants.map((variant) => variant.track.id),
+    ['bili:BV1:80']
+  )
 })
 
 test('unified search does not call unavailable or non-search providers', async () => {

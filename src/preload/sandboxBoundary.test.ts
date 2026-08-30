@@ -67,10 +67,9 @@ function collectBareBuiltinSpecifiers(source: string): string[] {
 
 test('sandboxed preload only imports Node builtins supported by the sandbox', () => {
   const source = readFileSync(new URL('./index.ts', import.meta.url), 'utf8')
-  const banned = [
-    ...collectNodeSpecifiers(source),
-    ...collectBareBuiltinSpecifiers(source)
-  ].filter((name) => !ALLOWED_SANDBOX_NODE_BUILTINS.has(name))
+  const banned = [...collectNodeSpecifiers(source), ...collectBareBuiltinSpecifiers(source)].filter(
+    (name) => !ALLOWED_SANDBOX_NODE_BUILTINS.has(name)
+  )
 
   assert.deepEqual(
     banned,

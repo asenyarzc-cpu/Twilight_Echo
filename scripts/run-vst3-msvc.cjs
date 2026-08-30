@@ -1,7 +1,10 @@
 const { existsSync } = require('node:fs')
 const { spawnSync } = require('node:child_process')
 const { join, resolve } = require('node:path')
-const { resolveVst3MsvcBuildDirectory, resolveVst3MsvcEnvironment } = require('./vst3-msvc-toolchain.cjs')
+const {
+  resolveVst3MsvcBuildDirectory,
+  resolveVst3MsvcEnvironment
+} = require('./vst3-msvc-toolchain.cjs')
 
 const root = resolve(__dirname, '..')
 const environment = resolveVst3MsvcEnvironment()
@@ -16,11 +19,25 @@ if (!existsSync(join(buildDir, 'CMakeCache.txt'))) {
 
 const command =
   action === 'build'
-    ? ['cmake', ['--build', buildDir, '--config', 'Release', '--target', 'twilight_vst3_scanner', 'twilight_vst3_host']]
+    ? [
+        'cmake',
+        [
+          '--build',
+          buildDir,
+          '--config',
+          'Release',
+          '--target',
+          'twilight_vst3_scanner',
+          'twilight_vst3_host'
+        ]
+      ]
     : action === 'test'
       ? ['ctest', ['--test-dir', buildDir, '-C', 'Release', '--output-on-failure']]
       : action === 'stage'
-        ? [process.execPath, [join(root, 'scripts', 'stage-vst3-msvc.cjs'), '--build-dir', buildDir]]
+        ? [
+            process.execPath,
+            [join(root, 'scripts', 'stage-vst3-msvc.cjs'), '--build-dir', buildDir]
+          ]
         : null
 
 if (!command) {

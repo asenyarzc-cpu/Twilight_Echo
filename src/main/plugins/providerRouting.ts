@@ -336,6 +336,7 @@ export function providerSupportsMethod(
   provider: TwilightMediaProviderRegistration,
   method: TwilightMediaProviderMethod
 ): boolean {
+  if (provider.supportedMethods && !provider.supportedMethods.includes(method)) return false
   const requiredCapability = PROVIDER_METHOD_CAPABILITIES[method]
   return !requiredCapability || provider.capabilities.includes(requiredCapability)
 }

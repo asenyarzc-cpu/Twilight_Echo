@@ -409,6 +409,8 @@ test('theme archives export v2, accept v1 migration input, and reject unknown ve
 test('disabled or uninstalled plugin themes fall back to the built-in selection', () => {
   assert.match(themeIpc, /export async function reconcileThemeAfterPluginChange/)
   assert.match(themeIpc, /setActiveTheme\(\{ kind: 'builtin', id: TWILIGHT_DEFAULT_THEME_ID \}/)
+  assert.match(themeIpc, /let activeThemeChanged = false/)
+  assert.match(themeIpc, /if \(activeThemeChanged\) await synchronizeThemeSettings\(snapshot\)/)
   assert.match(pluginIpc, /reconcileThemeAfterPluginChange\(\)/)
 })
 

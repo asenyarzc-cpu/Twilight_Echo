@@ -14,7 +14,11 @@ function synthClickTrack(bpm: number, seconds: number, sampleRate = 22050): Floa
   return samples
 }
 
-function synthAlternatingClickTrack(bpm: number, seconds: number, sampleRate = 22050): Float32Array {
+function synthAlternatingClickTrack(
+  bpm: number,
+  seconds: number,
+  sampleRate = 22050
+): Float32Array {
   const samples = new Float32Array(seconds * sampleRate)
   const beatSamples = Math.round((60 / bpm) * sampleRate)
   let beat = 0

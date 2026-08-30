@@ -30,6 +30,7 @@
   "src/renderer/src/components/PluginSettingsPanel.vue": 21,
   "src/renderer/src/components/RadioPodcastPage.vue": 34,
   "src/renderer/src/components/settings-page/SettingsPage.css": 362,
+  "src/renderer/src/components/settings-page/DesktopLyricsSettingsSection.vue": 7,
   "src/renderer/src/components/settings-page/ShortcutsSettingsSection.vue": 3,
   "src/renderer/src/components/SettingsPage.vue": 59,
   "src/renderer/src/components/song-list/SongList.css": 258,
@@ -50,6 +51,7 @@
   "src/renderer/src/components/StreamingSearch.vue": 49,
   "src/renderer/src/components/theme-studio/ThemeStudioPage.css": 8,
   "src/renderer/src/components/TitleBar.vue": 12,
+  "src/renderer/src/desktop-lyrics/desktopLyrics.css": 29,
   "src/renderer/src/mini-player/MiniPlayer.css": 7,
   "src/renderer/src/mini-player/MiniPlayerCustomizer.css": 6
 }

@@ -5,6 +5,7 @@
 #include "../decoder/SacdIsoProbe.h"
 #include "../metadata/AudioMetadataService.h"
 #include "../utils/JsonUtils.h"
+#include "DiagnosticLog.h"
 
 #include <algorithm>
 #include <atomic>
@@ -2483,6 +2484,22 @@ TAE_Result TAE_GetLastError(TAE_EngineHandle engine, char* buffer, size_t buffer
 TAE_Result TAE_GetPlaybackInfo(TAE_EngineHandle engine, char* buffer, size_t buffer_size, size_t* required_size) {
   if (!engine) return TAE_RESULT_NOT_INITIALIZED;
   return copyStringResult(fromHandle(engine)->getPlaybackInfoJson(), buffer, buffer_size, required_size);
+}
+
+TAE_Result TAE_GetDiagnosticLog(
+    TAE_EngineHandle engine,
+    uint64_t since_sequence,
+    size_t max_entries,
+    char* buffer,
+    size_t buffer_size,
+    size_t* required_size,
+    uint64_t* next_sequence) {
+  if (!engine) return TAE_RESULT_NOT_INITIALIZED;
+  return copyStringResult(
+      twilight::audio::DiagnosticLog::instance().toJson(since_sequence, max_entries, next_sequence),
+      buffer,
+      buffer_size,
+      required_size);
 }
 
 TAE_Result TAE_GetSpectrumData(TAE_EngineHandle engine, float* buffer, size_t point_count, size_t* written_count) {

@@ -157,10 +157,13 @@ test('webdav stat returns a single entry and notFound for missing paths', async 
   })
   const entry = await session.stat('/music/a.flac')
   assert.equal(entry?.name, 'a.flac')
-  await assert.rejects(async () => session.stat('/music/missing.flac'), (err: unknown) => {
-    assert.equal((err as { code: string }).code, 'notFound')
-    return true
-  })
+  await assert.rejects(
+    async () => session.stat('/music/missing.flac'),
+    (err: unknown) => {
+      assert.equal((err as { code: string }).code, 'notFound')
+      return true
+    }
+  )
   await session.close()
 })
 
@@ -183,10 +186,13 @@ test('webdav rejects wrong credentials with auth error', async () => {
     username: 'alice',
     password: 'wrong'
   })
-  await assert.rejects(async () => session.list('/music'), (err: unknown) => {
-    assert.equal((err as { code: string }).code, 'auth')
-    return true
-  })
+  await assert.rejects(
+    async () => session.list('/music'),
+    (err: unknown) => {
+      assert.equal((err as { code: string }).code, 'auth')
+      return true
+    }
+  )
   await session.close()
 })
 

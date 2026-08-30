@@ -1319,7 +1319,6 @@ test('a save scheduled during deferred removal persists metadata against the ret
   })
   const savedSnapshots: Array<{ revision: number; tracks: MockTrack[]; folders: string[] }> = []
   let capturedRequest!: Parameters<typeof createRemovalResult>[0] | null
-
   ;(globalThis as Record<string, unknown>).window = {
     api: {
       data: {

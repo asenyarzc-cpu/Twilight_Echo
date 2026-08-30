@@ -1,6 +1,9 @@
 const { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } = require('node:fs')
 const { join, resolve } = require('node:path')
-const { resolveVst3MsvcBuildDirectory, resolveVst3MsvcEnvironment } = require('./vst3-msvc-toolchain.cjs')
+const {
+  resolveVst3MsvcBuildDirectory,
+  resolveVst3MsvcEnvironment
+} = require('./vst3-msvc-toolchain.cjs')
 
 const root = resolve(__dirname, '..')
 const environment = resolveVst3MsvcEnvironment()
@@ -13,7 +16,9 @@ const buildDir =
 
 const files = ['twilight-vst3-scanner.exe', 'twilight-vst3-host.exe']
 const candidates = [join(buildDir, 'bin', 'Release'), join(buildDir, 'Release')]
-const sourceDir = candidates.find((directory) => files.every((file) => existsSync(join(directory, file))))
+const sourceDir = candidates.find((directory) =>
+  files.every((file) => existsSync(join(directory, file)))
+)
 if (!sourceDir) {
   console.error(`VST3 helper executables were not found under:\n${candidates.join('\n')}`)
   process.exit(1)

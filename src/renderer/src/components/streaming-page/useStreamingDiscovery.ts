@@ -1,10 +1,10 @@
-import { getCurrentInstance, onBeforeUnmount, ref, type Ref } from 'vue'
+import { getCurrentInstance, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import type {
-  NcmDiscoveryPlaylistPage,
-  NcmHighQualityPlaylistPage,
-  NcmPlaylistCatalogue,
-  NcmPlaylistSummary
-} from '../../stores/useNcmStore'
+  MediaProviderDiscoveryPlaylistPage,
+  MediaProviderHighQualityPlaylistPage,
+  MediaProviderPlaylistCatalogue,
+  MediaProviderPlaylistSummary
+} from '../../providers/mediaProvider'
 import type { PageState } from './types'
 
 export type DiscoveryOrder = 'hot' | 'new'
@@ -13,33 +13,37 @@ export const DISCOVERY_ALL_TAG = '全部'
 export const DISCOVERY_PAGE_SIZE = 30
 
 type UseStreamingDiscoveryOptions = {
-  fetchPlaylistCategories: () => Promise<NcmPlaylistCatalogue>
+  providerId: Ref<string>
+  fetchPlaylistCategories?: (providerId: string) => Promise<MediaProviderPlaylistCatalogue>
   fetchDiscoveryPlaylists: (
+    providerId: string,
     cat?: string,
     order?: DiscoveryOrder,
     limit?: number,
     offset?: number
-  ) => Promise<NcmDiscoveryPlaylistPage>
-  fetchHighQualityPlaylists: (
+  ) => Promise<MediaProviderDiscoveryPlaylistPage>
+  fetchHighQualityPlaylists?: (
+    providerId: string,
     cat?: string,
     limit?: number,
     before?: number
-  ) => Promise<NcmHighQualityPlaylistPage>
+  ) => Promise<MediaProviderHighQualityPlaylistPage>
 }
 
 export function useStreamingDiscovery({
+  providerId,
   fetchPlaylistCategories,
   fetchDiscoveryPlaylists,
   fetchHighQualityPlaylists
 }: UseStreamingDiscoveryOptions): {
-  catalogue: Ref<NcmPlaylistCatalogue | null>
+  catalogue: Ref<MediaProviderPlaylistCatalogue | null>
   catalogueLoading: Ref<boolean>
   catalogueError: Ref<string>
   selectedTag: Ref<string>
   order: Ref<DiscoveryOrder>
   highQuality: Ref<boolean>
   panelExpanded: Ref<boolean>
-  playlists: Ref<NcmPlaylistSummary[]>
+  playlists: Ref<MediaProviderPlaylistSummary[]>
   total: Ref<number>
   offset: Ref<number>
   hasMore: Ref<boolean>
@@ -55,14 +59,14 @@ export function useStreamingDiscovery({
   loadMore: () => Promise<void>
   retry: () => void
 } {
-  const catalogue = ref<NcmPlaylistCatalogue | null>(null)
+  const catalogue = ref<MediaProviderPlaylistCatalogue | null>(null)
   const catalogueLoading = ref(false)
   const catalogueError = ref('')
   const selectedTag = ref(DISCOVERY_ALL_TAG)
   const order = ref<DiscoveryOrder>('hot')
   const highQuality = ref(false)
   const panelExpanded = ref(false)
-  const playlists = ref<NcmPlaylistSummary[]>([])
+  const playlists = ref<MediaProviderPlaylistSummary[]>([])
   const total = ref(0)
   const offset = ref(0)
   const hasMore = ref(false)
@@ -73,18 +77,24 @@ export function useStreamingDiscovery({
   let latestRequestId = 0
   let hqBefore = 0
   let loadedOnce = false
+  let loadedProviderId = providerId.value
 
   async function loadCatalogue(force = false): Promise<void> {
+    if (!fetchPlaylistCategories) return
     if (catalogueLoading.value) return
     if (catalogue.value && !force) return
     catalogueLoading.value = true
     catalogueError.value = ''
+    const requestProviderId = loadedProviderId
     try {
-      catalogue.value = await fetchPlaylistCategories()
+      const nextCatalogue = await fetchPlaylistCategories(requestProviderId)
+      if (requestProviderId !== loadedProviderId) return
+      catalogue.value = nextCatalogue
     } catch (error) {
+      if (requestProviderId !== loadedProviderId) return
       catalogueError.value = error instanceof Error ? error.message : '加载歌单分类失败'
     } finally {
-      catalogueLoading.value = false
+      if (requestProviderId === loadedProviderId) catalogueLoading.value = false
     }
   }
 
@@ -95,7 +105,13 @@ export function useStreamingDiscovery({
     try {
       if (highQuality.value) {
         hqBefore = 0
-        const page = await fetchHighQualityPlaylists(selectedTag.value, DISCOVERY_PAGE_SIZE, 0)
+        if (!fetchHighQualityPlaylists) return
+        const page = await fetchHighQualityPlaylists(
+          loadedProviderId,
+          selectedTag.value,
+          DISCOVERY_PAGE_SIZE,
+          0
+        )
         if (requestId !== latestRequestId) return
         playlists.value = page.items
         total.value = page.total
@@ -104,6 +120,7 @@ export function useStreamingDiscovery({
         offset.value = 0
       } else {
         const page = await fetchDiscoveryPlaylists(
+          loadedProviderId,
           selectedTag.value,
           order.value,
           DISCOVERY_PAGE_SIZE,
@@ -157,6 +174,7 @@ export function useStreamingDiscovery({
   }
 
   function toggleHighQuality(): void {
+    if (!fetchHighQualityPlaylists) return
     highQuality.value = !highQuality.value
     playlists.value = []
     reloadFromStart()
@@ -176,17 +194,16 @@ export function useStreamingDiscovery({
     const requestId = ++latestRequestId
     loadingMore.value = true
     try {
+      if (!fetchHighQualityPlaylists) return
       const page = await fetchHighQualityPlaylists(
+        loadedProviderId,
         selectedTag.value,
         DISCOVERY_PAGE_SIZE,
         hqBefore
       )
       if (requestId !== latestRequestId) return
       const seen = new Set(playlists.value.map((item) => item.id))
-      playlists.value = [
-        ...playlists.value,
-        ...page.items.filter((item) => !seen.has(item.id))
-      ]
+      playlists.value = [...playlists.value, ...page.items.filter((item) => !seen.has(item.id))]
       total.value = page.total
       hasMore.value = page.hasMore
       hqBefore = page.lasttime
@@ -204,6 +221,31 @@ export function useStreamingDiscovery({
     if (catalogueError.value) void loadCatalogue(true)
     reloadFromStart()
   }
+
+  function resetForProvider(nextProviderId: string): void {
+    loadedProviderId = nextProviderId
+    latestRequestId += 1
+    catalogue.value = null
+    catalogueLoading.value = false
+    catalogueError.value = ''
+    selectedTag.value = DISCOVERY_ALL_TAG
+    order.value = 'hot'
+    highQuality.value = false
+    panelExpanded.value = false
+    playlists.value = []
+    total.value = 0
+    offset.value = 0
+    hasMore.value = false
+    listLoading.value = false
+    listError.value = ''
+    loadingMore.value = false
+    hqBefore = 0
+    loadedOnce = false
+  }
+
+  watch(providerId, (nextProviderId) => {
+    if (nextProviderId !== loadedProviderId) resetForProvider(nextProviderId)
+  })
 
   if (getCurrentInstance()) {
     onBeforeUnmount(() => {

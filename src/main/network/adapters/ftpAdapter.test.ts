@@ -13,7 +13,10 @@ const LISTING = [
   '-rw-r--r-- 1 owner group 22 Jan 01 2025 a.flac'
 ].join('\r\n')
 
-function makeProfile(port: number, overrides: Partial<NetworkSourceProfile> = {}): NetworkSourceProfile {
+function makeProfile(
+  port: number,
+  overrides: Partial<NetworkSourceProfile> = {}
+): NetworkSourceProfile {
   return {
     id: 'ftp1',
     protocol: 'ftp',
@@ -156,9 +159,7 @@ async function startFtpServer(): Promise<TestFtpServer> {
             if (argument.endsWith('a.flac')) {
               const offset = restartAt
               restartAt = 0
-              void withData((socket) =>
-                socket.write(FLAC_BYTES.subarray(offset).toString())
-              )
+              void withData((socket) => socket.write(FLAC_BYTES.subarray(offset).toString()))
             } else {
               reply('550 no such file')
             }
@@ -206,10 +207,11 @@ test.after(async () => {
 })
 
 test('ftp list parses directory and audio entries with stable ids', async () => {
-  const session = await createFtpAdapter().createSession(
-    makeProfile(server.port),
-    { kind: 'password', username: USERNAME, password: PASSWORD }
-  )
+  const session = await createFtpAdapter().createSession(makeProfile(server.port), {
+    kind: 'password',
+    username: USERNAME,
+    password: PASSWORD
+  })
   const entries = await session.list('/')
   assert.equal(entries.length, 2)
   const album = entries.find((entry) => entry.name === 'album')
@@ -224,10 +226,11 @@ test('ftp list parses directory and audio entries with stable ids', async () => 
 })
 
 test('ftp readStream downloads file bytes', async () => {
-  const session = await createFtpAdapter().createSession(
-    makeProfile(server.port),
-    { kind: 'password', username: USERNAME, password: PASSWORD }
-  )
+  const session = await createFtpAdapter().createSession(makeProfile(server.port), {
+    kind: 'password',
+    username: USERNAME,
+    password: PASSWORD
+  })
   const stream = await session.readStream('/a.flac')
   const chunks: Buffer[] = []
   for await (const chunk of stream) chunks.push(Buffer.from(chunk))
@@ -236,44 +239,54 @@ test('ftp readStream downloads file bytes', async () => {
 })
 
 test('ftp stat resolves size for files and rejects missing paths', async () => {
-  const session = await createFtpAdapter().createSession(
-    makeProfile(server.port),
-    { kind: 'password', username: USERNAME, password: PASSWORD }
-  )
+  const session = await createFtpAdapter().createSession(makeProfile(server.port), {
+    kind: 'password',
+    username: USERNAME,
+    password: PASSWORD
+  })
   const entry = await session.stat('/a.flac')
   assert.equal(entry?.name, 'a.flac')
   assert.equal(entry?.sizeBytes, FLAC_BYTES.length)
-  await assert.rejects(async () => session.stat('/missing.flac'), (err: unknown) => {
-    assert.equal((err as { code: string }).code, 'notFound')
-    return true
-  })
+  await assert.rejects(
+    async () => session.stat('/missing.flac'),
+    (err: unknown) => {
+      assert.equal((err as { code: string }).code, 'notFound')
+      return true
+    }
+  )
   await session.close()
 })
 
 test('ftp rejects wrong credentials with auth error and never allows direct urls', async () => {
-  const bad = await createFtpAdapter().createSession(
-    makeProfile(server.port),
-    { kind: 'password', username: USERNAME, password: 'wrong' }
-  )
-  await assert.rejects(async () => bad.list('/'), (err: unknown) => {
-    assert.equal((err as { code: string }).code, 'auth')
-    return true
+  const bad = await createFtpAdapter().createSession(makeProfile(server.port), {
+    kind: 'password',
+    username: USERNAME,
+    password: 'wrong'
   })
+  await assert.rejects(
+    async () => bad.list('/'),
+    (err: unknown) => {
+      assert.equal((err as { code: string }).code, 'auth')
+      return true
+    }
+  )
   await bad.close()
 
-  const session = await createFtpAdapter().createSession(
-    makeProfile(server.port),
-    { kind: 'password', username: USERNAME, password: PASSWORD }
-  )
+  const session = await createFtpAdapter().createSession(makeProfile(server.port), {
+    kind: 'password',
+    username: USERNAME,
+    password: PASSWORD
+  })
   assert.equal(await session.resolvePlaybackUrl('/a.flac'), null)
   await session.close()
 })
 
 test('ftp readStream honors a restart offset', async () => {
-  const session = await createFtpAdapter().createSession(
-    makeProfile(server.port),
-    { kind: 'password', username: USERNAME, password: PASSWORD }
-  )
+  const session = await createFtpAdapter().createSession(makeProfile(server.port), {
+    kind: 'password',
+    username: USERNAME,
+    password: PASSWORD
+  })
   const stream = await session.readStream('/a.flac', undefined, { start: 4 })
   const chunks: Buffer[] = []
   for await (const chunk of stream) chunks.push(Buffer.from(chunk))

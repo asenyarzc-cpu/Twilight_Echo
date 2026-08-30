@@ -8,6 +8,7 @@ const {
   NATIVE_RUNTIME_FILES,
   REQUIRED_NATIVE_RUNTIME_FILES,
   clearPeDebugDirectory,
+  clearPeSymbolTablePointer,
   executableCandidates,
   stripNativeArtifacts
 } = require('./release-artifact-strip.cjs')
@@ -54,6 +55,7 @@ test('release strip uses an explicit protected-environment tool before PATH', ()
 test('release strip only processes the packaged runtime copy and fails closed', () => {
   const calls = []
   const cleared = []
+  const symbolCleared = []
   const packagedDir = path.resolve('C:/release/win-unpacked/resources/audio-engine')
   const result = stripNativeArtifacts(packagedDir, {
     stripCommand: 'C:/tools/strip.exe',
@@ -62,12 +64,14 @@ test('release strip only processes the packaged runtime copy and fails closed', 
       calls.push({ command, args })
       return { status: 0 }
     },
-    clearDebugDirectory: (filePath) => cleared.push(filePath)
+    clearDebugDirectory: (filePath) => cleared.push(filePath),
+    clearSymbolTablePointer: (filePath) => symbolCleared.push(filePath)
   })
   assert.equal(result.stripped.length, NATIVE_RUNTIME_FILES.length)
   assert.deepEqual(result.missing, [])
   assert.equal(calls.length, NATIVE_RUNTIME_FILES.length)
   assert.equal(cleared.length, NATIVE_RUNTIME_FILES.length)
+  assert.equal(symbolCleared.length, NATIVE_RUNTIME_FILES.length)
   assert.ok(calls.every((call) => call.args[0] === '--strip-all'))
   assert.ok(calls.every((call) => call.args[1].startsWith(packagedDir)))
   assert.throws(
@@ -93,10 +97,14 @@ test('release strip skips optional VST3 helpers when a release did not stage the
       calls.push({ command, args })
       return { status: 0 }
     },
-    clearDebugDirectory: () => {}
+    clearDebugDirectory: () => {},
+    clearSymbolTablePointer: () => {}
   })
   assert.equal(result.stripped.length, REQUIRED_NATIVE_RUNTIME_FILES.length)
-  assert.equal(result.missing.length, NATIVE_RUNTIME_FILES.length - REQUIRED_NATIVE_RUNTIME_FILES.length)
+  assert.equal(
+    result.missing.length,
+    NATIVE_RUNTIME_FILES.length - REQUIRED_NATIVE_RUNTIME_FILES.length
+  )
   assert.equal(calls.length, REQUIRED_NATIVE_RUNTIME_FILES.length)
 })
 
@@ -118,6 +126,36 @@ test('release strip clears PE debug directory records and referenced data', () =
         .subarray(fixture.debugDataOffset, fixture.debugDataOffset + 16)
         .every((value) => value === 0)
     )
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('release strip normalizes the COFF symbol pointer only when the table is gone', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'twilight-clear-pe-symbols-'))
+  const peOffset = 0x80
+  const coffOffset = peOffset + 4
+  try {
+    const strippedPath = path.join(directory, 'stripped.dll')
+    const stripped = makePeWithDebugDirectory()
+    stripped.buffer.writeUInt32LE(0x400, coffOffset + 8)
+    fs.writeFileSync(strippedPath, stripped.buffer)
+    assert.equal(clearPeSymbolTablePointer(strippedPath), true)
+    const cleared = fs.readFileSync(strippedPath)
+    assert.equal(cleared.readUInt32LE(coffOffset + 8), 0)
+    assert.equal(cleared.readUInt32LE(coffOffset + 12), 0)
+
+    // A symbol table that survived strip keeps its count and must stay
+    // detectable by verify-release-artifacts.
+    const unstrippedPath = path.join(directory, 'unstripped.dll')
+    const unstripped = makePeWithDebugDirectory()
+    unstripped.buffer.writeUInt32LE(0x400, coffOffset + 8)
+    unstripped.buffer.writeUInt32LE(12, coffOffset + 12)
+    fs.writeFileSync(unstrippedPath, unstripped.buffer)
+    assert.equal(clearPeSymbolTablePointer(unstrippedPath), false)
+    const kept = fs.readFileSync(unstrippedPath)
+    assert.equal(kept.readUInt32LE(coffOffset + 8), 0x400)
+    assert.equal(kept.readUInt32LE(coffOffset + 12), 12)
   } finally {
     fs.rmSync(directory, { recursive: true, force: true })
   }

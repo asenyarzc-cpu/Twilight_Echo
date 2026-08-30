@@ -4,18 +4,20 @@ import test from 'node:test'
 const {
   buildStreamingSidebarItems,
   getFirstVisibleStreamingTab,
+  getStreamingDiscoveryProviders,
+  getStreamingHomeProviders,
   hasStreamingSidebarEntries,
   isSidebarItemActiveForProvider
-} = (await import(new URL('./streamingNavigation.ts', import.meta.url).href)) as typeof import(
-  './streamingNavigation'
-)
+} = (await import(
+  new URL('./streamingNavigation.ts', import.meta.url).href
+)) as typeof import('./streamingNavigation')
 
 test('provider sidebar active state is provider driven without dedicated provider pages', () => {
   assert.equal(
     isSidebarItemActiveForProvider({
-      itemProvider: 'ncm',
+      itemProvider: 'shared',
       itemKey: 'home',
-      activeProvider: 'ncm',
+      activeProvider: 'ytmusic',
       activeTab: 'home'
     }),
     true
@@ -31,11 +33,70 @@ test('provider sidebar active state is provider driven without dedicated provide
   )
   assert.equal(
     isSidebarItemActiveForProvider({
-      itemProvider: 'ncm',
+      itemProvider: 'shared',
       itemKey: 'home',
       activeProvider: 'bili',
       activeTab: 'library'
     }),
+    false
+  )
+})
+
+test('home and discovery source options follow provider implementations', () => {
+  const providers = [
+    {
+      id: 'alpha',
+      name: 'Alpha Music',
+      capabilities: ['library', 'playlist'],
+      supportedMethods: ['fetchRecommendSongs', 'fetchDiscoveryPlaylists'],
+      ui: {
+        icon: 'pi pi-star',
+        streamingLibraryTab: false,
+        streamingSections: [{ method: 'fetchRecommendSongs' }]
+      }
+    },
+    {
+      id: 'library-only',
+      name: 'Library Only',
+      capabilities: ['library'],
+      supportedMethods: ['fetchUserLibrary'],
+      ui: { streamingLibraryTab: false }
+    }
+  ]
+
+  assert.deepEqual(getStreamingHomeProviders({ ncmAvailable: false, providers }), [
+    { id: 'alpha', name: 'Alpha Music', icon: 'pi pi-star', color: undefined }
+  ])
+  assert.deepEqual(getStreamingDiscoveryProviders({ ncmAvailable: false, providers }), [
+    { id: 'alpha', name: 'Alpha Music', icon: 'pi pi-star', color: undefined }
+  ])
+  assert.deepEqual(
+    buildStreamingSidebarItems({ ncmAvailable: false, providers }).map((item) => item.key),
+    ['home', 'discover']
+  )
+})
+
+test('compatibility-only recommendation handlers do not opt Bilibili into the homepage', () => {
+  const providers = [
+    {
+      id: 'bili',
+      name: 'Bilibili',
+      capabilities: ['library', 'playlist'],
+      supportedMethods: [
+        'fetchRecommendSongs',
+        'fetchRecommendPlaylists',
+        'fetchPersonalFm',
+        'fetchPrivateContent'
+      ],
+      ui: { icon: 'pi pi-video', streamingLibraryTab: true }
+    }
+  ]
+
+  assert.deepEqual(getStreamingHomeProviders({ ncmAvailable: false, providers }), [])
+  assert.equal(
+    buildStreamingSidebarItems({ ncmAvailable: false, providers }).some(
+      (item) => item.tab === 'home'
+    ),
     false
   )
 })
@@ -70,7 +131,10 @@ test('keeps shared music library visible when a unified provider is enabled with
     }
   ])
   assert.equal(getFirstVisibleStreamingTab(items), 'library')
-  assert.equal(items.some((item) => item.tab === 'cloud'), false)
+  assert.equal(
+    items.some((item) => item.tab === 'cloud'),
+    false
+  )
   assert.equal(hasStreamingSidebarEntries(items), true)
 })
 
@@ -83,14 +147,14 @@ test('shows the NetEase discover entry right after home when NetEase is availabl
   assert.deepEqual(items, [
     {
       key: 'home',
-      provider: 'ncm',
+      provider: 'shared',
       label: '主页',
       icon: 'pi pi-sparkles',
       tab: 'home'
     },
     {
       key: 'discover',
-      provider: 'ncm',
+      provider: 'shared',
       label: '发现歌单',
       icon: 'pi pi-th-large',
       tab: 'discover'
@@ -120,7 +184,7 @@ test('shows the NetEase discover entry right after home when NetEase is availabl
   assert.equal(getFirstVisibleStreamingTab(items), 'home')
   assert.equal(
     isSidebarItemActiveForProvider({
-      itemProvider: 'ncm',
+      itemProvider: 'shared',
       itemKey: 'discover',
       activeProvider: 'ncm',
       activeTab: 'discover'

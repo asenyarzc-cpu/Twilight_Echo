@@ -104,7 +104,12 @@ function generateMiniWavFiles(directory, fileCount, sampleRate = 8000, durationS
   return directory
 }
 
-function seedStressLibrary(userDataPath, trackCount = 10_000, libraryFolder = null, realFileCount = 0) {
+function seedStressLibrary(
+  userDataPath,
+  trackCount = 10_000,
+  libraryFolder = null,
+  realFileCount = 0
+) {
   const root = resolve(userDataPath)
   const output = resolve(root, 'music-library.json')
   mkdirSync(root, { recursive: true })
@@ -229,10 +234,7 @@ async function navigateToStressLibrary(client) {
       songs.click()
     })()`
   )
-  await waitForExpression(
-    client,
-    `document.querySelector('.song-list .track-row')`
-  )
+  await waitForExpression(client, `document.querySelector('.song-list .track-row')`)
 }
 
 async function runElectronLibraryStress(client) {
@@ -648,11 +650,7 @@ async function main() {
     const stress = await runElectronLibraryStress(client)
     if (
       !stress.skipped &&
-      (
-      stress.trackHeight !== 680_000 ||
-      stress.maxMountedRows > 20 ||
-      stress.tbodyReplacements > 0
-      )
+      (stress.trackHeight !== 680_000 || stress.maxMountedRows > 20 || stress.tbodyReplacements > 0)
     ) {
       throw new Error(`10k SongList stress failed: ${JSON.stringify(stress)}`)
     }

@@ -218,7 +218,10 @@ test('streamed content hashing preserves a fixed fixture and groups identical me
       ],
       { contentHashForPath: contentHash }
     )
-    assert.deepEqual(result.groups.map((group) => group.kind), ['contentHash'])
+    assert.deepEqual(
+      result.groups.map((group) => group.kind),
+      ['contentHash']
+    )
     assert.deepEqual(result.groups[0]?.items.map((candidate) => candidate.id).sort(), [
       'fixture-a',
       'fixture-b'

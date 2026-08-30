@@ -1,3 +1,5 @@
+import { TRANSPARENT_GAIN_EPSILON_DB, equalizerBandAltersSignal } from './audioProcessingOptions.ts'
+
 export const DSP_GRAPH_VERSION = 2
 
 export type DspChannelLayout = 'mono' | 'stereo' | '5.1' | '7.1'
@@ -675,6 +677,44 @@ function createSpeakerCalibrationNode(layout: '5.1' | '7.1'): DspGraphNode {
       }))
     }
   }
+}
+
+/**
+ * Whether an enabled graph node would actually change the samples.
+ *
+ * A scene generated from the renderer's module toggles enables a node as soon as
+ * its toggle is on, so an untouched 10-band EQ looks like processing while being
+ * bit-transparent. The engine decides DSD passthrough from the same rule
+ * (graphNodeAltersSignal in audio-engine/core/AudioPipeline.cpp), so keep the two
+ * in lockstep: the UI must name the blockers the engine actually acts on.
+ *
+ * Unknown node types count as processing - claiming bit-perfect output that is
+ * not bit-perfect is the worse failure.
+ */
+export function dspGraphNodeAltersSignal(node: DspGraphNode): boolean {
+  if (!node.enabled || node.type === 'meter') return false
+  const params = node.params as Record<string, unknown>
+  const numberParam = (key: string): number => {
+    const value = params[key]
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0
+  }
+  if (node.type === 'replayGain') return (params.mode ?? 'off') !== 'off'
+  if (node.type === 'crossfeed') return numberParam('strength') > 0
+  if (node.type === 'convolver') {
+    return typeof params.impulseResponsePath === 'string' && params.impulseResponsePath.length > 0
+  }
+  if (node.type === 'equalizer') {
+    if (Math.abs(numberParam('preampDb')) > TRANSPARENT_GAIN_EPSILON_DB) return true
+    const bands = Array.isArray(params.bands) ? (params.bands as Record<string, unknown>[]) : []
+    return bands.some((band) =>
+      equalizerBandAltersSignal({
+        gain: typeof band.gain === 'number' ? band.gain : 0,
+        filterType: typeof band.filterType === 'string' ? band.filterType : 'peak',
+        enabled: band.enabled !== false
+      })
+    )
+  }
+  return true
 }
 
 export function graphHasEnabledProcessing(graph: DspGraphConfig): boolean {

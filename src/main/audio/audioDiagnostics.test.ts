@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { DEFAULT_AUDIO_PROCESSING, DEFAULT_OUTPUT_CONFIG } from './audioEngineHelpers.ts'
-import { createLegacyDspGraph } from '../../shared/dspGraph.ts'
+import { createLegacyDspGraph, type DspSceneState } from '../../shared/dspGraph.ts'
 import {
   AudioDiagnosticRecorder,
   collectDsdPcmBlockers,
@@ -13,7 +13,7 @@ import {
   type AudioDiagnosticSnapshot
 } from './audioDiagnostics.ts'
 
-function sceneState(processing = DEFAULT_AUDIO_PROCESSING) {
+function sceneState(processing = DEFAULT_AUDIO_PROCESSING): DspSceneState {
   return {
     scenes: [],
     pinnedSceneId: null,
@@ -35,11 +35,16 @@ test('identifies software volume as a DSD PCM blocker with DSP bypassed', () => 
   assert.deepEqual(blockers, [{ code: 'volume_not_unity', value: 0.7, origin: 'player' }])
 })
 
+const BOOSTED_EQ_BANDS = DEFAULT_AUDIO_PROCESSING.eqBands.map((band, index) =>
+  index === 0 ? { ...band, gain: 3 } : band
+)
+
 test('reports non-DSP output and scene processing that require PCM', () => {
   const processing = {
     ...DEFAULT_AUDIO_PROCESSING,
     dspEnabled: true,
     eqEnabled: true,
+    eqBands: BOOSTED_EQ_BANDS,
     crossfadeSeconds: 2
   }
   const state = sceneState(processing)
@@ -65,6 +70,41 @@ test('reports non-DSP output and scene processing that require PCM', () => {
   assert.ok(codes.includes('output_resampler_active'))
   assert.ok(codes.includes('output_dither_active'))
   assert.ok(codes.includes('dsp_scene_requires_pcm'))
+})
+
+test('a flat equalizer is not a DSD PCM blocker', () => {
+  const processing = { ...DEFAULT_AUDIO_PROCESSING, dspEnabled: true, eqEnabled: true }
+  const codes = collectDsdPcmBlockers({
+    playback: { volume: 1, playbackRate: 1 },
+    processing,
+    outputConfig: DEFAULT_OUTPUT_CONFIG,
+    sceneState: sceneState(processing)
+  }).map((blocker) => blocker.code)
+
+  assert.deepEqual(codes, [])
+})
+
+test('an equalizer node disabled in the effective graph is not a DSD PCM blocker', () => {
+  const processing = {
+    ...DEFAULT_AUDIO_PROCESSING,
+    dspEnabled: true,
+    eqEnabled: true,
+    eqBands: BOOSTED_EQ_BANDS
+  }
+  const state = sceneState(processing)
+  state.effectiveGraph = {
+    ...state.graph,
+    nodes: state.graph.nodes.map((node) => ({ ...node, enabled: false }))
+  }
+
+  const codes = collectDsdPcmBlockers({
+    playback: { volume: 1, playbackRate: 1 },
+    processing,
+    outputConfig: DEFAULT_OUTPUT_CONFIG,
+    sceneState: state
+  }).map((blocker) => blocker.code)
+
+  assert.deepEqual(codes, [])
 })
 
 test('redacts local paths and URL queries into stable fingerprints', () => {

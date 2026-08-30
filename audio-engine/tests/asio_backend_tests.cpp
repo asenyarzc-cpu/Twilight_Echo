@@ -84,6 +84,25 @@ void testAsioNativeDsdSampleRateSemantics() {
   assert(asio::callbackFrameRate(pcm) == 48000);
 }
 
+void testDsdCallbackUnitClassification() {
+  using asio::DsdCallbackUnit;
+  // Packed byte-frame cadence: the measured interval matches the prediction
+  // this backend writes with (one frame = 8 DSD bits).
+  assert(asio::classifyDsdCallbackUnit(10.0, 10.0) == DsdCallbackUnit::ByteFrames);
+  assert(asio::classifyDsdCallbackUnit(10.0, 15.0) == DsdCallbackUnit::ByteFrames);
+  assert(asio::classifyDsdCallbackUnit(10.0, 6.0) == DsdCallbackUnit::ByteFrames);
+  // 1-bit sample cadence: a driver counting DSD buffers in 1-bit samples fires
+  // callbacks ~8x faster than the byte-frame prediction.
+  assert(asio::classifyDsdCallbackUnit(10.0, 1.25) == DsdCallbackUnit::BitSamples);
+  assert(asio::classifyDsdCallbackUnit(10.0, 2.0) == DsdCallbackUnit::BitSamples);
+  assert(asio::classifyDsdCallbackUnit(10.0, 0.8) == DsdCallbackUnit::BitSamples);
+  // Intervals that fit neither interpretation stay Unknown instead of guessing.
+  assert(asio::classifyDsdCallbackUnit(10.0, 3.0) == DsdCallbackUnit::Unknown);
+  assert(asio::classifyDsdCallbackUnit(10.0, 40.0) == DsdCallbackUnit::Unknown);
+  assert(asio::classifyDsdCallbackUnit(0.0, 10.0) == DsdCallbackUnit::Unknown);
+  assert(asio::classifyDsdCallbackUnit(10.0, 0.0) == DsdCallbackUnit::Unknown);
+}
+
 int16_t readInt16(const std::vector<uint8_t>& bytes) {
   int16_t value = 0;
   std::memcpy(&value, bytes.data(), sizeof(value));
@@ -159,6 +178,160 @@ void testAsioDriverActivationRequestsDriverClsid() {
   assert(!std::regex_search(activationBody, activatesUnknown));
 }
 
+void testAsioDriverSessionRequeriesBufferSizeAfterNativeDsdSwitch() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath =
+      testFilePath.parent_path().parent_path() / "output" / "asio" / "windows" / "AsioDriverSession.cpp";
+  const std::string source = readTextFile(sourcePath);
+  const std::string openBody = extractFunctionBody(source, "bool AsioDriverSession::open(");
+
+  // A driver's valid buffer-size range can change once the DSD I/O format is
+  // active, so the range must be re-read after the switch, on the Native DSD
+  // path only, and the re-chosen size must become the session's buffer size.
+  const size_t dsdRequestPos = openBody.find("nativeDsdRequested");
+  const size_t dsdSwitchPos = openBody.find("configureNativeDsd");
+  assert(dsdRequestPos != std::string::npos);
+  assert(dsdSwitchPos != std::string::npos);
+  assert(dsdRequestPos < dsdSwitchPos);
+  const size_t requeryPos = openBody.find("getBufferSize", dsdSwitchPos);
+  assert(requeryPos != std::string::npos);
+  const size_t rechoosePos = openBody.find("chooseBufferSize", dsdSwitchPos);
+  assert(rechoosePos != std::string::npos);
+  assert(rechoosePos > requeryPos);
+  const size_t applyPos = openBody.find("state->bufferSize = dsdBufferSize", dsdSwitchPos);
+  assert(applyPos != std::string::npos);
+  assert(applyPos > rechoosePos);
+}
+
+void testAsioDriverSessionHintsAtHeldDeviceWhenDsdSetIsRefused() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath =
+      testFilePath.parent_path().parent_path() / "output" / "asio" / "windows" / "AsioDriverSession.cpp";
+  const std::string source = readTextFile(sourcePath);
+  const std::string configureBody =
+      extractFunctionBody(source, "bool configureNativeDsd(const AudioFormat& format, std::string* error)");
+
+  // Can-do answering yes while both sets are refused is the field-verified
+  // shape of a device held by another audio client, not of missing DSD
+  // capability. The failure text must say so instead of implying the DAC
+  // cannot do DSD.
+  assert(configureBody.find("nativeDsdCanDoReported") != std::string::npos);
+  assert(configureBody.find("another audio client") != std::string::npos);
+}
+
+void testAsioDriverSessionFallsBackToRateOnlyNativeDsdOrder() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath =
+      testFilePath.parent_path().parent_path() / "output" / "asio" / "windows" / "AsioDriverSession.cpp";
+  const std::string source = readTextFile(sourcePath);
+  const std::string configureBody =
+      extractFunctionBody(source, "bool configureNativeDsd(const AudioFormat& format, std::string* error)");
+
+  // A third driver family never implemented the IoFormat futures and switches
+  // to raw DSD purely from the semantic sample rate. The order must run after
+  // both documented orders fail, and the failure text must name all three.
+  const size_t formatFirstPos = configureBody.find("\"format-first\"");
+  const size_t rateFirstPos = configureBody.find("\"rate-first\"");
+  const size_t rateOnlyPos = configureBody.find("\"rate-only\"");
+  const size_t allFailedPos = configureBody.find("\"all-orders-failed\"");
+  assert(formatFirstPos != std::string::npos);
+  assert(rateFirstPos != std::string::npos);
+  assert(rateOnlyPos != std::string::npos);
+  assert(allFailedPos != std::string::npos);
+  assert(formatFirstPos < rateFirstPos);
+  assert(rateFirstPos < rateOnlyPos);
+  assert(rateOnlyPos < allFailedPos);
+  // The rate-only order must end with a restore so a failed channel-type proof
+  // never leaves the driver parked at the DSD semantic rate.
+  const size_t restorePos = configureBody.find("restoreNativeDsdConfiguration()", rateOnlyPos);
+  assert(restorePos != std::string::npos);
+  assert(restorePos < allFailedPos);
+}
+
+void testAsioDriverSessionRetriesCreateBuffersAtPreferred() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath =
+      testFilePath.parent_path().parent_path() / "output" / "asio" / "windows" / "AsioDriverSession.cpp";
+  const std::string source = readTextFile(sourcePath);
+  const std::string createBody =
+      extractFunctionBody(source, "bool AsioDriverSession::createBuffers(");
+
+  // JUCE and PortAudio both retry createBuffers at the driver's preferred
+  // size for drivers whose reported range is wrong (Hoontech DSP24 class).
+  // The retry must re-read the range, only fire when preferred differs, and
+  // stay a single bounded attempt.
+  const size_t failPos = createBody.find("!asio_abi::asioErrorIsSuccess(createBuffersResult)");
+  assert(failPos != std::string::npos);
+  const size_t requeryPos = createBody.find("getBufferSize", failPos);
+  assert(requeryPos != std::string::npos);
+  const size_t preferredPos = createBody.find("chooseBufferSize(0", requeryPos);
+  assert(preferredPos != std::string::npos);
+  assert(createBody.find("preferredSize != state->bufferSize", preferredPos) != std::string::npos);
+  assert(createBody.find("\"create-buffers-retry\"", preferredPos) != std::string::npos);
+  // The retry must not bypass the callback router: still one uninstall path.
+  size_t uninstallCount = 0;
+  for (size_t pos = createBody.find("AsioCallbackRouter::uninstall"); pos != std::string::npos;
+       pos = createBody.find("AsioCallbackRouter::uninstall", pos + 1)) {
+    ++uninstallCount;
+  }
+  assert(uninstallCount == 1);
+}
+
+void testAsioDriverSessionRechecksChannelCountAfterRateSwitch() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath =
+      testFilePath.parent_path().parent_path() / "output" / "asio" / "windows" / "AsioDriverSession.cpp";
+  const std::string source = readTextFile(sourcePath);
+  const std::string openBody = extractFunctionBody(source, "bool AsioDriverSession::open(");
+
+  // JUCE re-reads getChannels after the rate switch: a few drivers change the
+  // count there, and createBuffers with a stale count fails obscurely. A
+  // failed re-read must stay non-fatal (the original count stands).
+  const size_t ratePos = openBody.find("after sample rate negotiation");
+  assert(ratePos != std::string::npos);
+  const size_t recheckPos = openBody.find("getChannels", ratePos);
+  assert(recheckPos != std::string::npos);
+  assert(openBody.find("postRateOutputs", recheckPos) != std::string::npos);
+  const size_t guardPos = openBody.find("config.format.channelCount > postRateOutputs", recheckPos);
+  assert(guardPos != std::string::npos);
+  assert(openBody.find("changed after the rate switch", guardPos) != std::string::npos);
+}
+
+void testAsioDriverSessionProbesDoPCarriersInBothRateFamilies() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath =
+      testFilePath.parent_path().parent_path() / "output" / "asio" / "windows" / "AsioDriverSession.cpp";
+  const std::string source = readTextFile(sourcePath);
+  const std::string probeBody = extractFunctionBody(source, "bool AsioDriverSession::probe(");
+
+  // dopCarrierFormatForDsd emits 48k-family carriers for 48k-family sources,
+  // so the capability probe must intersect both families; probing only
+  // 176400/352800/705600 understates devices that take 192k/384k/768k/1536k.
+  for (int rate : {176400, 192000, 352800, 384000, 705600, 768000, 1411200, 1536000}) {
+    assert(probeBody.find(std::to_string(rate)) != std::string::npos);
+  }
+}
+
+void testAsioDriverSessionOnlySetsRateWhenDifferent() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath =
+      testFilePath.parent_path().parent_path() / "output" / "asio" / "windows" / "AsioDriverSession.cpp";
+  const std::string source = readTextFile(sourcePath);
+  const std::string openBody = extractFunctionBody(source, "bool AsioDriverSession::open(");
+
+  // PortAudio/RtAudio guard the rate write behind a getSampleRate comparison:
+  // a redundant setSampleRate disturbs some drivers and re-triggers
+  // exclusive-format arbitration on multi-client devices.
+  const size_t negotiatePos = openBody.find("before sample rate negotiation");
+  assert(negotiatePos != std::string::npos);
+  const size_t readPos = openBody.find("alreadyAtRate", negotiatePos);
+  assert(readPos != std::string::npos);
+  const size_t setPos = openBody.find("setSampleRate(requestedRate)", negotiatePos);
+  assert(setPos != std::string::npos);
+  assert(openBody.find("!alreadyAtRate", negotiatePos) != std::string::npos);
+  assert(openBody.find("getSampleRate(&currentRate)", negotiatePos) != std::string::npos);
+}
+
 void testAsioRenderCallbackDoesNotResizeScratchBuffers() {
   const std::filesystem::path testFilePath(__FILE__);
   const std::filesystem::path sourcePath = testFilePath.parent_path().parent_path() / "output" / "asio" / "AsioBackend.cpp";
@@ -170,6 +343,78 @@ void testAsioRenderCallbackDoesNotResizeScratchBuffers() {
   assert(renderBody.find("typedRenderScratch_") != std::string::npos);
   assert(renderBody.find("renderScratch_.resize") == std::string::npos);
   assert(renderBody.find("typedRenderScratch_.resize") == std::string::npos);
+}
+
+void testDsdRenderUnitProbeAdaptsOnConfirmedCadence() {
+  using asio::DsdCallbackUnit;
+  using asio::DsdRenderUnitDecision;
+
+  // Neither unit can be confirmed from a single ambiguous interval.
+  asio::DsdRenderUnitProbe probe;
+  assert(asio::advanceDsdRenderUnitProbe(probe, DsdCallbackUnit::Unknown, 2) == DsdRenderUnitDecision::Keep);
+  assert(!probe.confirmed);
+
+  // A byte-frame driver latches after the streak and widens the unit.
+  probe = {};
+  assert(asio::advanceDsdRenderUnitProbe(probe, DsdCallbackUnit::ByteFrames, 2) == DsdRenderUnitDecision::Keep);
+  assert(!probe.confirmed);
+  assert(asio::advanceDsdRenderUnitProbe(probe, DsdCallbackUnit::ByteFrames, 2) ==
+         DsdRenderUnitDecision::UseByteFrames);
+  assert(probe.confirmed);
+  // Confirmed probes never re-decide on later intervals.
+  assert(asio::advanceDsdRenderUnitProbe(probe, DsdCallbackUnit::BitSamples, 2) == DsdRenderUnitDecision::Keep);
+
+  // A bit-sample driver keeps the conservative probe unit; the caller adapts
+  // pacing and reporting instead of failing the stream.
+  probe = {};
+  assert(asio::advanceDsdRenderUnitProbe(probe, DsdCallbackUnit::BitSamples, 2) == DsdRenderUnitDecision::Keep);
+  assert(asio::advanceDsdRenderUnitProbe(probe, DsdCallbackUnit::BitSamples, 2) ==
+         DsdRenderUnitDecision::UseBitSamples);
+  assert(probe.confirmed);
+
+  // Mixed or intermittent evidence resets the opposing streak and never
+  // latches a verdict.
+  probe = {};
+  assert(asio::advanceDsdRenderUnitProbe(probe, DsdCallbackUnit::ByteFrames, 2) == DsdRenderUnitDecision::Keep);
+  assert(asio::advanceDsdRenderUnitProbe(probe, DsdCallbackUnit::Unknown, 2) == DsdRenderUnitDecision::Keep);
+  assert(asio::advanceDsdRenderUnitProbe(probe, DsdCallbackUnit::BitSamples, 2) == DsdRenderUnitDecision::Keep);
+  assert(asio::advanceDsdRenderUnitProbe(probe, DsdCallbackUnit::ByteFrames, 2) == DsdRenderUnitDecision::Keep);
+  assert(!probe.confirmed);
+}
+
+void testAsioRenderCallbackAdaptsDsdBufferUnit() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath = testFilePath.parent_path().parent_path() / "output" / "asio" / "AsioBackend.cpp";
+  const std::string source = readTextFile(sourcePath);
+  const std::string renderBody = extractFunctionBody(source, "void AsioBackend::renderBuffer(long bufferIndex)");
+
+  // The callback cadence is the only runtime evidence of whether the driver
+  // counts DSD buffers in packed byte-frames or 1-bit samples. The render
+  // callback must keep consulting the classifier, and the probe verdict must
+  // adapt the render unit instead of failing the stream: writes only ever
+  // happen at the conservative probe unit (or the confirmed one), so neither
+  // interpretation can overflow the driver buffer.
+  assert(!renderBody.empty());
+  assert(renderBody.find("classifyDsdCallbackUnit") != std::string::npos);
+  assert(renderBody.find("advanceDsdRenderUnitProbe") != std::string::npos);
+  assert(renderBody.find("renderDsdUnitFramesSession_") != std::string::npos);
+  assert(renderBody.find("pendingDsdBufferUnitMismatch_") == std::string::npos);
+}
+
+void testAsioNativeDsdPrefillStaysInsideProbeUnit() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath = testFilePath.parent_path().parent_path() / "output" / "asio" / "AsioBackend.cpp";
+  const std::string source = readTextFile(sourcePath);
+  const std::string startHostBody = extractFunctionBody(source, "bool AsioBackend::createAndStartHost(std::string* error)");
+
+  // A driver that counts DSD buffers in 1-bit samples owns a bufferSize/8-byte
+  // buffer per channel. The prefill must therefore stay at the probe unit for
+  // Native DSD: a full-size prefill writes 8x past the allocation before any
+  // cadence evidence exists.
+  const size_t prefillPos = startHostBody.find("nativeDsdFill");
+  assert(prefillPos != std::string::npos);
+  assert(startHostBody.find("fillFrames / 8", prefillPos) != std::string::npos);
+  assert(startHostBody.find("renderDsdUnitFramesSession_ = std::max<size_t>(1, callbackFrames / 8)") != std::string::npos);
 }
 
 void testAsioRenderCallbackDoesNotBlockOnBackendMutex() {
@@ -364,6 +609,7 @@ void testAsioEmptyCatalogReportsArchitectureMismatch() {
     }
     AsioChannelFormat outputChannelFormat(long) const override { return {}; }
     bool outputReady() override { return false; }
+    long activeBufferSize() const override { return 0; }
   };
 
   AsioBackend backend(std::make_unique<DiagnosticHost>());
@@ -638,7 +884,53 @@ void testDopMarkerEvidence() {
   assert(!rejected.diagnostics.processingBypassed);
 }
 
+void testDopMarkerMismatchDemotesRuntimeFacts() {
+  auto run = [](bool validMarkers) {
+    auto host = std::make_unique<MockAsioHost>();
+    auto device = makeMockAsioDevice("asio:dop-demote", {176400}, 2, AudioSampleFormat::Int24In32Interleaved);
+    device.dopCapable = false;
+    device.sampleFormats = {AudioSampleFormat::Int24In32Interleaved};
+    device.bitDepths = {24};
+    device.preferredBufferSize = 4;
+    device.minBufferSize = 4;
+    device.maxBufferSize = 4;
+    host->devices.push_back(device);
+    auto* rawHost = host.get();
+    rawHost->channelFormats = {
+        AudioSampleFormat::Int24In32Interleaved,
+        AudioSampleFormat::Int24In32Interleaved};
+
+    auto backend = std::make_unique<AsioBackend>(std::move(host));
+    std::string error;
+    assert(backend->open("asio:dop-demote", sourceFormat(176400, 24, 2, AudioSampleFormat::Int24In32Interleaved), &error));
+    assert(backend->startTyped(
+        [validMarkers](PcmBlock& block) {
+          for (size_t frame = 0; frame < block.frames; ++frame) {
+            const uint8_t marker = validMarkers ? ((frame & 1U) == 0U ? 0x05 : 0xfa) : 0x05;
+            for (size_t channel = 0; channel < 2; ++channel) {
+              block.data[(frame * 2 + channel) * 4 + 3] = marker;
+            }
+          }
+          return block.frames;
+        },
+        [](float*, size_t frames) { return frames; },
+        nullptr,
+        &error));
+    assert(backend->dopRuntimeFacts().state == DopRuntimeFactState::Proven);
+    rawHost->triggerBufferSwitch(0);
+    return backend;
+  };
+
+  const auto confirmed = run(true);
+  assert(confirmed->dopRuntimeFacts().state == DopRuntimeFactState::Proven);
+  const auto rejected = run(false);
+  const DopRuntimeFacts rejectedFacts = rejected->dopRuntimeFacts();
+  assert(rejectedFacts.state == DopRuntimeFactState::Mismatch);
+  assert(rejectedFacts.reason.find("marker") != std::string::npos);
+}
+
 void testNativeDsdCapabilityProfile() {
+
   {
     auto host = makeHost();
     AsioBackend backend(std::move(host));
@@ -801,9 +1093,12 @@ void testNativeDsdDriverSelectedWireTypeAndIdleTail() {
         2,
         AudioSampleFormat::Float32Interleaved,
         profile);
-    device.preferredBufferSize = 4;
-    device.minBufferSize = 4;
-    device.maxBufferSize = 4;
+    // Buffer 32 -> the Native DSD probe unit is 32/8 = 4 byte-frames per
+    // callback, so the short-read (2 of 4 rendered) idle-tail scenario below
+    // runs inside the conservative probe unit.
+    device.preferredBufferSize = 32;
+    device.minBufferSize = 32;
+    device.maxBufferSize = 32;
     host->devices.push_back(device);
     auto* rawHost = host.get();
     rawHost->channelFormats = {item.wireFormat, item.wireFormat};
@@ -924,6 +1219,53 @@ void testNativeDsdUnderrunWarmupCallbacks() {
   std::this_thread::sleep_for(std::chrono::milliseconds(3));
   rawHost->triggerBufferSwitch(0);
   assert(backend.outputInfo().diagnostics.sessionUnderrunCount >= 1);
+}
+
+// Until the callback cadence confirms which buffer unit the driver counts,
+// every Native DSD write must stay at the conservative probe unit
+// (bufferSize/8 packed byte-frames): that fits both interpretations, so a
+// 1-bit-sample driver can never be overflowed before its cadence is known.
+void testNativeDsdTypedBlocksUseConservativeProbeUnit() {
+  MockAsioHost::DsdProfile profile;
+  profile.nativeDsdCapable = true;
+  profile.nativeDsdSampleRates = {2822400};
+  profile.nativeDsdSampleFormats = {AudioSampleFormat::DsdInt8Lsb1};
+  auto host = std::make_unique<MockAsioHost>();
+  auto device = makeMockAsioDevice("asio:native-probe-unit", {48000}, 2, AudioSampleFormat::Float32Interleaved, profile);
+  device.preferredBufferSize = 2048;
+  device.minBufferSize = 2048;
+  device.maxBufferSize = 2048;
+  host->devices.push_back(device);
+  auto* rawHost = host.get();
+  rawHost->channelFormats = {AudioSampleFormat::DsdInt8Lsb1, AudioSampleFormat::DsdInt8Lsb1};
+
+  AsioBackend backend(std::move(host));
+  std::string error;
+  assert(backend.open("asio:native-probe-unit", sourceFormat(2822400, 1, 2, AudioSampleFormat::DsdInt8Lsb1), &error));
+  assert(rawHost->lastOpenConfig.bufferSizeFrames == 2048);
+
+  std::vector<size_t> typedBlockFrames;
+  assert(backend.startTyped(
+      [&](PcmBlock& block) {
+        typedBlockFrames.push_back(block.frames);
+        std::memset(block.data, 0x69, block.byteSize);
+        return block.frames;
+      },
+      [](float*, size_t frames) { return frames; },
+      nullptr,
+      &error));
+
+  rawHost->triggerBufferSwitch(0);
+  rawHost->triggerBufferSwitch(1);
+  assert(!typedBlockFrames.empty());
+  for (const size_t blockFrames : typedBlockFrames) {
+    assert(blockFrames == 2048 / 8);
+  }
+  // No cadence evidence yet: the unit must not have widened, and no failure
+  // may be reported for the undecided probe.
+  const OutputInfo info = backend.outputInfo();
+  assert(info.perfectReasonCode != "native_dsd_buffer_unit_mismatch");
+  assert(info.nativeDsdRuntimeState == "proven");
 }
 
 // A rate the driver genuinely refuses must still fail the open — but the
@@ -1773,8 +2115,19 @@ int main() {
   testAsioErrorSuccessSemantics();
   testAsioDriverSessionUsesAsioErrorSuccessSemantics();
   testAsioNativeDsdSampleRateSemantics();
+  testDsdCallbackUnitClassification();
+  testDsdRenderUnitProbeAdaptsOnConfirmedCadence();
   testAsioDriverActivationRequestsDriverClsid();
+  testAsioDriverSessionRequeriesBufferSizeAfterNativeDsdSwitch();
+  testAsioDriverSessionHintsAtHeldDeviceWhenDsdSetIsRefused();
+  testAsioDriverSessionFallsBackToRateOnlyNativeDsdOrder();
+  testAsioDriverSessionRetriesCreateBuffersAtPreferred();
+  testAsioDriverSessionRechecksChannelCountAfterRateSwitch();
+  testAsioDriverSessionProbesDoPCarriersInBothRateFamilies();
+  testAsioDriverSessionOnlySetsRateWhenDifferent();
   testAsioRenderCallbackDoesNotResizeScratchBuffers();
+  testAsioRenderCallbackAdaptsDsdBufferUnit();
+  testAsioNativeDsdPrefillStaysInsideProbeUnit();
   testAsioRenderCallbackDoesNotBlockOnBackendMutex();
   testAsioRenderCallbackUsesImmutableSessionSnapshots();
   testAsioRenderCallbackDoesNotCopyStringDiagnostics();
@@ -1795,12 +2148,14 @@ int main() {
   testDopCarrierUsesInt32AsioContainer();
   testDopRuntimeFactsMismatchWhenActualFormatDiffers();
   testDopMarkerEvidence();
+  testDopMarkerMismatchDemotesRuntimeFacts();
   testNativeDsdCapabilityProfile();
   testFiiODriverNameDoesNotRewriteStandardNativeDsdRequest();
   testNativeDsdRuntimeProven();
   testNativeDsdDriverSelectedWireTypeAndIdleTail();
   testNativeDsdRuntimeDiscoveryWithoutCatalogCapability();
   testNativeDsdUnderrunWarmupCallbacks();
+  testNativeDsdTypedBlocksUseConservativeProbeUnit();
   testNativeDsdRejectsUnsupportedRate();
   testNativeDsdAttemptsRateMissingFromProbedCapabilities();
   testNativeDsdCandidateSurvivesProbedPcmBitDepth();

@@ -40,6 +40,7 @@ import type {
   VisualizationOptions,
   VolumeNormalizationMode
 } from './audio/audioEngineTypes.ts'
+import { equalizerSettingsAlterSignal } from '../shared/audioProcessingOptions.ts'
 import {
   DEFAULT_AUDIO_ENGINE_SCHEDULER,
   METADATA_CACHE_TTL_MS,
@@ -1142,6 +1143,32 @@ export class AudioEngineManager extends EventEmitter {
     return this.playback.getVisualizationData(options)
   }
 
+  /**
+   * 引擎诊断事件日志：返回 sequence 大于 sinceSequence 的新条目（JSON 数组字符串），
+   * 按时间升序。引擎不可用或原生模块过旧（无 GetDiagnosticLog 导出）时返回 null，
+   * 调用方按"无引擎事件"处理而不是失败。返回值本身不抛错。
+   */
+  async readEngineDiagnosticLog(sinceSequence: number, maxEntries = 256): Promise<string | null> {
+    if (!this.native) return null
+    try {
+      if (typeof this.native.GetDiagnosticLog === 'function') {
+        const value = this.native.GetDiagnosticLog(sinceSequence, maxEntries)
+        return typeof value === 'string' ? value : JSON.stringify(value)
+      }
+      const service = this.native as AudioEngineServiceNativeBinding
+      if (typeof service.callAsync === 'function') {
+        const value = (await service.callAsync('GetDiagnosticLog', [
+          sinceSequence,
+          maxEntries
+        ])) as string
+        return typeof value === 'string' ? value : JSON.stringify(value)
+      }
+    } catch (error) {
+      console.warn('读取引擎诊断日志失败：', error instanceof Error ? error.message : String(error))
+    }
+    return null
+  }
+
   private startClock(): void {
     this.playback.startClock()
   }
@@ -1363,19 +1390,34 @@ export class AudioEngineManager extends EventEmitter {
       crossfadeSeconds > 0 ||
       Math.abs(this.playbackInfo.volume - 1) > 0.001 ||
       Math.abs((this.playbackInfo.playbackRate ?? 1) - 1) > 0.001
+    // The graph is what runs, so a module toggle whose node is disabled in the
+    // effective graph is not active - claiming otherwise marked bit-perfect
+    // playback as processed and cost DSD sources their passthrough transport.
+    const graphNodeActive = (type: string): boolean => {
+      const node = effectiveGraph.nodes.find((candidate) => candidate.type === type)
+      return node ? node.enabled : true
+    }
     const replayGainActive =
       !this.processing.directMode &&
       this.processing.dspEnabled &&
-      this.processing.volumeNormalization !== 'off'
+      this.processing.volumeNormalization !== 'off' &&
+      graphNodeActive('replayGain')
     const eqActive =
-      !this.processing.directMode && this.processing.dspEnabled && this.processing.eqEnabled
+      !this.processing.directMode &&
+      this.processing.dspEnabled &&
+      graphNodeActive('equalizer') &&
+      equalizerSettingsAlterSignal(this.processing)
     const convolverActive =
-      !this.processing.directMode && this.processing.dspEnabled && this.playbackInfo.convolverActive
+      !this.processing.directMode &&
+      this.processing.dspEnabled &&
+      this.playbackInfo.convolverActive &&
+      graphNodeActive('convolver')
     const crossfeedActive =
       !this.processing.directMode &&
       this.processing.dspEnabled &&
       this.processing.crossfeedEnabled &&
-      this.processing.crossfeedStrength > 0
+      this.processing.crossfeedStrength > 0 &&
+      graphNodeActive('crossfeed')
     const crossfadeActive = crossfadeSeconds > 0
     const supportsOutputPerfect = this.playbackInfo.outputInfo.supportsOutputPerfect === true
     const outputFormatMatchesSource =

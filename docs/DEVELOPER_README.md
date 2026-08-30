@@ -64,6 +64,8 @@ renderer 位于 `src/renderer/src/`，入口是 `main.ts` 与 `App.vue`。主要
 - `stores/useMusicStore.ts`：本地曲库、艺术家/专辑/文件夹派生集合、歌单、收藏、曲库修复与元数据补全。
 - `stores/useProviderStore.ts`：插件 provider 注册状态、能力与健康度。
 - `providers/mediaProvider.ts`：统一 provider 抽象。
+- 流媒体主页以 `ui.streamingSections` 显式准入并校验 provider 实际注册的
+  `supportedMethods`；发现歌单以标准 playlist discovery 方法准入。两个页面仅在有多个可用音源时显示可交互切换器，切源会重置筛选并废弃旧请求。
 - `utils/logicalTrackModel.ts`：跨来源曲目的逻辑合并和优先级排序。
 
 ## 音频链路
@@ -113,7 +115,7 @@ Streaming 页的本地歌曲、歌单、歌手搜索逻辑放在 `components/str
 - 搜索热路径避免为每首歌创建临时字段数组，优先短路判断，并尽量只保留当前页需要渲染的结果。
 - store composable 可以被多个组件调用；模块级初始化不能在每次调用时全量重建曲库索引。
 - 启动期跨 store 副作用优先由入口层注入所需 refs，不要在 store 内动态 import 已经被主界面静态引用的热 store；否则既形成隐式反向依赖，也无法带来实际 chunk 拆分。
-- 播放进度、频谱和桌面歌词同步要节流，避免把 native polling 变成 renderer 重渲染风暴。
+- 播放进度和频谱同步要节流。桌面歌词由 `useDesktopLyricsPublisher.ts` 发布标准化 session 与最多 4 Hz 的 clock；歌词窗口在本地外推时钟、按下一句边界唤醒，并将逐字填充交给 WAAPI 遮罩时间轴，快照只用于漂移校正、暂停和 seek，禁止逐帧 IPC、逐帧 CSS 变量写入和 Vue 重渲染。独立窗口外观设置（单双行、横竖排、对齐、描边、配色、翻译与音译）都通过 `src/shared/desktopLyrics.ts` 的版本化契约持久化和实时同步；插件启动时的主题对账只在活动主题实际回退时更新独立窗口默认值，不能覆盖用户已保存的桌面歌词配置。
 - 正在播放页按播放时间定位歌词时使用二分查找，不在每个播放 tick 从歌词首行线性扫描。
 - 封面主题色提取使用小型 LRU/promise 缓存；切歌时必须防止旧封面异步结果覆盖当前曲目颜色。
 - provider 或文件系统慢操作必须后台化，不能阻塞首屏曲库渲染。

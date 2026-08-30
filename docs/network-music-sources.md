@@ -13,12 +13,12 @@
 
 协议覆盖目标（按阶段拆分，见 §6）：
 
-| 阶段 | 协议 | 定位 |
-| --- | --- | --- |
-| P1 | WebDAV、FTP、FTPS、SFTP、SCP | 最容易落地，纯 JS / 现有栈可覆盖 |
-| P2 | SMB/CIFS、NFS | 局域网主流，需要原生库或系统挂载 |
-| P3 | DLNA / UPnP | 独立浏览模型（ContentDirectory），不做成文件源 |
-| 待定 | AFP | 建议走系统挂载，不内置协议栈 |
+| 阶段 | 协议                         | 定位                                           |
+| ---- | ---------------------------- | ---------------------------------------------- |
+| P1   | WebDAV、FTP、FTPS、SFTP、SCP | 最容易落地，纯 JS / 现有栈可覆盖               |
+| P2   | SMB/CIFS、NFS                | 局域网主流，需要原生库或系统挂载               |
+| P3   | DLNA / UPnP                  | 独立浏览模型（ContentDirectory），不做成文件源 |
+| 待定 | AFP                          | 建议走系统挂载，不内置协议栈                   |
 
 ### 1.2 非目标（本期）
 
@@ -107,9 +107,7 @@
 ### 4.1 类型
 
 ```ts
-export type NetworkProtocol =
-  | 'webdav' | 'ftp' | 'ftps' | 'sftp' | 'scp'
-  | 'smb' | 'nfs' | 'dlna'
+export type NetworkProtocol = 'webdav' | 'ftp' | 'ftps' | 'sftp' | 'scp' | 'smb' | 'nfs' | 'dlna'
 
 export interface NetworkCredentialRef {
   kind: 'anonymous' | 'password' | 'privateKey'
@@ -149,7 +147,7 @@ export interface NetworkEntry {
 
 export interface NetworkPlaybackPlan {
   kind: 'local-cache' | 'direct-url'
-  url?: string        // direct-url：webdav 等
+  url?: string // direct-url：webdav 等
   cacheFilePath?: string
   displayName: string
 }
@@ -215,16 +213,16 @@ onSourceEvent(cb): Unsubscribe // profile 增删 / 连接状态 / 传输进度
 
 **目标**：跑通「浏览 → 播放 → 入库」完整链路，覆盖 issue 中最常见的远程场景。
 
-| 任务 | 说明 | 依赖 |
-| --- | --- | --- |
-| 1. 骨架与类型 | `sourcesManager` / `profileStore` / IPC / 设置域 | 无 |
-| 2. WebDAV adapter | PROPFIND 列目录、HEAD/GET 播放、PUT 不做；纯 Node `http/https`，零新依赖 | 无 |
-| 3. FTP/FTPS adapter | `basic-ftp`（纯 JS、被动模式、TLS） | 新增依赖 |
+| 任务                | 说明                                                                          | 依赖                                                                       |
+| ------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1. 骨架与类型       | `sourcesManager` / `profileStore` / IPC / 设置域                              | 无                                                                         |
+| 2. WebDAV adapter   | PROPFIND 列目录、HEAD/GET 播放、PUT 不做；纯 Node `http/https`，零新依赖      | 无                                                                         |
+| 3. FTP/FTPS adapter | `basic-ftp`（纯 JS、被动模式、TLS）                                           | 新增依赖                                                                   |
 | 4. SFTP/SCP adapter | 系统 OpenSSH `sftp` 命令（`ssh2` 因 cpu-features 原生编译问题不可用，见 §10） | ✅ 已实现（仅密钥认证；带口令私钥需 ssh-agent / 无口令密钥；真机验证待做） |
-| 5. 下载缓存 | `network-cache` 目录 + 并发限制 + 断点续传（Range/REST） | ✅ 任务 2-4 |
-| 6. 虚拟媒体库 | 目录递归入库、元数据（标签）探测、封面复用现有 `cover-cache` | 任务 5 |
-| 7. UI | 向导 + 浏览树 + 播放/入库 + 状态条 | 任务 1 |
-| 8. 测试 | 单元 + 本地测试服务器集成（见 §9） | 全部 |
+| 5. 下载缓存         | `network-cache` 目录 + 并发限制 + 断点续传（Range/REST）                      | ✅ 任务 2-4                                                                |
+| 6. 虚拟媒体库       | 目录递归入库、元数据（标签）探测、封面复用现有 `cover-cache`                  | 任务 5                                                                     |
+| 7. UI               | 向导 + 浏览树 + 播放/入库 + 状态条                                            | 任务 1                                                                     |
+| 8. 测试             | 单元 + 本地测试服务器集成（见 §9）                                            | 全部                                                                       |
 
 **验收标准（P1）**：
 
@@ -316,26 +314,26 @@ networkSources: {
 
 ## 10. 风险与待决策
 
-| 问题 | 选项 | 影响 |
-| --- | --- | --- |
-| SFTP/SCP 实现路线 | ✅ 已选：系统 OpenSSH `sftp` 命令（密钥认证） | `ssh2` 因 cpu-features 原生编译问题不可用（已实测）；系统 sftp 仅支持密钥认证，口令需 ssh-agent |
-| SMB/NFS 实现路线 | A 原生库 / B 系统挂载 | 打包体积、跨平台维护成本、权限 |
-| 播放体验 | 全部「下载后播」 vs WebDAV「直连 URL 播」 | 首播延迟、seek 支持、缓存占用 |
-| 网络源入库后的曲目身份 | 哈希路径是否稳定（重命名/重挂载） | 收藏/队列/历史持久性 |
-| 凭据不可用环境 | 拒绝保存 vs 弱加密降级 | 安全边界 vs 可用性 |
-| DLNA 是否入 P1 | 与投送合并做 vs 独立排期 | 工作量 |
-| 代理 | 网络源请求是否跟随现有代理设置 | 企业内网场景 |
+| 问题                   | 选项                                          | 影响                                                                                            |
+| ---------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| SFTP/SCP 实现路线      | ✅ 已选：系统 OpenSSH `sftp` 命令（密钥认证） | `ssh2` 因 cpu-features 原生编译问题不可用（已实测）；系统 sftp 仅支持密钥认证，口令需 ssh-agent |
+| SMB/NFS 实现路线       | A 原生库 / B 系统挂载                         | 打包体积、跨平台维护成本、权限                                                                  |
+| 播放体验               | 全部「下载后播」 vs WebDAV「直连 URL 播」     | 首播延迟、seek 支持、缓存占用                                                                   |
+| 网络源入库后的曲目身份 | 哈希路径是否稳定（重命名/重挂载）             | 收藏/队列/历史持久性                                                                            |
+| 凭据不可用环境         | 拒绝保存 vs 弱加密降级                        | 安全边界 vs 可用性                                                                              |
+| DLNA 是否入 P1         | 与投送合并做 vs 独立排期                      | 工作量                                                                                          |
+| 代理                   | 网络源请求是否跟随现有代理设置                | 企业内网场景                                                                                    |
 
 ## 11. 里程碑建议
 
-| 里程碑 | 内容 | 预估工作量（人日，粗估） |
-| --- | --- | --- |
-| M1 | P1 骨架 + WebDAV 全链路 | 3–5 |
-| M2 | FTP/FTPS + SFTP/SCP adapter + 下载缓存 | 3–5 |
-| M3 | 虚拟媒体库（递归入库/元数据/封面） | 3–4（✅ 已实现：标签/封面解析在媒体库视图手动触发） |
-| M4 | UI 完善 + 书签 + 缓存管理 + 手工验收 | 2–3（✅ 已实现：书签/缓存统计与清理/媒体库时长与封面展示） |
-| M5 | P2 SMB/NFS（先系统挂载方案） | 3–6（✅ 已实现：SMB = Windows `net use` / Linux `gio mount` 匿名；NFS = Linux `mount -t nfs`，运行时需 root） |
-| M6 | P3 DLNA 浏览/直投 | 3–5（✅ 浏览已实现：ContentDirectory Browse + res 直连播放；投送到渲染器复用现有 castBackend） |
+| 里程碑 | 内容                                   | 预估工作量（人日，粗估）                                                                                      |
+| ------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| M1     | P1 骨架 + WebDAV 全链路                | 3–5                                                                                                           |
+| M2     | FTP/FTPS + SFTP/SCP adapter + 下载缓存 | 3–5                                                                                                           |
+| M3     | 虚拟媒体库（递归入库/元数据/封面）     | 3–4（✅ 已实现：标签/封面解析在媒体库视图手动触发）                                                           |
+| M4     | UI 完善 + 书签 + 缓存管理 + 手工验收   | 2–3（✅ 已实现：书签/缓存统计与清理/媒体库时长与封面展示）                                                    |
+| M5     | P2 SMB/NFS（先系统挂载方案）           | 3–6（✅ 已实现：SMB = Windows `net use` / Linux `gio mount` 匿名；NFS = Linux `mount -t nfs`，运行时需 root） |
+| M6     | P3 DLNA 浏览/直投                      | 3–5（✅ 浏览已实现：ContentDirectory Browse + res 直连播放；投送到渲染器复用现有 castBackend）                |
 
 每完成一个里程碑独立发 PR，沿用仓库现有 review 流程；M1 可作为 issue #20 的第一阶段回复。
 

@@ -47,8 +47,14 @@ test('filters local grid items by card metadata and nested tracks', () => {
     }
   ]
 
-  assert.deepEqual(filterLocalGridItems(items, 'honey').map((item) => item.name), ['HoneyWorks'])
-  assert.deepEqual(filterLocalGridItems(items, 'redial').map((item) => item.name), ['Vocaloid'])
+  assert.deepEqual(
+    filterLocalGridItems(items, 'honey').map((item) => item.name),
+    ['HoneyWorks']
+  )
+  assert.deepEqual(
+    filterLocalGridItems(items, 'redial').map((item) => item.name),
+    ['Vocaloid']
+  )
 })
 
 test('matches tracks by pinyin initials', () => {
@@ -74,6 +80,12 @@ test('matches tracks by pinyin initials', () => {
     }
   ]
 
-  assert.deepEqual(filterLocalGridItems(items, 'zjl').map((item) => item.name), ['华语'])
-  assert.deepEqual(filterLocalGridItems(items, 'ftx').map((item) => item.name), ['华语'])
+  assert.deepEqual(
+    filterLocalGridItems(items, 'zjl').map((item) => item.name),
+    ['华语']
+  )
+  assert.deepEqual(
+    filterLocalGridItems(items, 'ftx').map((item) => item.name),
+    ['华语']
+  )
 })

@@ -262,12 +262,13 @@ test('fails closed when the MinGW cache was configured without vcpkg native depe
   const result = validateMingwNativeDependencyConfiguration({
     buildDir,
     existsSync: createExistsSync([cache]),
-    readFileSync: () => [
-      'VCPKG_TARGET_TRIPLET:UNINITIALIZED=x64-mingw-static',
-      'TAE_BUILD_NAPI:BOOL=ON',
-      'FFMPEG_FOUND:BOOL=FALSE',
-      'EBUR128_INCLUDE_DIR:PATH=EBUR128_INCLUDE_DIR-NOTFOUND'
-    ].join('\n')
+    readFileSync: () =>
+      [
+        'VCPKG_TARGET_TRIPLET:UNINITIALIZED=x64-mingw-static',
+        'TAE_BUILD_NAPI:BOOL=ON',
+        'FFMPEG_FOUND:BOOL=FALSE',
+        'EBUR128_INCLUDE_DIR:PATH=EBUR128_INCLUDE_DIR-NOTFOUND'
+      ].join('\n')
   })
 
   assert.equal(result.ok, false)
@@ -289,15 +290,16 @@ test('accepts a MinGW cache only when vcpkg FFmpeg and libebur128 resolve from t
       `${tripletRoot}/lib/libebur128.a`,
       `${tripletRoot}/include/libavformat/avformat.h`
     ]),
-    readFileSync: () => [
-      `VCPKG_INSTALLED_DIR:PATH=${installRoot}`,
-      'VCPKG_TARGET_TRIPLET:STRING=x64-mingw-static',
-      'TAE_BUILD_NAPI:BOOL=ON',
-      'FFMPEG_FOUND:BOOL=TRUE',
-      `EBUR128_INCLUDE_DIR:PATH=${tripletRoot}/include`,
-      `EBUR128_LIBRARY:FILEPATH=${tripletRoot}/lib/libebur128.a`,
-      `FFMPEG_INCLUDE_DIRS:STRING=${tripletRoot}/include`
-    ].join('\n')
+    readFileSync: () =>
+      [
+        `VCPKG_INSTALLED_DIR:PATH=${installRoot}`,
+        'VCPKG_TARGET_TRIPLET:STRING=x64-mingw-static',
+        'TAE_BUILD_NAPI:BOOL=ON',
+        'FFMPEG_FOUND:BOOL=TRUE',
+        `EBUR128_INCLUDE_DIR:PATH=${tripletRoot}/include`,
+        `EBUR128_LIBRARY:FILEPATH=${tripletRoot}/lib/libebur128.a`,
+        `FFMPEG_INCLUDE_DIRS:STRING=${tripletRoot}/include`
+      ].join('\n')
   })
 
   assert.equal(result.ok, true)
@@ -791,9 +793,10 @@ for (const fallbackName of ['windows-msvc', 'default']) {
 
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
     assert.ok(
-      readFileSync(join(fixtureRoot, 'resources', 'audio-engine', nativeLibrary), 'latin1').includes(
-        `artifact from ${fallbackName}`
-      ),
+      readFileSync(
+        join(fixtureRoot, 'resources', 'audio-engine', nativeLibrary),
+        'latin1'
+      ).includes(`artifact from ${fallbackName}`),
       `staged ${nativeLibrary} did not come from the ${fallbackName} build directory`
     )
   })
@@ -893,7 +896,7 @@ test('MinGW build runner reuses the preflight environment for builds and tests',
   assert.match(script, /prepareMingwCmakeEnvironment/)
   assert.match(
     script,
-    /const preflight = prepareMingwCmakeEnvironment\(\{ buildDir: layout\.buildDir, env: toolchainEnvironment \}\)/
+    /const preflight = prepareMingwCmakeEnvironment\(\{\s*buildDir: layout\.buildDir,\s*env: toolchainEnvironment\s*\}\)/
   )
   assert.match(script, /if \(!preflight\.ok\) \{[\s\S]*console\.error\(preflight\.message\)/)
   assert.match(
@@ -937,7 +940,7 @@ test('MinGW CTest validation requires every native test registration, including 
     ...cmakeLists.matchAll(/add_test\(\s*NAME\s+(twilight_[a-z0-9_]+)/g)
   ].map((match) => match[1])
 
-  assert.equal(MINGW_EXPECTED_CTESTS.length, 27)
+  assert.equal(MINGW_EXPECTED_CTESTS.length, 28)
   assert.ok(MINGW_EXPECTED_CTESTS.includes('twilight_audio_performance_gate'))
   assert.deepEqual([...MINGW_EXPECTED_CTESTS].sort(), registeredTests.sort())
 })
@@ -953,7 +956,9 @@ test('every native test target keeps assert() live in Release builds', () => {
   // inside the asserted expression. Every executable that asserts its expectations must
   // therefore opt out, or the suite silently degrades into a no-op that still reports pass.
   const ctestTargets = [
-    ...cmakeLists.matchAll(/add_test\(\s*NAME\s+twilight_[a-z0-9_]+\s+COMMAND\s+(twilight_[a-z0-9_]+)/g)
+    ...cmakeLists.matchAll(
+      /add_test\(\s*NAME\s+twilight_[a-z0-9_]+\s+COMMAND\s+(twilight_[a-z0-9_]+)/g
+    )
   ].map((match) => match[1])
 
   assert.ok(ctestTargets.length >= 27)
@@ -995,26 +1000,14 @@ test('caps MinGW compile parallelism by available memory rather than core count'
   // A high-core / low-memory host is what makes cc1plus die with
   // "out of memory allocating N bytes". 20 cores against 8 GiB must not
   // dispatch 20 concurrent -O3 compiles.
-  assert.equal(
-    resolveMingwBuildJobs({ env: {}, totalMemoryBytes: 8 * gib, cpuCount: 20 }),
-    7
-  )
+  assert.equal(resolveMingwBuildJobs({ env: {}, totalMemoryBytes: 8 * gib, cpuCount: 20 }), 7)
 
   // When memory is plentiful the core count is the limit.
-  assert.equal(
-    resolveMingwBuildJobs({ env: {}, totalMemoryBytes: 128 * gib, cpuCount: 8 }),
-    8
-  )
+  assert.equal(resolveMingwBuildJobs({ env: {}, totalMemoryBytes: 128 * gib, cpuCount: 8 }), 8)
 
   // Never drop below a single job, however constrained the host is.
-  assert.equal(
-    resolveMingwBuildJobs({ env: {}, totalMemoryBytes: 1 * gib, cpuCount: 16 }),
-    1
-  )
-  assert.equal(
-    resolveMingwBuildJobs({ env: {}, totalMemoryBytes: 0, cpuCount: 4 }),
-    4
-  )
+  assert.equal(resolveMingwBuildJobs({ env: {}, totalMemoryBytes: 1 * gib, cpuCount: 16 }), 1)
+  assert.equal(resolveMingwBuildJobs({ env: {}, totalMemoryBytes: 0, cpuCount: 4 }), 4)
 
   // An explicit override wins over both heuristics.
   assert.equal(

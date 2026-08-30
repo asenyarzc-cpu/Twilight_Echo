@@ -31,7 +31,8 @@ export function registerSleepTimerIpc<Event>(
   })
   ipc.handle('sleepTimer:boundary', (event, boundary) => {
     assertTrusted(event, 'sleep timer IPC')
-    if (boundary !== 'trackEnd' && boundary !== 'queueEnd') throw new Error('Invalid sleep timer boundary')
+    if (boundary !== 'trackEnd' && boundary !== 'queueEnd')
+      throw new Error('Invalid sleep timer boundary')
     return sleepTimer.boundary(boundary)
   })
 }

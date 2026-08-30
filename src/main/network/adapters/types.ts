@@ -31,8 +31,5 @@ export interface NetworkSourceSession {
 /** 协议适配器 seam：一个协议一个 adapter。 */
 export interface NetworkSourceAdapter {
   protocol: NetworkProtocol
-  createSession(
-    profile: NetworkSourceProfile,
-    auth: NetworkAuth
-  ): Promise<NetworkSourceSession>
+  createSession(profile: NetworkSourceProfile, auth: NetworkAuth): Promise<NetworkSourceSession>
 }

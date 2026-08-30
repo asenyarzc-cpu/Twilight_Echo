@@ -34,6 +34,9 @@ class AsioDriverSession final {
   void* outputBuffer(long channel, long bufferIndex) const;
   AsioChannelFormat outputChannelFormat(long channel) const;
   bool outputReady();
+  // The size the driver actually accepted; can differ from the open result
+  // when createBuffers fell back to the driver's preferred size.
+  long activeBufferSize() const;
 
  private:
   struct State;

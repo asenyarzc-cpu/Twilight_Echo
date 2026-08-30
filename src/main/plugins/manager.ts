@@ -16,6 +16,7 @@ import {
   findProviderRoute,
   getProviderCallTimeoutMs,
   getProviderMethodStats,
+  isTwilightMediaProviderMethod,
   normalizeProviderHealth,
   normalizeProviderUi,
   type ProviderHealthRecord,
@@ -160,6 +161,15 @@ const STATE_FILE = 'plugin-state.json'
 const PLUGIN_ACTIVATE_TIMEOUT_MS = 5000
 const PLUGIN_DEACTIVATE_TIMEOUT_MS = 1500
 const PLUGIN_UI_COMMAND_TIMEOUT_MS = 5000
+// Renderer probes (favorite state, like toggles) against providers that never
+// implemented these methods must degrade to a harmless value instead of
+// feeding the per-plugin RPC circuit breaker.
+const UNSUPPORTED_METHOD_FALLBACK = new Set<TwilightMediaProviderMethod>([
+  'isTrackLiked',
+  'likeTrack',
+  'followArtist',
+  'followUser'
+])
 const INTERNAL_NCM_PLUGIN_ID = 'com.twilightecho.provider.ncm'
 const RESERVED_PROVIDER_IDS = new Set(['local', 'ncm'])
 const PUBLIC_APP_EVENTS = new Set(['app:ready', 'app:before-quit'])
@@ -1173,6 +1183,12 @@ export class TwilightPluginManager extends EventEmitter {
             ].includes(item)
         )
       : []
+    const supportedMethods = Array.isArray(record.supportedMethods)
+      ? record.supportedMethods.filter(
+          (item): item is TwilightMediaProviderMethod =>
+            typeof item === 'string' && isTwilightMediaProviderMethod(item)
+        )
+      : undefined
     if (!providerId || !/^[a-z][a-z0-9-]*$/.test(providerId)) {
       throw new Error('Provider id 必须是小写前缀，例如 bili 或 ncm')
     }
@@ -1184,7 +1200,13 @@ export class TwilightPluginManager extends EventEmitter {
     const ui = normalizeProviderUi(record.ui)
     const health = normalizeProviderHealth(record.health, providerId, pluginId)
     if (health) this.providerHealth.set(providerId, health)
-    const provider: TwilightMediaProviderRegistration = { id: providerId, name, capabilities, ui }
+    const provider: TwilightMediaProviderRegistration = {
+      id: providerId,
+      name,
+      capabilities,
+      supportedMethods,
+      ui
+    }
     const existingIndex = running.providers.findIndex((candidate) => candidate.id === providerId)
     if (existingIndex >= 0) running.providers[existingIndex] = provider
     else running.providers.push(provider)
@@ -1376,9 +1398,25 @@ export class TwilightPluginManager extends EventEmitter {
       return
     }
 
-    const staleBundledProvider =
-      this.isBundledPluginId(metadata.pluginId) &&
-      /^Provider .+ does not implement /i.test(message.error)
+    const isUnsupportedMethod = /^Provider .+ does not implement /i.test(message.error)
+    if (isUnsupportedMethod && UNSUPPORTED_METHOD_FALLBACK.has(metadata.method)) {
+      // A capability probe for a method the provider never implemented is not
+      // a plugin failure. Resolve harmlessly so the renderer degrades
+      // gracefully and the circuit breaker is not tripped by UI polls.
+      const completion = this.rpcCalls.complete<ProviderRpcMetadata>(pluginId, message.requestId, {
+        ok: true,
+        value: metadata.method === 'isTrackLiked' ? false : undefined
+      })
+      if (completion.status !== 'settled') return
+      this.recordProviderCallSuccess(
+        completion.metadata.providerId,
+        completion.metadata.pluginId,
+        completion.metadata.method
+      )
+      return
+    }
+
+    const staleBundledProvider = this.isBundledPluginId(metadata.pluginId) && isUnsupportedMethod
     const error = staleBundledProvider
       ? `${message.error}。内置音源插件尚未加载最新代码，请重启应用。`
       : message.error

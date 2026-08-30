@@ -2,6 +2,7 @@
 
 #include "ConvolverProcessorUtils.h"
 #include "KissFftAdapter.h"
+#include "../core/Utf8Path.h"
 
 #if defined(TAE_HAS_FFMPEG)
 #include "../decoder/FFmpegDecoder.h"
@@ -444,7 +445,7 @@ bool ConvolverProcessor::readFfmpegImpulse(const std::string& path, IrData* out,
 
 bool ConvolverProcessor::readWaveImpulse(const std::string& path, IrData* out, std::string* error) {
   if (!out) return false;
-  std::ifstream file(path, std::ios::binary);
+  std::ifstream file(utf8Path(path), std::ios::binary);
   if (!file) {
     if (error) *error = "无法打开脉冲响应文件";
     return false;

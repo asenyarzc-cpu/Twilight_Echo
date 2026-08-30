@@ -45,7 +45,6 @@ import type {
 } from '../types/settings'
 import type { DspSceneState } from '../../../shared/dspGraph.ts'
 
-
 type EqualizerTab = EqMode
 type ResponseView = 'dsp' | 'headphone'
 type HeadphoneCurveKey = 'source' | 'target' | 'individual' | 'combined' | 'corrected'

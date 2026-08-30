@@ -232,6 +232,17 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   'audio.reason.dsd_converted_to_pcm.fix':
     '把 DSD 输出模式改为「自动」，并选择支持 DSD 的独占设备。',
 
+  'audio.reason.dsd_probe_failed.label': 'DSD 源探测失败，已回退 PCM',
+  'audio.reason.dsd_probe_failed.explain':
+    '引擎在播放前无法读取该 DSD 文件的流信息（容器损坏或路径不可读），原生 DSD 与 DoP 均未尝试。',
+  'audio.reason.dsd_probe_failed.fix': '确认文件可被其他播放器打开；若文件正常请收集引擎日志反馈。',
+
+  'audio.reason.dsd_backend_cannot_carry.label': '当前输出后端无法承载 DSD，已回退 PCM',
+  'audio.reason.dsd_backend_cannot_carry.explain':
+    '当前后端（如 WASAPI 共享模式）无法进行位精确传输，原生 DSD 与 DoP 都不可能建立。',
+  'audio.reason.dsd_backend_cannot_carry.fix':
+    '在音频输出设置里改用 ASIO 或 WASAPI 独占模式（并选择支持 DSD 的设备）。',
+
   'audio.reason.dsd_source_unsupported.label': '当前 DSD 源或模式不受支持',
   'audio.reason.dsd_source_unsupported.explain': '这个 DSD 源的容器或编码方式当前无法直接播放。',
   'audio.reason.dsd_source_unsupported.fix': '',
@@ -262,6 +273,12 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
     'ASIO 驱动没有提供 DSD 专用的数据回调，引擎无法按位流方式喂数据，已回落到其他传输方式。',
   'audio.reason.native_dsd_typed_callback_missing.fix':
     '更新 ASIO 驱动到支持 DSD 的版本，或改用 DoP 传输。',
+
+  'audio.reason.native_dsd_buffer_unit_mismatch.label': '驱动的 DSD 缓冲区计数单位与引擎不一致',
+  'audio.reason.native_dsd_buffer_unit_mismatch.explain':
+    '实测回调节奏表明该 ASIO 驱动按 1-bit 样本而非打包字节组来计算 DSD 缓冲区大小，继续直通会越界写入。引擎已把 Native DSD 判定为不可用并如实上报。',
+  'audio.reason.native_dsd_buffer_unit_mismatch.fix':
+    '改用 DoP 传输，或向厂商反馈驱动缓冲区计数单位的问题（可附带引擎追踪日志）。',
 
   'audio.reason.sacd_iso_unsupported.label': 'SACD ISO 不含可播放的未压缩 DSD 区域',
   'audio.reason.sacd_iso_unsupported.explain':
@@ -417,6 +434,8 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
     '本报告不含音频内容本身，也不含完整本地路径或 URL 查询参数——路径与地址只保留类型、扩展名和单向指纹。',
   'diagnostics.export.rawHeading': '原始数据（供开发者排查）',
   'diagnostics.export.eventCount': '共 {count} 条事件记录',
+  'diagnostics.export.timelineHeading': '事件时间线（警告/错误 + DSD 路由决策）',
+  'diagnostics.export.timelineEmpty': '时间线中没有警告或错误事件。',
   'diagnostics.export.savedNotice': '音频诊断报告已导出',
   'diagnostics.export.failed': '导出音频诊断日志失败'
 }

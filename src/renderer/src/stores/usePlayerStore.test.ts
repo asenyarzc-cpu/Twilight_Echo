@@ -155,29 +155,22 @@ test('track activation hydrates cover and lyrics stripped by queue snapshots', (
   assert.match(source, /function activateCurrentTrack/)
 })
 
-test('desktop lyrics receives the current playback snapshot when enabled', () => {
-  const source = readFileSync(new URL('./usePlayerStore.ts', import.meta.url), 'utf8')
-
-  assert.match(source, /function syncDesktopLyricsSnapshot\(\)/)
-  assert.match(source, /const desktopLyricsApi = window\.api\?\.desktopLyrics/)
-  assert.match(source, /desktopLyricsApi\.updateTrack\(\{/)
-  assert.match(source, /lyricsSource: track\.lyricsSource \?\? null/)
-  assert.match(source, /translatedLyricsSource: track\.translatedLyricsSource \?\? null/)
-  assert.match(source, /desktopLyricsApi\.updateTime\(currentTime\.value\)/)
-  assert.match(
-    source,
-    /window\.api\?\.desktopLyrics\?\.onToggle\(\(enabled: boolean\) => \{\s*if \(enabled\) syncDesktopLyricsSnapshot\(\)\s*\}\)/
+test('desktop lyrics publishing is isolated from the player store', () => {
+  const store = readFileSync(new URL('./usePlayerStore.ts', import.meta.url), 'utf8')
+  const publisher = readFileSync(
+    new URL('../app/useDesktopLyricsPublisher.ts', import.meta.url),
+    'utf8'
   )
+
+  assert.doesNotMatch(store, /syncDesktopLyricsSnapshot/)
+  assert.doesNotMatch(store, /desktopLyricsApi\.updateTrack/)
+  assert.match(publisher, /projectManagedLyrics/)
+  assert.match(publisher, /playbackClockSnapshot/)
+  assert.match(publisher, /api\.publishSession/)
+  assert.match(publisher, /api\.publishClock/)
 })
 
-test('desktop lyrics sends plain settings through Electron IPC', () => {
-  const source = readFileSync(new URL('./usePlayerStore.ts', import.meta.url), 'utf8')
-
-  assert.match(source, /desktopLyrics\?\.updateSettings\(\{ \.\.\.dl \}\)/)
-  assert.doesNotMatch(source, /desktopLyrics\?\.updateSettings\(dl\)/)
-})
-
-test('desktop lyrics window replays cached track and time on creation', () => {
+test('desktop lyrics window caches versioned session and clock snapshots', () => {
   const desktopLyricsSource = readFileSync(
     new URL('../../../main/integrations/desktopLyrics.ts', import.meta.url),
     'utf8'
@@ -187,21 +180,11 @@ test('desktop lyrics window replays cached track and time on creation', () => {
     'utf8'
   )
 
-  assert.match(runtimeSource, /latestDesktopLyricsTrack:/)
-  assert.match(runtimeSource, /latestDesktopLyricsTime: 0,/)
-  assert.match(desktopLyricsSource, /function sendDesktopLyricsSnapshot\(\): void/)
-  assert.match(
-    desktopLyricsSource,
-    /runtime\.desktopLyricsWindow\.webContents\.send\(\s*'desktopLyrics:updateTrack',\s*runtime\.latestDesktopLyricsTrack\s*\)/
-  )
-  assert.match(
-    desktopLyricsSource,
-    /runtime\.desktopLyricsWindow\.webContents\.send\(\s*'desktopLyrics:updateTime',\s*runtime\.latestDesktopLyricsTime\s*\)/
-  )
-  assert.match(desktopLyricsSource, /runtime\.latestDesktopLyricsTrack = data/)
-  assert.match(desktopLyricsSource, /Number\.isFinite\(time\)/)
-  assert.match(desktopLyricsSource, /runtime\.latestDesktopLyricsTime = Math\.max\(0, time\)/)
-  assert.match(desktopLyricsSource, /clampNumber\(Math\.round\(data\.x\)/)
+  assert.match(runtimeSource, /latestDesktopLyricsSession:/)
+  assert.match(runtimeSource, /latestDesktopLyricsClock:/)
+  assert.match(desktopLyricsSource, /desktopLyrics:bootstrap/)
+  assert.match(desktopLyricsSource, /runtime\.latestDesktopLyricsSession = session/)
+  assert.match(desktopLyricsSource, /runtime\.latestDesktopLyricsClock = clock/)
 })
 
 test('desktop lyrics window is destroyed on quit so the process can exit', () => {
@@ -217,21 +200,13 @@ test('desktop lyrics window is destroyed on quit so the process can exit', () =>
 
   assert.match(desktopLyricsSource, /export function destroyDesktopLyrics\(\): void/)
   assert.match(desktopLyricsSource, /win\.destroy\(\)/)
-  assert.match(
-    desktopLyricsSource,
-    /export function hideDesktopLyrics\(\): void \{\s*destroyDesktopLyrics\(\)/
-  )
   assert.match(lifecycleSource, /destroyDesktopLyrics/)
   assert.match(lifecycleSource, /app\.on\('before-quit'[\s\S]*destroyDesktopLyrics\(\)/)
   assert.match(lifecycleSource, /app\.on\('will-quit'[\s\S]*destroyDesktopLyrics\(\)/)
   assert.match(windowSource, /destroyDesktopLyrics\(\)/)
-  assert.match(
-    windowSource,
-    /function closeMainWindowAfterSuccessfulPersistence[\s\S]*destroyDesktopLyrics\(\)/
-  )
 })
 
-test('desktop lyrics uses the built renderer asset in packaged builds', () => {
+test('desktop lyrics loads the shared renderer bundle as a satellite window', () => {
   const integrationSource = readFileSync(
     new URL('../../../main/integrations/desktopLyrics.ts', import.meta.url),
     'utf8'
@@ -240,94 +215,38 @@ test('desktop lyrics uses the built renderer asset in packaged builds', () => {
     new URL('../../../main/security/electronSecurity.ts', import.meta.url),
     'utf8'
   )
-  const viteSource = readFileSync(
-    new URL('../../../../electron.vite.config.ts', import.meta.url),
-    'utf8'
-  )
+  const entrySource = readFileSync(new URL('../main.ts', import.meta.url), 'utf8')
   const builderSource = readFileSync(
     new URL('../../../../electron-builder.yml', import.meta.url),
     'utf8'
   )
 
-  assert.match(integrationSource, /is\.dev[\s\S]*\.\.\/\.\.\/resources\/desktop-lyrics\.html/)
-  assert.match(integrationSource, /\.\.\/renderer\/desktop-lyrics\.html/)
-  assert.match(securitySource, /\(\?:resources\|renderer\)\\\/desktop-lyrics/)
-  assert.match(viteSource, /publicDir: resolve\('resources'\)/)
+  assert.match(integrationSource, /rendererUrl\.searchParams\.set\('window', 'desktop-lyrics'\)/)
+  assert.match(
+    integrationSource,
+    /loadFile\(join\(__dirname, '\.\.\/renderer\/index\.html'\), \{\s*query: \{ window: 'desktop-lyrics' \}/
+  )
+  assert.doesNotMatch(integrationSource, /desktop-lyrics\.html/)
+  // The window is the shared renderer document now, so it needs no CSP or IPC-trust
+  // exception of its own, and its inline-script allowance is gone with the old page.
+  assert.doesNotMatch(securitySource, /isDesktopLyricsDocumentUrl/)
+  assert.match(securitySource, /"script-src 'self'"/)
+  assert.match(entrySource, /const isDesktopLyrics = windowKind === 'desktop-lyrics'/)
+  assert.match(entrySource, /import\('\.\/desktop-lyrics\/DesktopLyricsApp\.vue'\)/)
   assert.match(builderSource, /- out\/\*\*/)
 })
 
-test('desktop lyrics html falls back to untimed plain lyrics', () => {
-  const source = readFileSync(
-    new URL('../../../../resources/desktop-lyrics.html', import.meta.url),
+test('desktop lyrics consumes normalized lines and never parses raw lyrics in its window', () => {
+  const app = readFileSync(
+    new URL('../desktop-lyrics/DesktopLyricsApp.vue', import.meta.url),
     'utf8'
   )
+  const shared = readFileSync(new URL('../../../shared/desktopLyrics.ts', import.meta.url), 'utf8')
 
-  assert.match(source, /function parsePlainLyrics\(lyrics\)/)
-  assert.match(source, /function buildMergedLyrics\(lyrics, translatedLyrics\)/)
-  assert.match(source, /var plain = parsePlainLyrics\(lyrics\)/)
-  assert.match(source, /time: null/)
-  assert.match(source, /mergedLines = buildMergedLyrics\(data\.lyrics, data\.translatedLyrics\)/)
-})
-
-test('desktop lyrics html flattens NetEase JSON credit lines (作词/作曲)', () => {
-  const source = readFileSync(
-    new URL('../../../../resources/desktop-lyrics.html', import.meta.url),
-    'utf8'
-  )
-
-  assert.match(source, /function parseNeteaseJsonLyricLine\(raw\)/)
-  assert.match(source, /NETEASE_JSON_LINE_RE/)
-  assert.match(source, /t < 0 is NetEase credit/)
-  assert.match(source, /credits\.push\(\{ time: 0, text: jsonLine\.text/)
-  assert.match(source, /parseNeteaseJsonLyricLine\(line\)/)
-})
-
-test('desktop lyrics html rotates single lyrics (row0 becomes 3rd while row1 highlights)', () => {
-  const source = readFileSync(
-    new URL('../../../../resources/desktop-lyrics.html', import.meta.url),
-    'utf8'
-  )
-
-  assert.match(source, /Single-lyric rotation/)
-  assert.match(source, /active=1 → \[2,1\] hl row1/)
-  assert.match(source, /base \+ pageSize \+ ri/)
-  assert.doesNotMatch(source, /activeIndex - Math\.floor\(\(count - 1\) \/ 2\)/)
-})
-
-test('desktop lyrics html applies configurable lineOffset stagger', () => {
-  const source = readFileSync(
-    new URL('../../../../resources/desktop-lyrics.html', import.meta.url),
-    'utf8'
-  )
-  const settingsSource = readFileSync(
-    new URL('../../../main/core/settings.ts', import.meta.url),
-    'utf8'
-  )
-
-  assert.match(source, /settings\.lineOffset/)
-  assert.match(source, /translateX\(' \+ rowOffsetX/)
-  assert.match(settingsSource, /highlightColor: '#3b82f6'/)
-  assert.match(settingsSource, /lineOffset: 0/)
-  assert.match(settingsSource, /lineOffset: clampNumber\(d\.lineOffset, -200, 200/)
-})
-
-test('desktop lyrics html supports bilingual original+translation layout', () => {
-  const source = readFileSync(
-    new URL('../../../../resources/desktop-lyrics.html', import.meta.url),
-    'utf8'
-  )
-  const settingsSource = readFileSync(
-    new URL('../../../main/core/settings.ts', import.meta.url),
-    'utf8'
-  )
-
-  assert.match(source, /settings\.layout === 'multi' \? 'multi' : 'bilingual'/)
-  assert.match(source, /Bilingual: row0 = original/)
-  assert.match(settingsSource, /layout: 'bilingual'/)
-  assert.match(
-    settingsSource,
-    /d\.layout === 'multi'[\s\S]*\? 'multi'[\s\S]*d\.layout === 'bilingual'[\s\S]*\? 'bilingual'[\s\S]*DEFAULT_DESKTOP_LYRICS\.layout/
-  )
+  assert.match(shared, /export function resolveDesktopLyricsSlots/)
+  assert.match(shared, /const activeSlot = \(displayIndex % 2\)/)
+  assert.match(app, /resolveDesktopLyricsSlots/)
+  assert.doesNotMatch(app, /buildLyricLines|parseLrc|parseTtml/)
 })
 
 test('playback history behavior lives in its injected controller while the store keeps its API', () => {
@@ -1425,7 +1344,7 @@ test('audio visualizer iframe controls are wired to the player store', () => {
   assert.match(visualizerSource, /const SPECTRUM_ATTACK_SECONDS = 0\.014/)
   assert.match(visualizerSource, /const SPECTRUM_DECAY_SECONDS = 0\.16/)
   assert.match(visualizerSource, /const SPECTRUM_BAR_COUNT = 140/)
-  assert.match(visualizerSource, /const SPECTRUM_DISPLAY_GAIN = 1\.32;/)
+  assert.match(visualizerSource, /const SPECTRUM_DISPLAY_GAIN = 1\.32\b/)
   assert.match(visualizerSource, /const SPECTRUM_DISPLAY_RANGE = 1\.42/)
   assert.match(visualizerSource, /const SPECTRUM_DISPLAY_GAMMA = 0\.78/)
   assert.match(visualizerSource, /const SPECTRUM_DISPLAY_HEADROOM = 1/)

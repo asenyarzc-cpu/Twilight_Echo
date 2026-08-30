@@ -8,6 +8,7 @@ import {
   DEFAULT_DSP_STEREO_IMAGE,
   DSP_FACTORY_SCENE_TEMPLATES,
   DSP_RESAMPLER_QUALITY_OPTIONS,
+  dspGraphNodeAltersSignal,
   extractStereoImageFromGraph,
   mergeDspOutputStage,
   mergeDspStereoImage,
@@ -241,4 +242,53 @@ test('stereoImage helpers treat neutral balance/width/phase as inactive', () => 
   assert.equal(image.width, 0.5)
   assert.equal(image.mono, true)
   assert.equal(stereoImageIsActive(image), true)
+})
+
+test('an enabled node left at its identity settings does not alter the signal', () => {
+  const node = (type: string, params: Record<string, unknown>) =>
+    ({ id: type, type, enabled: true, params }) as Parameters<typeof dspGraphNodeAltersSignal>[0]
+
+  // A legacy scene enables the node as soon as the module toggle is on, so these
+  // identity settings are the common case - and used to cost DSD its passthrough.
+  assert.equal(
+    dspGraphNodeAltersSignal(
+      node('equalizer', {
+        mode: 'graphic',
+        preampDb: 0,
+        bands: [{ frequency: 1000, gain: 0, q: 1, filterType: 'peak', enabled: true }]
+      })
+    ),
+    false
+  )
+  assert.equal(dspGraphNodeAltersSignal(node('replayGain', { mode: 'off' })), false)
+  assert.equal(dspGraphNodeAltersSignal(node('crossfeed', { strength: 0 })), false)
+  assert.equal(dspGraphNodeAltersSignal(node('convolver', { impulseResponsePath: '' })), false)
+  assert.equal(dspGraphNodeAltersSignal(node('meter', {})), false)
+
+  assert.equal(dspGraphNodeAltersSignal(node('replayGain', { mode: 'track' })), true)
+  assert.equal(dspGraphNodeAltersSignal(node('crossfeed', { strength: 0.4 })), true)
+  assert.equal(
+    dspGraphNodeAltersSignal(node('convolver', { impulseResponsePath: 'C:/ir/room.wav' })),
+    true
+  )
+  assert.equal(
+    dspGraphNodeAltersSignal(
+      node('equalizer', {
+        preampDb: 0,
+        bands: [{ frequency: 80, gain: 0, q: 1, filterType: 'highPass', enabled: true }]
+      })
+    ),
+    true
+  )
+  // Unknown or unmodelled node types stay conservative.
+  assert.equal(dspGraphNodeAltersSignal(node('truePeakLimiter', {})), true)
+  assert.equal(
+    dspGraphNodeAltersSignal({
+      id: 'eq',
+      type: 'equalizer',
+      enabled: false,
+      params: { preampDb: -6, bands: [] }
+    } as Parameters<typeof dspGraphNodeAltersSignal>[0]),
+    false
+  )
 })

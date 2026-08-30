@@ -29,7 +29,10 @@ test('per-chunk download progress is throttled by interval or step', () => {
 
   const receiveFile = extractMethodBody('receiveFile')
   // The transform callback must gate patch() on the throttle budget.
-  assert.match(receiveFile, /nowMs - lastProgressEmitAt >= PROGRESS_EMIT_INTERVAL_MS \|\|[\s\S]*?nextProgress - lastProgressEmitValue >= PROGRESS_EMIT_STEP/)
+  assert.match(
+    receiveFile,
+    /nowMs - lastProgressEmitAt >= PROGRESS_EMIT_INTERVAL_MS \|\|[\s\S]*?nextProgress - lastProgressEmitValue >= PROGRESS_EMIT_STEP/
+  )
   assert.match(receiveFile, /if \([\s\S]*?\) \{\s*lastProgressEmitAt = nowMs/)
   // Terminal completion still patches progress: 1 immediately, outside the throttle.
   assert.match(receiveFile, /status: 'completed',\s*progress: 1/)

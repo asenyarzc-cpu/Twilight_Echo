@@ -71,41 +71,41 @@
 
 ### 2.1 规模
 
-| 指标 | 数值 |
-|---|---|
-| .ts 文件 | 624（生产 369、测试 255） |
-| .vue 组件 | 80 |
-| renderer utils 文件 | 131（67 个非测试） |
-| window.api 基 | 28（主窗口实际使用） |
-| IPC 相关调用点 | main `handle` 220 + `on` 17；preload invoke 220 + send 9 + 事件监听 39 |
-| docs 文件 | 34 |
+| 指标                | 数值                                                                   |
+| ------------------- | ---------------------------------------------------------------------- |
+| .ts 文件            | 624（生产 369、测试 255）                                              |
+| .vue 组件           | 80                                                                     |
+| renderer utils 文件 | 131（67 个非测试）                                                     |
+| window.api 基       | 28（主窗口实际使用）                                                   |
+| IPC 相关调用点      | main `handle` 220 + `on` 17；preload invoke 220 + send 9 + 事件监听 39 |
+| docs 文件           | 34                                                                     |
 
 ### 2.2 组件大小热点（按字节）
 
-| 文件 | 大小 | 建议 |
-|---|---|---|
-| src/renderer/src/components/StreamingPage.vue | 112 KB | 仍是大型编排页面；已拆头部/搜索/占位子组件，继续按子页面/逻辑拆 |
-| src/renderer/src/components/player-bar/HiFiSidebar.vue | 67 KB | 样式已抽到 HiFiSidebar.css（30 KB），继续按功能区块拆 |
-| src/renderer/src/components/SongList.vue | 93 KB | 继续抽纯逻辑到 utils |
-| src/renderer/src/components/ThemeStudioPage.vue | 51 KB | 编辑逻辑已抽到 theme-studio/useThemeStudioEditor.ts（47 KB），当前为编排入口 |
-| src/renderer/src/components/settings-page/AppearanceSettingsSection.vue | 13 KB | 已拆为 ThemeControlsSettings、BackgroundEditorSettings、PlayerBarSettings、LiquidGlassSettings、CardAppearanceSettings，当前为编排入口 |
-| src/renderer/src/components/SettingsPage.vue | 62 KB | 已拆为 13 个分区组件，当前为编排入口 |
-| src/renderer/src/components/EqualizerPage.vue | 54 KB | 已拆出 equalizer 领域组件，当前为编排入口 |
-| src/renderer/src/components/DspRackPage.vue | 39 KB | 已拆出 dsp-rack 领域组件，当前为编排入口 |
+| 文件                                                                    | 大小   | 建议                                                                                                                                   |
+| ----------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| src/renderer/src/components/StreamingPage.vue                           | 112 KB | 仍是大型编排页面；已拆头部/搜索/占位子组件，继续按子页面/逻辑拆                                                                        |
+| src/renderer/src/components/player-bar/HiFiSidebar.vue                  | 67 KB  | 样式已抽到 HiFiSidebar.css（30 KB），继续按功能区块拆                                                                                  |
+| src/renderer/src/components/SongList.vue                                | 93 KB  | 继续抽纯逻辑到 utils                                                                                                                   |
+| src/renderer/src/components/ThemeStudioPage.vue                         | 51 KB  | 编辑逻辑已抽到 theme-studio/useThemeStudioEditor.ts（47 KB），当前为编排入口                                                           |
+| src/renderer/src/components/settings-page/AppearanceSettingsSection.vue | 13 KB  | 已拆为 ThemeControlsSettings、BackgroundEditorSettings、PlayerBarSettings、LiquidGlassSettings、CardAppearanceSettings，当前为编排入口 |
+| src/renderer/src/components/SettingsPage.vue                            | 62 KB  | 已拆为 13 个分区组件，当前为编排入口                                                                                                   |
+| src/renderer/src/components/EqualizerPage.vue                           | 54 KB  | 已拆出 equalizer 领域组件，当前为编排入口                                                                                              |
+| src/renderer/src/components/DspRackPage.vue                             | 39 KB  | 已拆出 dsp-rack 领域组件，当前为编排入口                                                                                               |
 
 ### 2.3 非测试 TS 文件大小热点
 
-| 文件 | 大小 | 建议 |
-|---|---|---|
+| 文件                                      | 大小   | 建议                                                                                |
+| ----------------------------------------- | ------ | ----------------------------------------------------------------------------------- |
 | src/renderer/src/stores/usePlayerStore.ts | 147 KB | 继续按输出/统计拆 composable；队列/会话/歌词/播放时钟/播放历史已抽到 stores/player/ |
-| src/shared/themePresets.ts | 58 KB | 主题目录预设数据，后续继续按数据域收敛 |
-| src/renderer/src/stores/useMusicStore.ts | 72 KB | 数据助手已抽到 library/musicStoreData.ts（11 KB），继续按库操作领域拆 |
-| src/main/plugins/manager.ts | 68 KB | provider 路由/幂等/安全助手已迁到插件域模块，继续按子域拆 |
-| src/shared/theme.ts | 48 KB | 保留结构化运行时，谨慎改 |
-| src/shared/themeTokens.ts | 34 KB | 主题 token 定义，后续继续按数据域收敛 |
-| src/main/audio/playbackController.ts | 56 KB | 控制步进/状态助手已抽到 audioEngineHelpers.ts（45 KB），继续按职责收敛 |
-| src/main/audioEngineManager.ts | 49 KB | 保持编排核心，拆分回调到 helpers |
-| src/preload/index.ts | 7 KB | 已按域拆到 src/preload/domains/，index 只汇总暴露 |
+| src/shared/themePresets.ts                | 58 KB  | 主题目录预设数据，后续继续按数据域收敛                                              |
+| src/renderer/src/stores/useMusicStore.ts  | 72 KB  | 数据助手已抽到 library/musicStoreData.ts（11 KB），继续按库操作领域拆               |
+| src/main/plugins/manager.ts               | 68 KB  | provider 路由/幂等/安全助手已迁到插件域模块，继续按子域拆                           |
+| src/shared/theme.ts                       | 48 KB  | 保留结构化运行时，谨慎改                                                            |
+| src/shared/themeTokens.ts                 | 34 KB  | 主题 token 定义，后续继续按数据域收敛                                               |
+| src/main/audio/playbackController.ts      | 56 KB  | 控制步进/状态助手已抽到 audioEngineHelpers.ts（45 KB），继续按职责收敛              |
+| src/main/audioEngineManager.ts            | 49 KB  | 保持编排核心，拆分回调到 helpers                                                    |
+| src/preload/index.ts                      | 7 KB   | 已按域拆到 src/preload/domains/，index 只汇总暴露                                   |
 
 ## 3. 目标分解：高内聚 + 低耦合 + 可维护性 + 可读性
 
@@ -125,17 +125,17 @@
 
 强制规则（已有部分，要补强）：
 
-| 模块 | 允许依赖 | 禁止依赖 |
-|---|---|---|
-| src/shared | 纯 TS / 依赖更浅的 shared 文件 | main / preload / renderer |
-| src/preload | src/shared、ipcRenderer | main 内部实现、renderer |
-| src/renderer | @renderer/*、src/shared、window.api | Electron、Node、main、preload 实现 |
-| src/main | src/shared、Node/Electron | renderer、preload |
-| plugin 代码 | 版本化 twilight API | Electron、Node 内置、宿主内部 |
+| 模块         | 允许依赖                             | 禁止依赖                           |
+| ------------ | ------------------------------------ | ---------------------------------- |
+| src/shared   | 纯 TS / 依赖更浅的 shared 文件       | main / preload / renderer          |
+| src/preload  | src/shared、ipcRenderer              | main 内部实现、renderer            |
+| src/renderer | @renderer/\*、src/shared、window.api | Electron、Node、main、preload 实现 |
+| src/main     | src/shared、Node/Electron            | renderer、preload                  |
+| plugin 代码  | 版本化 twilight API                  | Electron、Node 内置、宿主内部      |
 
 ### 3.3 可维护性：改一处不惊动十处
 
-- IPC 通道新增必须有七步流程（文档已有）：main 归域注册 → shared 类型 → preload 暴露 → preload 类型同步 → renderer 通过 window.api 调用 → 参数走 security 校验 → 补单测 + 挂进 test:* 脚本。
+- IPC 通道新增必须有七步流程（文档已有）：main 归域注册 → shared 类型 → preload 暴露 → preload 类型同步 → renderer 通过 window.api 调用 → 参数走 security 校验 → 补单测 + 挂进 test:\* 脚本。
 - store 变更必须通过 store 的“替换路径”，确保身份缓存失效，不直接 mutation。
 - 新增跨源合并逻辑必须复用 `logicalTrackModel` / unified helpers，不重新发明。
 - 新大列表必须虚拟化，不得在热路径用全库 find/map/filter。
@@ -157,7 +157,7 @@
 
 在 `eslint.config.mjs` 中新增 no-restricted-imports / no-restricted-globals 段落：
 
-1. renderer 禁 Electron/Node：所有 `src/renderer/src/**` 禁止 require(\"electron\")、import ... from \"electron\"、node:*。
+1. renderer 禁 Electron/Node：所有 `src/renderer/src/**` 禁止 require(\"electron\")、import ... from \"electron\"、node:\*。
 2. utils 禁 DOM/IPC：`src/renderer/src/utils/**` 禁止使用 window、document、window.api、ipcRenderer。
 3. main 禁 renderer：`src/main/**` 禁止 import `@renderer` 或相对路径进入 renderer。
 4. preload 禁 main：`src/preload/**` 禁止 import `src/main/**`。
@@ -230,21 +230,21 @@
 
 ### 合并前必须跑
 
-| 改动类型 | 最小验证 |
-|---|---|
-| 搜索/收藏/逻辑曲目/迷你播放器 | pnpm run test:playback-routing |
-| 本地库列表/性能/歌单 UI | pnpm run test:local-perf |
-| 插件/安全/provider 路由 | pnpm run test:plugins |
-| 音频 IPC、BPM/响度、扫描 | pnpm run test:audio-manager |
-| 歌词 | pnpm run test:lyrics-management |
-| 歌单导入导出/CAS | pnpm run test:playlist-lifecycle |
-| CUE | pnpm run test:cue |
-| DSP | pnpm run test:dsp-graph（+ dsp-assets） |
-| 主题 | pnpm run test:themes |
-| 网络音源 | pnpm run test:network-sources |
-| 电台/播客/遥控 | pnpm run test:radio-remote |
-| 跨 main/preload/renderer 类型 | pnpm run typecheck |
-| 发布打包/asar/strip | pnpm run test:release-artifacts + pnpm run audit:production |
+| 改动类型                      | 最小验证                                                    |
+| ----------------------------- | ----------------------------------------------------------- |
+| 搜索/收藏/逻辑曲目/迷你播放器 | pnpm run test:playback-routing                              |
+| 本地库列表/性能/歌单 UI       | pnpm run test:local-perf                                    |
+| 插件/安全/provider 路由       | pnpm run test:plugins                                       |
+| 音频 IPC、BPM/响度、扫描      | pnpm run test:audio-manager                                 |
+| 歌词                          | pnpm run test:lyrics-management                             |
+| 歌单导入导出/CAS              | pnpm run test:playlist-lifecycle                            |
+| CUE                           | pnpm run test:cue                                           |
+| DSP                           | pnpm run test:dsp-graph（+ dsp-assets）                     |
+| 主题                          | pnpm run test:themes                                        |
+| 网络音源                      | pnpm run test:network-sources                               |
+| 电台/播客/遥控                | pnpm run test:radio-remote                                  |
+| 跨 main/preload/renderer 类型 | pnpm run typecheck                                          |
+| 发布打包/asar/strip           | pnpm run test:release-artifacts + pnpm run audit:production |
 
 ## 6. 优先级总结（按投入产出比排序）
 
@@ -273,5 +273,4 @@
 - 文档治理要一次性清场，否则持续保留两份会继续漂移。
 - 不要在拆分大文件的同时夹带行为重构，这一阶段只做移动拆解，不影响 UI/行为。
 
-*本文档由 Codex 基于当前工作区扫描生成，建议输出到项目 `docs/architecture-maintainability-action-plan.md` 或按需引用。*
-
+_本文档由 Codex 基于当前工作区扫描生成，建议输出到项目 `docs/architecture-maintainability-action-plan.md` 或按需引用。_

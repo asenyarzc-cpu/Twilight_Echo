@@ -22,7 +22,11 @@ enum class IoFormatMode : int {
   UnsupportedDsd,
   ReportPcmAfterDsdSet,
   FailAfterDsdSet,
-  GetIoFormatUnsupported
+  GetIoFormatUnsupported,
+  // Models drivers whose valid buffer-size range changes once the DSD I/O
+  // format is active (observed in the field: createBuffers rejects PCM-mode
+  // sizes with ASE_InvalidParameter after the DSD switch).
+  DsdBufferSizeRange
 };
 
 class FakeAsioDriver final : public AsioDriver {
@@ -109,6 +113,13 @@ class FakeAsioDriver final : public AsioDriver {
 
   AsioError getBufferSize(int32_t* minimum, int32_t* maximum, int32_t* preferred, int32_t* granularity) override {
     if (!minimum || !maximum || !preferred || !granularity) return -1;
+    if (usesDsdBufferRange()) {
+      *minimum = 256;
+      *maximum = 2048;
+      *preferred = 1024;
+      *granularity = 0;
+      return kAsioOk;
+    }
     *minimum = 64;
     *maximum = 256;
     *preferred = 128;
@@ -172,7 +183,11 @@ class FakeAsioDriver final : public AsioDriver {
       int32_t count,
       int32_t bufferSize,
       AsioCallbacks* callbacks) override {
-    if (!bufferInfos || !callbacks || count != 2 || bufferSize < 64 || bufferSize > 256) return -1;
+    if (!bufferInfos || !callbacks || count != 2) return -1;
+    if (bufferSize < (usesDsdBufferRange() ? 256 : 64) ||
+        bufferSize > (usesDsdBufferRange() ? 2048 : 256)) {
+      return -1;
+    }
     callbacks_ = *callbacks;
     for (int32_t channel = 0; channel < count; ++channel) {
       if (bufferInfos[channel].isInput != kAsioFalse || bufferInfos[channel].channelNum != channel) return -1;
@@ -226,6 +241,10 @@ class FakeAsioDriver final : public AsioDriver {
   }
 
  private:
+  bool usesDsdBufferRange() const {
+    return ioFormatMode_ == IoFormatMode::DsdBufferSizeRange && ioFormat_ == kAsioIoFormatDsd;
+  }
+
   bool isSupportedIoFormat(AsioIoFormatType format) const {
     return format == kAsioIoFormatPcm ||
            (format == kAsioIoFormatDsd && ioFormatMode_ != IoFormatMode::UnsupportedDsd);
@@ -280,6 +299,8 @@ extern "C" __declspec(dllexport) twilight::audio::asio_abi::AsioDriver* Twilight
       return twilight::audio::asio_abi::createFakeDriver(IoFormatMode::FailAfterDsdSet);
     case static_cast<int>(IoFormatMode::GetIoFormatUnsupported):
       return twilight::audio::asio_abi::createFakeDriver(IoFormatMode::GetIoFormatUnsupported);
+    case static_cast<int>(IoFormatMode::DsdBufferSizeRange):
+      return twilight::audio::asio_abi::createFakeDriver(IoFormatMode::DsdBufferSizeRange);
     default:
       return twilight::audio::asio_abi::createFakeDriver();
   }

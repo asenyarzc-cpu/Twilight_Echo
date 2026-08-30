@@ -33,3 +33,32 @@ html.mini-player-document #app {
 html.mini-player-document body {
   padding: 0 !important;
 }
+
+/* The desktop lyrics window is a transparent overlay on the user's wallpaper:
+   it loads this stylesheet for the icon font and the motion tiers, so every page
+   background base.css would otherwise paint has to be switched off here. */
+html.desktop-lyrics-document {
+  color-scheme: only dark;
+}
+
+html.desktop-lyrics-document,
+html.desktop-lyrics-document body,
+html.desktop-lyrics-document #app {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent !important;
+  background-image: none !important;
+}
+
+html.desktop-lyrics-document body {
+  padding: 0 !important;
+}
+
+/* base.css hangs the page's ambient light field off body::before. Left alone it
+   hazes the whole desktop behind the lyrics instead of the app's own backdrop. */
+html.desktop-lyrics-document body::before {
+  display: none !important;
+}

@@ -42,8 +42,7 @@ test('radio media service persists stations with CAS revisions', async () => {
     assert.equal(saved.revision, 1)
     assert.equal(saved.data.stations[0].name, 'Jazz')
     await assert.rejects(
-      () =>
-        service.saveRadioStations({ schemaVersion: 1, stations: [station] }, loaded.revision),
+      () => service.saveRadioStations({ schemaVersion: 1, stations: [station] }, loaded.revision),
       (error: unknown) => error instanceof PersistentDataRevisionConflictError
     )
     assert.throws(
@@ -100,10 +99,7 @@ test('radio media service imports playlist and subscribes podcast feeds', async 
       () => service.resolveSubscribedEpisode(result.subscription.id, 'missing-guid'),
       /not found/
     )
-    await assert.rejects(
-      () => service.resolveSubscribedEpisode('missing-sub', 'g1'),
-      /not found/
-    )
+    await assert.rejects(() => service.resolveSubscribedEpisode('missing-sub', 'g1'), /not found/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -128,7 +124,12 @@ test('podcast refresh runs concurrently, isolates failures, and saves once', asy
         if (url.endsWith('unchanged.xml')) {
           return { body: '', status: 304, etag: '"same"', lastModified: null }
         }
-        return { body: RSS, status: 200, etag: '"changed"', lastModified: 'Tue, 21 Jul 2026 00:00:00 GMT' }
+        return {
+          body: RSS,
+          status: 200,
+          etag: '"changed"',
+          lastModified: 'Tue, 21 Jul 2026 00:00:00 GMT'
+        }
       }
     })
     const subscription = (feedUrl: string, etag?: string) => ({

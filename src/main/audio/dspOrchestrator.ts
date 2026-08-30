@@ -863,14 +863,13 @@ export class DspOrchestrator {
       this.playbackInfo.outputInfo.isDsd === true
 
     if (sourceIsDsd) {
-      const mode = this.processing.dsdOutputMode
-      const optimisticMode = mode === 'auto' ? 'native' : mode
-      const isForcedPcm = mode === 'pcm'
+      // dsdMode 保留引擎报告的实际传输（native/dop/pcm）；这里只维护源描述字段与
+      // 强制 PCM 的提示，避免把请求模式当成已生效链路盖掉引擎事实。
+      const isForcedPcm = this.processing.dsdOutputMode === 'pcm'
 
       this.playbackInfo.outputInfo = {
         ...this.playbackInfo.outputInfo,
         isDsd: true,
-        dsdMode: optimisticMode,
         dsdRate: this.playbackInfo.outputInfo.dsdRate || this.playbackInfo.dsdRate || 0,
         perfectReasonCode: isForcedPcm
           ? 'dsd_converted_to_pcm'

@@ -9,7 +9,10 @@ const { saveLyricsFromDialog, writeLyricsAtomically } = (await import(
 )) as typeof import('./saveLyrics')
 
 test('LRC save is canceled without creating a file', async () => {
-  assert.equal(await saveLyricsFromDialog({ canceled: true, filePath: '' }, '[00:01.00]Unused'), null)
+  assert.equal(
+    await saveLyricsFromDialog({ canceled: true, filePath: '' }, '[00:01.00]Unused'),
+    null
+  )
 })
 
 test('LRC save writes through a main-process authorized dialog result and retains backup', async () => {
@@ -39,7 +42,8 @@ test('failed replacement restores the previous LRC from its backup', async () =>
         writeLyricsAtomically(filePath, '[00:02.00]Edited', {
           exists: async () => true,
           copy: async (source, destination) => writeFileSync(destination, readFileSync(source)),
-          writeSynced: async (destination, contents) => writeFileSync(destination, contents, 'utf8'),
+          writeSynced: async (destination, contents) =>
+            writeFileSync(destination, contents, 'utf8'),
           replace: async (_source, destination) => {
             writeFileSync(destination, '[00:99.00]Damaged', 'utf8')
             throw new Error('replace failed')

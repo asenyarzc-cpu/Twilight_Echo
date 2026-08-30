@@ -80,9 +80,7 @@ export function createNetworkLibrary(deps: { filePath: string }): NetworkLibrary
       if (!profile) return []
       const normalized = query?.trim().toLowerCase() ?? ''
       if (!normalized) return [...profile.entries]
-      return profile.entries.filter((entry) =>
-        entry.name.toLowerCase().includes(normalized)
-      )
+      return profile.entries.filter((entry) => entry.name.toLowerCase().includes(normalized))
     },
     async updateEntries(profileId, entries) {
       const document = await load()
@@ -114,7 +112,6 @@ export function createNetworkLibrary(deps: { filePath: string }): NetworkLibrary
   }
 }
 
-
 function isLibraryDocument(value: unknown): value is LibraryDocument {
   if (!isRecord(value)) return false
   return Object.values(value).every(isLibraryProfileIndex)
@@ -137,7 +134,10 @@ function isNetworkLibraryEntry(value: unknown): value is NetworkEntry {
     typeof value.profileId === 'string' &&
     typeof value.name === 'string' &&
     typeof value.path === 'string' &&
-    (value.kind === 'directory' || value.kind === 'file' || value.kind === 'audio' || value.kind === 'playlist')
+    (value.kind === 'directory' ||
+      value.kind === 'file' ||
+      value.kind === 'audio' ||
+      value.kind === 'playlist')
   )
 }
 

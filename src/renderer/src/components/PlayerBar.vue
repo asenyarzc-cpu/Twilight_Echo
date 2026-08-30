@@ -248,7 +248,7 @@ const translationLayerSelection = computed(() => lyricLayerSelection('translatio
 const showTranslation = computed(() => lyricsManagement.document.value.showTranslation)
 
 async function toggleDesktopLyrics(): Promise<void> {
-  const enabled = await window.api.desktopLyrics.toggle()
+  const enabled = await window.api.desktopLyrics.setEnabled(!desktopLyricsOn.value)
   desktopLyricsOn.value = enabled
 }
 
@@ -265,7 +265,7 @@ async function openMiniPlayer(): Promise<void> {
 }
 
 if (!props.preview) {
-  window.api.desktopLyrics.onToggle((enabled: boolean) => {
+  window.api.desktopLyrics.onEnabledChanged((enabled: boolean) => {
     desktopLyricsOn.value = enabled
   })
   window.api.desktopLyrics.onLoadFailed?.((payload) => {
@@ -831,6 +831,20 @@ const perfectReasonDetail = computed(() => {
   if (!code) return null
   const resolved = resolveReasonCode(locale.value, code)
   return resolved.known ? resolved : null
+})
+
+/**
+ * The engine's own one-line cause (route decision, negotiation or probe
+ * detail). Shown under the registry copy as evidence; hidden when it merely
+ * restates the label and truncated so a driver essay cannot blow up the deck.
+ */
+const perfectReasonEngineDetail = computed(() => {
+  const raw = (outputInfo.value?.perfectReason || playbackInfo.value?.perfectReason || '').trim()
+  if (!raw) return ''
+  const code = outputInfo.value?.perfectReasonCode || playbackInfo.value?.perfectReasonCode || ''
+  const resolved = code ? resolveReasonCode(locale.value, code) : null
+  if (resolved?.known && resolved.label === raw) return ''
+  return raw.length > 160 ? `${raw.slice(0, 157)}...` : raw
 })
 
 function nativeDsdRuntimeTone(state: string): 'success' | 'warning' | 'muted' {
@@ -2081,12 +2095,14 @@ onBeforeUnmount(() => {
           :audio-output-config="audioOutputConfig"
           :dsp-output-stage="dspOutputStage"
           :dsp-stereo-image="dspStereoImage"
+          :dsp-active="playbackInfo?.dspActive === true"
           :actual-sample-rate="outputInfo?.actualSampleRate || playbackInfo?.actualSampleRate || 0"
           :status-chips="audioStatusChips"
           :non-perfect-reason="nonPerfectReason"
           :perfect-reason-code="perfectReasonCode"
           :perfect-reason-explain="perfectReasonDetail?.explain || ''"
           :perfect-reason-fix="perfectReasonDetail?.fix || ''"
+          :perfect-reason-engine-detail="perfectReasonEngineDetail"
           :volume="volume"
           :gapless-active="playbackInfo?.gaplessActive === true"
           :preload-ready="playbackInfo?.preloadReady === true"

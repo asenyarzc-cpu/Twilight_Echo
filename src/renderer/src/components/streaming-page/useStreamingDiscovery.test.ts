@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { ref } from 'vue'
 import type { NcmPlaylistSummary } from '../../stores/useNcmStore.ts'
 
 const { useStreamingDiscovery, DISCOVERY_PAGE_SIZE } = (await import(
@@ -44,11 +45,12 @@ test('ensureLoaded fetches the catalogue and first page exactly once', async () 
   let catalogueCalls = 0
   let listCalls = 0
   const discovery = useStreamingDiscovery({
+    providerId: ref('ncm'),
     fetchPlaylistCategories: async () => {
       catalogueCalls++
       return catalogueFixture
     },
-    fetchDiscoveryPlaylists: async (_cat, _order, _limit, offset = 0) => {
+    fetchDiscoveryPlaylists: async (_providerId, _cat, _order, _limit, offset = 0) => {
       listCalls++
       return discoveryPage([1, 2], offset)
     },
@@ -70,8 +72,9 @@ test('ensureLoaded fetches the catalogue and first page exactly once', async () 
 test('selectTag resets the offset, refetches with the new tag, and collapses the panel', async () => {
   const requests: Array<{ cat?: string; order?: string; offset?: number }> = []
   const discovery = useStreamingDiscovery({
+    providerId: ref('ncm'),
     fetchPlaylistCategories: async () => catalogueFixture,
-    fetchDiscoveryPlaylists: async (cat, order, _limit, offset) => {
+    fetchDiscoveryPlaylists: async (_providerId, cat, order, _limit, offset) => {
       requests.push({ cat, order, offset })
       return discoveryPage([10], offset ?? 0)
     },
@@ -99,8 +102,9 @@ test('stale responses are discarded when a newer request resolves first', async 
   let resolveSlow: ((page: ReturnType<typeof discoveryPage>) => void) | null = null
   let call = 0
   const discovery = useStreamingDiscovery({
+    providerId: ref('ncm'),
     fetchPlaylistCategories: async () => catalogueFixture,
-    fetchDiscoveryPlaylists: async (cat) => {
+    fetchDiscoveryPlaylists: async (_providerId, cat) => {
       call++
       if (call === 1) {
         return new Promise((resolve) => {
@@ -120,7 +124,6 @@ test('stale responses are discarded when a newer request resolves first', async 
     discovery.playlists.value.map((item) => item.id),
     [2]
   )
-
   ;(resolveSlow as ((page: ReturnType<typeof discoveryPage>) => void) | null)?.(discoveryPage([1]))
   await first
   assert.deepEqual(
@@ -133,9 +136,10 @@ test('stale responses are discarded when a newer request resolves first', async 
 test('high-quality mode appends via loadMore threading lasttime as the cursor', async () => {
   const beforeValues: number[] = []
   const discovery = useStreamingDiscovery({
+    providerId: ref('ncm'),
     fetchPlaylistCategories: async () => catalogueFixture,
     fetchDiscoveryPlaylists: async () => discoveryPage([1]),
-    fetchHighQualityPlaylists: async (_cat, _limit, before = 0) => {
+    fetchHighQualityPlaylists: async (_providerId, _cat, _limit, before = 0) => {
       beforeValues.push(before)
       if (before === 0) {
         return { items: [playlist(11)], total: 2, hasMore: true, lasttime: 1800 }
@@ -168,8 +172,9 @@ test('list errors populate listError and retry refetches from the start', async 
   let fail = true
   let offsetSeen: number | undefined
   const discovery = useStreamingDiscovery({
+    providerId: ref('ncm'),
     fetchPlaylistCategories: async () => catalogueFixture,
-    fetchDiscoveryPlaylists: async (_cat, _order, _limit, offset) => {
+    fetchDiscoveryPlaylists: async (_providerId, _cat, _order, _limit, offset) => {
       if (fail) throw new Error('网络异常')
       offsetSeen = offset
       return discoveryPage([5], offset ?? 0)
@@ -189,5 +194,31 @@ test('list errors populate listError and retry refetches from the start', async 
   assert.deepEqual(
     discovery.playlists.value.map((item) => item.id),
     [5]
+  )
+})
+
+test('switching providers resets filters and loads the new provider without stale results', async () => {
+  const providerId = ref('alpha')
+  const calls: string[] = []
+  const discovery = useStreamingDiscovery({
+    providerId,
+    fetchPlaylistCategories: async () => catalogueFixture,
+    fetchDiscoveryPlaylists: async (source) => {
+      calls.push(source)
+      return discoveryPage([source === 'alpha' ? 1 : 2])
+    }
+  })
+
+  await discovery.ensureLoaded()
+  discovery.selectedTag.value = '欧美'
+  providerId.value = 'beta'
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await discovery.ensureLoaded()
+
+  assert.deepEqual(calls, ['alpha', 'beta'])
+  assert.equal(discovery.selectedTag.value, '全部')
+  assert.deepEqual(
+    discovery.playlists.value.map((item) => item.id),
+    [2]
   )
 })

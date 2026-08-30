@@ -50,9 +50,11 @@ const MAX_NETWORK_PROFILES_FILE_BYTES = 1024 * 1024
 const MAX_ENCRYPTED_CREDENTIAL_BYTES = 16 * 1024
 
 function normalizeName(value: unknown): string {
-  if (typeof value !== 'string') throw new NetworkSourceFailure('invalidProfile', '名称必须是字符串')
+  if (typeof value !== 'string')
+    throw new NetworkSourceFailure('invalidProfile', '名称必须是字符串')
   const name = value.trim()
-  if (!name || name.length > 64) throw new NetworkSourceFailure('invalidProfile', '名称长度需在 1–64 之间')
+  if (!name || name.length > 64)
+    throw new NetworkSourceFailure('invalidProfile', '名称长度需在 1–64 之间')
   if (hasControlCharacters(name)) {
     throw new NetworkSourceFailure('invalidProfile', '名称包含非法字符')
   }
@@ -60,7 +62,8 @@ function normalizeName(value: unknown): string {
 }
 
 function normalizeHost(value: unknown): string {
-  if (typeof value !== 'string') throw new NetworkSourceFailure('invalidProfile', '地址必须是字符串')
+  if (typeof value !== 'string')
+    throw new NetworkSourceFailure('invalidProfile', '地址必须是字符串')
   const host = value.trim().replace(/^https?:\/\//i, '')
   if (!host || host.length > 253 || hasControlCharacters(host)) {
     throw new NetworkSourceFailure('invalidProfile', '地址不合法')
@@ -159,7 +162,10 @@ function isPersistedProfile(value: unknown): value is NetworkSourceProfile {
   if (!isRecord(value) || typeof value.id !== 'string' || !value.id || value.id.length > 128) {
     return false
   }
-  if (typeof value.protocol !== 'string' || !SUPPORTED_PROTOCOLS.has(value.protocol as NetworkProtocol)) {
+  if (
+    typeof value.protocol !== 'string' ||
+    !SUPPORTED_PROTOCOLS.has(value.protocol as NetworkProtocol)
+  ) {
     return false
   }
   if (!isRecord(value.credential) || typeof value.credential.kind !== 'string') return false
@@ -194,7 +200,11 @@ function isPersistedProfile(value: unknown): value is NetworkSourceProfile {
     normalizeRemotePath(value.rootPath)
     normalizeUsername(value.username)
     normalizeBookmarks(value.bookmarks)
-    if (value.webdavScheme !== undefined && value.webdavScheme !== 'http' && value.webdavScheme !== 'https') {
+    if (
+      value.webdavScheme !== undefined &&
+      value.webdavScheme !== 'http' &&
+      value.webdavScheme !== 'https'
+    ) {
       return false
     }
     if (protocol !== 'webdav' && value.webdavScheme !== undefined) return false
@@ -217,12 +227,7 @@ function isPersistedProfile(value: unknown): value is NetworkSourceProfile {
 }
 
 function isBoundedPositiveInteger(value: unknown, maximum: number): value is number {
-  return (
-    typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    value > 0 &&
-    value <= maximum
-  )
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= maximum
 }
 
 function isPersistedFile(value: unknown): value is PersistedFile {
@@ -272,10 +277,16 @@ export function createNetworkProfileStore(deps: {
     return profile
   }
 
-  function toCredential(auth: NetworkSourceProfileInput['auth']): NetworkSourceProfile['credential'] {
+  function toCredential(
+    auth: NetworkSourceProfileInput['auth']
+  ): NetworkSourceProfile['credential'] {
     if (auth.kind === 'anonymous') return { kind: 'anonymous', encryptedId: '' }
-    if (auth.kind === 'password') return { kind: 'password', encryptedId: codec.encrypt(auth.password) }
-    return { kind: 'privateKey', encryptedId: auth.passphrase ? codec.encrypt(auth.passphrase) : '' }
+    if (auth.kind === 'password')
+      return { kind: 'password', encryptedId: codec.encrypt(auth.password) }
+    return {
+      kind: 'privateKey',
+      encryptedId: auth.passphrase ? codec.encrypt(auth.passphrase) : ''
+    }
   }
 
   return {
@@ -364,7 +375,8 @@ export function createNetworkProfileStore(deps: {
     async deleteProfile(id: string): Promise<void> {
       const profiles = await load()
       const next = profiles.filter((item) => item.id !== id)
-      if (next.length === profiles.length) throw new NetworkSourceFailure('notFound', '网络源不存在')
+      if (next.length === profiles.length)
+        throw new NetworkSourceFailure('notFound', '网络源不存在')
       await save(next)
     },
     async resolveAuth(id: string): Promise<NetworkAuth> {

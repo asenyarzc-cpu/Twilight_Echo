@@ -15,7 +15,10 @@ test('remote HTTP server supports mediaOnly bind without full remote surface', (
   assert.match(httpServerSource, /media_only/)
   // mediaOnly must not advertise PIN / remote URLs as "enabled".
   assert.match(httpServerSource, /enabled: this\.enabled && !mediaOnly/)
-  assert.match(httpServerSource, /pin: this\.enabled && !mediaOnly \? this\.auth\.getPin\(\) : null/)
+  assert.match(
+    httpServerSource,
+    /pin: this\.enabled && !mediaOnly \? this\.auth\.getPin\(\) : null/
+  )
   // mediaOnly request path only serves /media/ tokens.
   assert.match(
     httpServerSource,
@@ -29,10 +32,7 @@ test('remote HTTP server supports mediaOnly bind without full remote surface', (
 
 test('cast binds media-only when remote control is off and tears it down on stopCast', () => {
   assert.match(remoteIpcSource, /ensureCastMediaServer/)
-  assert.match(
-    remoteIpcSource,
-    /remoteEnabled[\s\S]*mode: 'full'[\s\S]*mode: 'mediaOnly'/
-  )
+  assert.match(remoteIpcSource, /remoteEnabled[\s\S]*mode: 'full'[\s\S]*mode: 'mediaOnly'/)
   assert.match(remoteIpcSource, /await ensureCastMediaServer\(\)/)
   assert.match(
     remoteIpcSource,
@@ -54,10 +54,7 @@ test('cast binds media-only when remote control is off and tears it down on stop
 test('player queue skip re-casts while a cast session is active', () => {
   assert.match(playerStoreSource, /castTargetUsn/)
   assert.match(playerStoreSource, /function playQueueTrack/)
-  assert.match(
-    playerStoreSource,
-    /if \(castTargetUsn\.value\) \{[\s\S]*castCurrentTrackToDevice/
-  )
+  assert.match(playerStoreSource, /if \(castTargetUsn\.value\) \{[\s\S]*castCurrentTrackToDevice/)
   assert.match(
     playerStoreSource,
     /else if \(castTargetName\.value\) \{[\s\S]*controlCast\?\.\(\{ seek: 0 \}\)/

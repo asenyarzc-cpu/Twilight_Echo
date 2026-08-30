@@ -47,6 +47,7 @@ set(TAE_ENGINE_SOURCES
   core/AudioBuffer.cpp
   core/AudioPipeline.cpp
   core/AudioTypes.cpp
+  core/DiagnosticLog.cpp
   core/TwilightAudioEngine.cpp
   analysis/BpmAnalyzer.cpp
   analysis/LoudnessAnalyzer.cpp
@@ -301,6 +302,13 @@ if(TAE_BUILD_TESTS)
   target_include_directories(twilight_audio_buffer_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   add_test(NAME twilight_audio_buffer_unit COMMAND twilight_audio_buffer_tests)
 
+  add_executable(twilight_diagnostic_log_tests
+    tests/diagnostic_log_tests.cpp
+    core/DiagnosticLog.cpp
+  )
+  target_include_directories(twilight_diagnostic_log_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_test(NAME twilight_diagnostic_log_unit COMMAND twilight_diagnostic_log_tests)
+
   add_library(twilight_test_gain_dsp_plugin SHARED tests/test_gain_dsp_plugin.cpp)
   target_include_directories(twilight_test_gain_dsp_plugin PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   add_library(twilight_test_fault_dsp_plugin SHARED tests/test_fault_dsp_plugin.cpp)
@@ -471,16 +479,16 @@ if(TAE_BUILD_TESTS)
     add_test(NAME twilight_wasapi_format_negotiator_unit COMMAND twilight_wasapi_format_negotiator_tests)
   endif()
 
-  add_executable(twilight_asio_backend_tests
-    tests/asio_backend_tests.cpp
-    output/asio/AsioBackend.cpp
-    output/asio/DeviceCapabilityCache.cpp
-    output/asio/MockAsioHost.cpp
-    output/asio/RealAsioHost.cpp
-    core/AudioTypes.cpp
-  )
-  target_include_directories(twilight_asio_backend_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   if(TAE_ASIO_AVAILABLE)
+    add_executable(twilight_asio_backend_tests
+      tests/asio_backend_tests.cpp
+      output/asio/AsioBackend.cpp
+      output/asio/DeviceCapabilityCache.cpp
+      output/asio/MockAsioHost.cpp
+      output/asio/RealAsioHost.cpp
+      core/AudioTypes.cpp
+    )
+    target_include_directories(twilight_asio_backend_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(twilight_asio_backend_tests PRIVATE TAE_ENABLE_ASIO=1)
     target_sources(twilight_asio_backend_tests PRIVATE
       output/asio/windows/AsioCallbackRouter.cpp
@@ -489,8 +497,8 @@ if(TAE_BUILD_TESTS)
       output/asio/windows/AsioDriverSession.cpp
     )
     target_link_libraries(twilight_asio_backend_tests PRIVATE ole32 uuid advapi32 user32)
+    add_test(NAME twilight_asio_backend_unit COMMAND twilight_asio_backend_tests)
   endif()
-  add_test(NAME twilight_asio_backend_unit COMMAND twilight_asio_backend_tests)
 
   if(TAE_ASIO_AVAILABLE)
     add_executable(twilight_asio_abi_checks output/asio/abi/AsioAbiChecks.cpp)
@@ -546,6 +554,7 @@ if(TAE_BUILD_TESTS)
     core/AudioBuffer.cpp
     core/AudioPipeline.cpp
     core/AudioTypes.cpp
+    core/DiagnosticLog.cpp
     core/TwilightAudioEngine.cpp
     analysis/BpmAnalyzer.cpp
     analysis/LoudnessAnalyzer.cpp
@@ -614,6 +623,7 @@ if(TAE_BUILD_TESTS)
     core/AudioBuffer.cpp
     core/AudioPipeline.cpp
     core/AudioTypes.cpp
+    core/DiagnosticLog.cpp
     analysis/BpmAnalyzer.cpp
     analysis/LoudnessAnalyzer.cpp
     decoder/DopPacker.cpp
@@ -723,6 +733,7 @@ if(TAE_BUILD_TESTS)
     twilight_channel_router_tests
     twilight_wsola_tests
     twilight_audio_buffer_tests
+    twilight_diagnostic_log_tests
     twilight_native_dsp_plugin_tests
     twilight_metadata_tests
     twilight_bitperfect_tests

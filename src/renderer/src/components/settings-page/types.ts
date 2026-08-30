@@ -14,9 +14,9 @@ import type {
   AppBackgroundPage,
   ChannelRoutingMode,
   DesktopLyricsSettings,
+  LyricsAppearanceAlign,
   LyricsAppearanceFontFamily,
   LyricsFocusLineCount,
-  LyricAlign,
   MotionPreference,
   NcmPlaybackQuality,
   PlaybackResumeMode,
@@ -27,7 +27,7 @@ import type {
   StreamingAudioCachePolicy,
   UiDensity
 } from '../../types/settings'
-import { DESKTOP_LYRICS_FOLLOW_FONT } from '../../../../shared/desktopLyricsFont.ts'
+import { DEFAULT_DESKTOP_LYRICS_SETTINGS } from '../../../../shared/desktopLyrics.ts'
 import type { AppFontFamily } from '../../../../shared/appFont.ts'
 
 export type SectionKey =
@@ -206,9 +206,10 @@ export const appBackgroundPageOptions: { value: AppBackgroundPage; label: string
     { value: 'player', label: '播放页', desc: '沉浸式播放页和全屏播放背景。' }
   ]
 
-export const lyricAlignOptions: { value: LyricAlign; label: string }[] = [
+export const lyricAlignOptions: { value: LyricsAppearanceAlign; label: string }[] = [
   { value: 'center', label: '居中对齐' },
-  { value: 'left', label: '靠左对齐' }
+  { value: 'left', label: '靠左对齐' },
+  { value: 'right', label: '靠右对齐' }
 ]
 
 export const streamingAudioCachePolicyOptions: {
@@ -615,33 +616,38 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = (
     },
     {
       section: 'desktopLyrics',
+      title: '文字描边 (Text Outline)',
+      terms: '描边 边框 outline stroke 有描边 无描边 歌词'
+    },
+    {
+      section: 'desktopLyrics',
       title: '行间距 (Line Spacing)',
       terms: '行距 间距 line spacing 歌词'
     },
     {
       section: 'desktopLyrics',
-      title: '最大显示行数 (Max Lines)',
-      terms: '行数 max lines 显示 歌词'
+      title: '显示行数 (Display Lines)',
+      terms: '行数 单行 双行 single double display lines 歌词'
     },
     {
       section: 'desktopLyrics',
-      title: '行水平偏移 (Line Offset)',
-      terms: '偏移 offset 行 水平 错位'
+      title: '文字排列 (Writing Mode)',
+      terms: '横排 竖排 横向 纵向 horizontal vertical writing mode 排版 歌词'
     },
     {
       section: 'desktopLyrics',
-      title: '默认文字颜色 (Text Color)',
-      terms: '文字 颜色 color 默认 歌词'
+      title: '配色方案 (Palette)',
+      terms: '配色 方案 落日晖 Twilight 暖白 封面强调色 palette color 歌词'
     },
     {
       section: 'desktopLyrics',
-      title: '高亮文字颜色 (Highlight Color)',
-      terms: '高亮 颜色 highlight 歌词 当前'
+      title: '已播放颜色 (Played Color)',
+      terms: '已播放 当前 歌词 颜色 active played color'
     },
     {
       section: 'desktopLyrics',
-      title: '背景颜色 (Background Color)',
-      terms: '背景 颜色 color 歌词'
+      title: '未播放颜色 (Unplayed Color)',
+      terms: '未播放 未唱 歌词 颜色 inactive unplayed color'
     },
     {
       section: 'desktopLyrics',
@@ -651,17 +657,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = (
     {
       section: 'desktopLyrics',
       title: '文字阴影 (Text Shadow)',
-      terms: '文字 阴影 shadow 投影 歌词'
-    },
-    {
-      section: 'desktopLyrics',
-      title: '阴影模糊度 (Shadow Blur)',
-      terms: '阴影 模糊 blur 投影 歌词'
-    },
-    {
-      section: 'desktopLyrics',
-      title: '阴影颜色 (Shadow Color)',
-      terms: '阴影 颜色 shadow color 投影'
+      terms: '文字 阴影 强度 shadow 投影 歌词'
     },
     {
       section: 'desktopLyrics',
@@ -685,18 +681,18 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = (
     },
     {
       section: 'desktopLyrics',
-      title: '鼠标穿透 (Click Through)',
-      terms: '鼠标 穿透 click through 点击 穿透 窗口'
-    },
-    {
-      section: 'desktopLyrics',
-      title: '布局模式 (Layout)',
-      terms: '布局 layout 多行 双语 原文 翻译'
+      title: '锁定并穿透点击 (Click Through)',
+      terms: '锁定 鼠标 穿透 click through 点击 窗口'
     },
     {
       section: 'desktopLyrics',
       title: '显示翻译 (Show Translation)',
       terms: '翻译 translation 显示 双语 原文'
+    },
+    {
+      section: 'desktopLyrics',
+      title: '显示音译 (Show Romanization)',
+      terms: '音译 罗马音 romanization transliteration 显示 外文歌词'
     },
 
     // ── 快捷键 ────────────────────────────────────────────
@@ -749,33 +745,8 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = (
   terms: `${sectionTerms[entry.section]} ${entry.terms}`
 }))
 
-export const RESET_DESKTOP_LYRICS: DesktopLyricsSettings = {
-  enabled: false,
-  fontSize: 32,
-  fontFamily: DESKTOP_LYRICS_FOLLOW_FONT,
-  fontWeight: 700,
-  color: '#ffffff',
-  highlightColor: '#3b82f6',
-  bgColor: '#000000',
-  bgOpacity: 30,
-  align: 'center',
-  showTranslation: true,
-  layout: 'bilingual',
-  presentation: 'netease',
-  lineSpacing: 1.6,
-  shadow: true,
-  shadowBlur: 8,
-  shadowColor: '#000000',
-  windowWidth: 900,
-  windowHeight: 160,
-  windowX: -1,
-  windowY: -1,
-  alwaysOnTop: true,
-  locked: false,
-  clickThrough: false,
-  maxLines: 2,
-  lineOffset: 0
-}
+export const RESET_DESKTOP_LYRICS: DesktopLyricsSettings = DEFAULT_DESKTOP_LYRICS_SETTINGS
+
 export type PluginSettingsFieldType = 'text' | 'password' | 'url' | 'select'
 
 export interface PluginSettingsOption {

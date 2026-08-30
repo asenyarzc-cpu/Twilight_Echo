@@ -69,12 +69,7 @@ test('official verification requires the exact origin and a valid active Ed25519
   const keys = generateKeyPairSync('ed25519')
   const registry = registryFor(keys.publicKey)
   const entry = signEntry(baseEntry, OFFICIAL_PLUGIN_INDEX_URL, keys.privateKey)
-  const result = verifyPluginIndexEntry(
-    entry,
-    context(OFFICIAL_PLUGIN_INDEX_URL),
-    registry,
-    NOW
-  )
+  const result = verifyPluginIndexEntry(entry, context(OFFICIAL_PLUGIN_INDEX_URL), registry, NOW)
 
   assert.equal(result.verification.level, 'official')
   assert.equal(result.verification.official, true)
@@ -200,7 +195,10 @@ test('POSIX manifest path normalization produces one signing vector and detects 
 
   assert.deepEqual(windowsManifest, posixManifest)
   assert.equal(payload.toString('utf-8'), expectedPayload)
-  assert.deepEqual(payload, createPluginIndexSignaturePayload(posixEntry, OFFICIAL_PLUGIN_INDEX_URL))
+  assert.deepEqual(
+    payload,
+    createPluginIndexSignaturePayload(posixEntry, OFFICIAL_PLUGIN_INDEX_URL)
+  )
 
   const keys = generateKeyPairSync('ed25519')
   const registry = registryFor(keys.publicKey)
@@ -341,12 +339,7 @@ test('unknown trusted-key status invalidates the whole registry', () => {
     ]
   })
   const signed = signEntry(baseEntry, OFFICIAL_PLUGIN_INDEX_URL, keys.privateKey)
-  const result = verifyPluginIndexEntry(
-    signed,
-    context(OFFICIAL_PLUGIN_INDEX_URL),
-    registry,
-    NOW
-  )
+  const result = verifyPluginIndexEntry(signed, context(OFFICIAL_PLUGIN_INDEX_URL), registry, NOW)
 
   assert.match(registry.error ?? '', /invalid status/)
   assert.equal(result.verification.signatureStatus, 'trust-store-error')

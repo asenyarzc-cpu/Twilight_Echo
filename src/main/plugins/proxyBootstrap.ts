@@ -41,10 +41,7 @@ interface TransportRequestInit {
   signal: AbortSignal
 }
 
-export type ProxyFetchTransport = (
-  url: string,
-  init: TransportRequestInit
-) => Promise<Response>
+export type ProxyFetchTransport = (url: string, init: TransportRequestInit) => Promise<Response>
 
 export interface SecureProxyFetchOptions {
   proxyRequest: ProxyFetchTransport
@@ -321,9 +318,7 @@ async function sendWithProxyPolicy(
   }
 }
 
-async function bufferRequestBody(
-  request: Request
-): Promise<Uint8Array<ArrayBuffer> | undefined> {
+async function bufferRequestBody(request: Request): Promise<Uint8Array<ArrayBuffer> | undefined> {
   if (!request.body || request.method === 'GET' || request.method === 'HEAD') return undefined
   return new Uint8Array(await request.arrayBuffer())
 }

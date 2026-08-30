@@ -202,17 +202,12 @@ onBeforeUnmount(() => {
           @click="toggleRemote"
         ></span>
       </div>
-      <div
-        v-if="props.remoteEnabled"
-        class="setting-item top-align remote-control-panel"
-      >
+      <div v-if="props.remoteEnabled" class="setting-item top-align remote-control-panel">
         <div class="setting-copy">
           <strong>配对 PIN / 访问地址</strong>
           <span>
             状态：
-            {{
-              remoteStatus?.running ? `运行中 · 端口 ${remoteStatus.port ?? '—'}` : '未运行'
-            }}
+            {{ remoteStatus?.running ? `运行中 · 端口 ${remoteStatus.port ?? '—'}` : '未运行' }}
             <template v-if="remoteStatus?.paired"> · 已配对</template>
             <template v-if="(remoteStatus?.clientCount ?? 0) > 0">
               · {{ remoteStatus?.clientCount }} 客户端

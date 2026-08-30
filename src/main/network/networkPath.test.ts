@@ -1,14 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {
-  buildNetworkEntryId,
-  normalizeRemotePath,
-  redactProfile
-} from './networkPath.ts'
-import type {
-  NetworkCredentialKind,
-  NetworkSourceProfile
-} from '../../shared/networkSources.ts'
+import { buildNetworkEntryId, normalizeRemotePath, redactProfile } from './networkPath.ts'
+import type { NetworkCredentialKind, NetworkSourceProfile } from '../../shared/networkSources.ts'
 
 function makeProfile(overrides: Partial<NetworkSourceProfile> = {}): NetworkSourceProfile {
   return {

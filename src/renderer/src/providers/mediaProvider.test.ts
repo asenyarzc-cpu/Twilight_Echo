@@ -588,6 +588,8 @@ test('renderer provider sync carries host health into registered providers', () 
   assert.match(source, /health: provider\.health/)
   assert.match(source, /isEnabled: \(\) => provider\.health\?\.available !== false/)
   assert.match(source, /mediaProviders\.update\(provider\.id/)
+  assert.match(source, /fetchDiscoveryPlaylists: supports\('fetchDiscoveryPlaylists'\)/)
+  assert.match(source, /fetchHighQualityPlaylists: supports\('fetchHighQualityPlaylists'\)/)
 })
 
 test('renderer provider calls refresh host health snapshots after IPC settles', () => {

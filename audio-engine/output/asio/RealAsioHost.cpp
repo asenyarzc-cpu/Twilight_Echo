@@ -246,6 +246,14 @@ bool RealAsioHost::outputReady() {
 #endif
 }
 
+long RealAsioHost::activeBufferSize() const {
+#if defined(_WIN32) && defined(_WIN64) && defined(TAE_ENABLE_ASIO)
+  return impl_->session ? impl_->session->activeBufferSize() : 0;
+#else
+  return 0;
+#endif
+}
+
 std::unique_ptr<IAsioHost> createRealAsioHost() {
   return std::make_unique<RealAsioHost>();
 }
@@ -292,8 +300,32 @@ std::string enumerateAsioDevicesJson() {
     json << "{\"id\":\"" << jsonEscape(device.id) << "\",\"label\":\"" << jsonEscape(device.name)
          << "\",\"name\":\"" << jsonEscape(device.name)
          << "\",\"backend\":\"asio\",\"isDefault\":" << (device.isDefault ? "true" : "false")
-         << ",\"supportsNativeDsd\":" << (device.nativeDsdCapable ? "true" : "false")
-         << ",\"supportsDop\":" << (device.dopCapable ? "true" : "false") << '}';
+         << ",\"capabilityProbed\":" << (device.capabilityProbed ? "true" : "false");
+    // Enumeration reads the registry, which knows identity only. Emitting the
+    // false defaults of an unprobed record made every ASIO driver advertise
+    // "no DSD, no DoP"; leaving the fields out lets the UI say "not probed yet"
+    // instead of contradicting a DAC that has never been asked.
+    if (device.capabilityProbed) {
+      json << ",\"supportsNativeDsd\":" << (device.nativeDsdCapable ? "true" : "false")
+           << ",\"supportsDop\":" << (device.dopCapable ? "true" : "false");
+      if (!device.nativeDsdSampleRates.empty()) {
+        json << ",\"nativeDsdSampleRates\":[";
+        for (size_t i = 0; i < device.nativeDsdSampleRates.size(); ++i) {
+          if (i > 0) json << ',';
+          json << device.nativeDsdSampleRates[i];
+        }
+        json << ']';
+      }
+      if (!device.dopCarrierSampleRates.empty()) {
+        json << ",\"dopCarrierSampleRates\":[";
+        for (size_t i = 0; i < device.dopCarrierSampleRates.size(); ++i) {
+          if (i > 0) json << ',';
+          json << device.dopCarrierSampleRates[i];
+        }
+        json << ']';
+      }
+    }
+    json << '}';
   }
   json << ']';
   return json.str();

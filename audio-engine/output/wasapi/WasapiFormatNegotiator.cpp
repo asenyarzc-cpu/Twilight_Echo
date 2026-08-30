@@ -22,7 +22,9 @@ constexpr std::array<int, 12> kSupportedSampleRates = {
     44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000, 1411200, 1536000};
 
 constexpr int kDsd64SampleRate = 2822400;
+constexpr int kDsd64x48SampleRate = 3072000;
 constexpr int kDsd128SampleRate = 5644800;
+constexpr int kDsd128x48SampleRate = 6144000;
 constexpr int kDsd256SampleRate = 11289600;
 constexpr int kDsd256x48SampleRate = 12288000;
 constexpr int kDsd512SampleRate = 22579200;
@@ -54,8 +56,10 @@ std::array<int, 3> bitDepthPriority(int sourceBitDepth) {
 }
 
 bool isDsdRate(int sampleRate) {
-  return sampleRate == kDsd64SampleRate || sampleRate == kDsd128SampleRate || sampleRate == kDsd256SampleRate ||
-         sampleRate == kDsd256x48SampleRate || sampleRate == kDsd512SampleRate || sampleRate == kDsd512x48SampleRate;
+  return sampleRate == kDsd64SampleRate || sampleRate == kDsd64x48SampleRate ||
+         sampleRate == kDsd128SampleRate || sampleRate == kDsd128x48SampleRate ||
+         sampleRate == kDsd256SampleRate || sampleRate == kDsd256x48SampleRate ||
+         sampleRate == kDsd512SampleRate || sampleRate == kDsd512x48SampleRate;
 }
 
 bool looksLikeDsdRate(int sampleRate) {
@@ -69,7 +73,9 @@ bool isDopCarrierRate(int sampleRate) {
 
 int dopCarrierRateForSource(const AudioFormat& sourceFormat) {
   if (sourceFormat.sampleRate == kDsd64SampleRate) return 176400;
+  if (sourceFormat.sampleRate == kDsd64x48SampleRate) return 192000;
   if (sourceFormat.sampleRate == kDsd128SampleRate) return 352800;
+  if (sourceFormat.sampleRate == kDsd128x48SampleRate) return 384000;
   if (sourceFormat.sampleRate == kDsd256SampleRate) return 705600;
   if (sourceFormat.sampleRate == kDsd256x48SampleRate) return 768000;
   if (sourceFormat.sampleRate == kDsd512SampleRate) return 1411200;
@@ -503,7 +509,18 @@ std::string WasapiFormatNegotiator::buildFailureReason(
 }
 
 bool WasapiFormatNegotiator::sameSourceFormat(const AudioFormat& sourceFormat, const AudioFormat& outputFormat) const {
-  if (wantsDopCarrier(sourceFormat)) return false;
+  // A DoP carrier request is the pipeline's deliberate transport decision for a
+  // DSD source, not a conversion: this negotiator only ever accepts candidates
+  // at the carrier rate derived from the source, so an accepted candidate is by
+  // definition not a resample. Reporting it as one failed the pipeline's DoP
+  // passthrough proof on every WASAPI exclusive session even while the rendered
+  // markers proved the frames left untouched.
+  if (wantsDopCarrier(sourceFormat)) {
+    const int expectedCarrierRate = dopCarrierRateForSource(sourceFormat);
+    return expectedCarrierRate > 0 && expectedCarrierRate == outputFormat.sampleRate &&
+           sourceFormat.channelCount == outputFormat.channelCount &&
+           effectivePcmBitDepth(outputFormat) == 24 && isDopCarrierSampleFormat(outputFormat.sampleFormat);
+  }
   // int24 -> int24-in-32 only widens the container; every significant bit
   // survives, so negotiating it is not a conversion of the source.
   return sourceFormat.sampleRate == outputFormat.sampleRate &&

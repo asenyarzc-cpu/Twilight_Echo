@@ -262,18 +262,23 @@ class AudioPipeline {
       const QueueItem& item,
       double startTimeSeconds,
       std::string* error);
+  // `graphProcessingActive` is the applied DSP graph's own verdict on whether it
+  // processes audio, which outranks the legacy module flags in `dspConfig`.
+  // Absent for config-only callers that never applied a graph.
   bool shouldAttemptDopForCurrentConfig(
       const DspConfig& dspConfig,
       const OutputConfig& outputConfig,
       const std::optional<DsdStreamInfo>& dsdProbe,
       double volume,
-      const std::string& backendId) const;
+      const std::string& backendId,
+      std::optional<bool> graphProcessingActive = std::nullopt) const;
   bool shouldAttemptNativeDsdForCurrentConfig(
       const DspConfig& dspConfig,
       const OutputConfig& outputConfig,
       const std::optional<DsdStreamInfo>& dsdProbe,
       double volume,
-      const std::string& backendId) const;
+      const std::string& backendId,
+      std::optional<bool> graphProcessingActive = std::nullopt) const;
   std::string determineDsdPcmFallbackReason(
       const DspConfig& dspConfig,
       const OutputConfig& outputConfig,
@@ -281,7 +286,8 @@ class AudioPipeline {
       double volume,
       const std::string& backendId,
       const std::string& attemptedDopReason,
-      bool dopModeRequested) const;
+      bool dopModeRequested,
+      std::optional<bool> graphProcessingActive = std::nullopt) const;
   TAE_Result playInternal(
       const QueueItem& item,
       const std::optional<QueueItem>& upcomingItem,

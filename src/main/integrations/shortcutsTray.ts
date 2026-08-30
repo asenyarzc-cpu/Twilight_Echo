@@ -19,7 +19,7 @@ import { getAppIconPath } from '../app/window'
 import { applyDiscordRpcSetting } from './discord'
 import { applyLibraryWatchers } from '../library/watcher'
 import { restoreMainWindowFromMiniPlayer, showMiniPlayer } from './miniPlayer'
-import { toggleDesktopLyrics } from './desktopLyrics'
+import { toggleDesktopLyrics, toggleDesktopLyricsLock } from './desktopLyrics'
 import { destroyTrayPlayerWindow, openMainWindowAt } from './trayPlayer'
 import type { MiniPlayerCommand, MiniPlayerPlayMode } from '../../shared/miniPlayer.ts'
 
@@ -40,6 +40,10 @@ export function handleGlobalShortcutAction(action: PlayerShortcutKeyAction): voi
     toggleDesktopLyrics()
     return
   }
+  if (action === 'toggleDesktopLyricsLock') {
+    toggleDesktopLyricsLock()
+    return
+  }
   sendPlayerShortcut(action)
 }
 
@@ -57,6 +61,11 @@ export function buildPlayerShortcutDefinitions(): {
       accelerator: bindings.toggleDesktopLyrics,
       action: 'toggleDesktopLyrics',
       label: '桌面歌词'
+    },
+    {
+      accelerator: bindings.toggleDesktopLyricsLock,
+      action: 'toggleDesktopLyricsLock',
+      label: '锁定 / 解锁桌面歌词'
     },
     ...MEDIA_KEY_SHORTCUTS
   ]
@@ -131,7 +140,8 @@ function createTrayMenuSignature(): string {
     state?.favoriteAvailable ?? false,
     state?.favoriteLiked ?? false,
     state?.favoriteLoading ?? false,
-    runtime.appSettings.desktopLyrics.enabled
+    runtime.appSettings.desktopLyrics.enabled,
+    runtime.appSettings.desktopLyrics.locked
   ])
 }
 
@@ -222,6 +232,15 @@ function buildTrayMenuTemplate(): MenuItemConstructorOptions[] {
       checked: runtime.appSettings.desktopLyrics.enabled,
       click: () => {
         toggleDesktopLyrics()
+      }
+    },
+    {
+      label: '锁定桌面歌词',
+      type: 'checkbox',
+      enabled: runtime.appSettings.desktopLyrics.enabled,
+      checked: runtime.appSettings.desktopLyrics.locked,
+      click: () => {
+        toggleDesktopLyricsLock()
       }
     },
     { type: 'separator' },
