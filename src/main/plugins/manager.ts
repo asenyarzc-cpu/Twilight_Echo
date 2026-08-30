@@ -16,6 +16,7 @@ import {
   findProviderRoute,
   getProviderCallTimeoutMs,
   getProviderMethodStats,
+  isTwilightMediaProviderMethod,
   normalizeProviderHealth,
   normalizeProviderUi,
   type ProviderHealthRecord,
@@ -1182,6 +1183,12 @@ export class TwilightPluginManager extends EventEmitter {
             ].includes(item)
         )
       : []
+    const supportedMethods = Array.isArray(record.supportedMethods)
+      ? record.supportedMethods.filter(
+          (item): item is TwilightMediaProviderMethod =>
+            typeof item === 'string' && isTwilightMediaProviderMethod(item)
+        )
+      : undefined
     if (!providerId || !/^[a-z][a-z0-9-]*$/.test(providerId)) {
       throw new Error('Provider id 必须是小写前缀，例如 bili 或 ncm')
     }
@@ -1193,7 +1200,13 @@ export class TwilightPluginManager extends EventEmitter {
     const ui = normalizeProviderUi(record.ui)
     const health = normalizeProviderHealth(record.health, providerId, pluginId)
     if (health) this.providerHealth.set(providerId, health)
-    const provider: TwilightMediaProviderRegistration = { id: providerId, name, capabilities, ui }
+    const provider: TwilightMediaProviderRegistration = {
+      id: providerId,
+      name,
+      capabilities,
+      supportedMethods,
+      ui
+    }
     const existingIndex = running.providers.findIndex((candidate) => candidate.id === providerId)
     if (existingIndex >= 0) running.providers[existingIndex] = provider
     else running.providers.push(provider)

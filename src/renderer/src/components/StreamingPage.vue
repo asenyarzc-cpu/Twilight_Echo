@@ -21,6 +21,9 @@ import { useMediaProviders } from '../providers'
 import type {
   MediaProviderAlbumSummary,
   MediaProviderArtistSummary,
+  MediaProviderDiscoveryPlaylistPage,
+  MediaProviderHighQualityPlaylistPage,
+  MediaProviderPlaylistCatalogue,
   MediaProviderPlaylistSummary,
   MediaProviderProfile
 } from '../providers/mediaProvider'
@@ -44,6 +47,8 @@ import StreamingContextMenu from './streaming-page/StreamingContextMenu.vue'
 import {
   buildStreamingSidebarItems,
   getFirstVisibleStreamingTab,
+  getStreamingDiscoveryProviders,
+  getStreamingHomeProviders,
   getUnifiedLibraryProviders,
   hasStreamingSidebarEntries,
   isSidebarItemActiveForProvider,
@@ -94,6 +99,14 @@ interface RecSection {
   title: string
   tracks: Track[]
   icon: string
+}
+
+interface HomeSectionDefinition {
+  key: string
+  title: string
+  icon: string
+  method: string
+  args: unknown[]
 }
 
 interface DetailHeaderInfo {
@@ -235,10 +248,11 @@ const followActionError = ref('')
 const likedCount = ref<number | null>(null)
 let detailLoadToken = 0
 
-const dailySongs = ref<Track[]>([])
-const personalFmSongs = ref<Track[]>([])
-const privateContentSongs = ref<Track[]>([])
-const recommendPlaylists = ref<NcmPlaylistSummary[]>([])
+const homeSectionDefinitions = ref<HomeSectionDefinition[]>([])
+const recommendationTracks = shallowRef<Record<string, Track[]>>({})
+const recommendPlaylists = shallowRef<MediaProviderPlaylistSummary[]>([])
+const recommendationProviderId = ref('')
+let recommendationRequestId = 0
 const PERSONALIZED_STREAM_LOAD_THRESHOLD = 0.75
 const PERSONALIZED_STREAM_QUEUE_THRESHOLD = 6
 const PERSONALIZED_STREAM_RETRY_COOLDOWN_MS = 15_000
@@ -324,7 +338,7 @@ const activeProvider = computed<string>(() => {
     return fallbackProvider.value
   }
   if (isProviderAvailable(preferredProvider.value)) return preferredProvider.value
-  return libraryProviders.value[0]?.id ?? NCM_PROVIDER_ID
+  return providerStore.providers.value[0]?.id ?? NCM_PROVIDER_ID
 })
 
 const isExternalActive = computed(() => activeProvider.value !== NCM_PROVIDER_ID)
@@ -357,43 +371,109 @@ const libraryProviderOptions = computed(() =>
   }))
 )
 
-async function loadRecommendations(): Promise<void> {
-  if (isExternalActive.value) return
-  if (!isLoggedIn.value) return
+const homeProviderOptions = computed(() =>
+  getStreamingHomeProviders({
+    ncmAvailable: ncmNavigationAvailable.value,
+    providers: providerStore.providers.value
+  })
+)
+const discoveryProviderOptions = computed(() =>
+  getStreamingDiscoveryProviders({
+    ncmAvailable: ncmNavigationAvailable.value,
+    providers: providerStore.providers.value
+  })
+)
 
-  const needsDaily = dailySongs.value.length === 0
-  const needsFm = personalFmSongs.value.length === 0
-  const needsRadar = privateContentSongs.value.length === 0
-  const needsPlaylists = recommendPlaylists.value.length === 0
-  if (!needsDaily && !needsFm && !needsRadar && !needsPlaylists) return
+function providerSupportsHome(providerId: string): boolean {
+  return homeProviderOptions.value.some((provider) => provider.id === providerId)
+}
 
+function providerSupportsDiscovery(providerId: string): boolean {
+  return discoveryProviderOptions.value.some((provider) => provider.id === providerId)
+}
+
+function getHomeSectionDefinitions(providerId: string): HomeSectionDefinition[] {
+  const provider = providerStore.getProvider(providerId)
+  const supportedMethods = new Set(provider?.supportedMethods ?? [])
+  return (provider?.ui?.streamingSections ?? [])
+    .filter((section) => supportedMethods.has(section.method))
+    .map((section) => ({
+      key: section.id,
+      title: section.title,
+      icon: section.icon,
+      method: section.method,
+      args: section.args ?? []
+    }))
+    .slice(0, 3)
+}
+
+async function loadRecommendations(force = false): Promise<void> {
+  const providerId = activeProvider.value
+  if (!providerSupportsHome(providerId) || !activeLoggedIn.value) return
+  if (!force && recommendationProviderId.value === providerId) return
+
+  const requestId = ++recommendationRequestId
+  const definitions = getHomeSectionDefinitions(providerId)
   recsLoading.value = true
   recsError.value = ''
   try {
-    const [daily, fm, radar, playlists] = await Promise.all([
-      needsDaily ? fetchRecommendSongs().catch(() => [] as Track[]) : dailySongs.value,
-      needsFm ? fetchPersonalFm().catch(() => [] as Track[]) : personalFmSongs.value,
-      needsRadar ? fetchPrivateContent().catch(() => [] as Track[]) : privateContentSongs.value,
-      needsPlaylists
-        ? fetchRecommendPlaylists().catch(() => [] as NcmPlaylistSummary[])
-        : recommendPlaylists.value
+    const providerInfo = providerStore.getProvider(providerId)
+    const supportsPlaylists =
+      providerInfo?.supportedMethods.includes('fetchRecommendPlaylists') === true
+    const [sectionResults, playlistsResult] = await Promise.all([
+      Promise.allSettled(
+        definitions.map((section) =>
+          providerStore.callProvider<Track[]>(providerId, section.method, section.args)
+        )
+      ),
+      supportsPlaylists
+        ? providerStore
+            .callProvider<MediaProviderPlaylistSummary[]>(providerId, 'fetchRecommendPlaylists')
+            .then(
+              (items) => ({ status: 'fulfilled', value: items }) as const,
+              (reason: unknown) => ({ status: 'rejected', reason }) as const
+            )
+        : Promise.resolve({ status: 'fulfilled', value: [] } as const)
     ])
-    if (needsDaily) dailySongs.value = daily
-    if (needsFm) personalFmSongs.value = fm
-    if (needsRadar) privateContentSongs.value = radar
-    if (needsPlaylists) recommendPlaylists.value = playlists
+    if (requestId !== recommendationRequestId || providerId !== activeProvider.value) return
+
+    const nextTracks: Record<string, Track[]> = {}
+    let firstFailure: unknown = null
+    sectionResults.forEach((result, index) => {
+      const section = definitions[index]
+      if (result.status === 'fulfilled') nextTracks[section.key] = result.value
+      else {
+        nextTracks[section.key] = []
+        firstFailure ??= result.reason
+      }
+    })
+    if (playlistsResult.status === 'rejected') firstFailure ??= playlistsResult.reason
+    const hasContent =
+      Object.values(nextTracks).some((tracks) => tracks.length > 0) ||
+      (playlistsResult.status === 'fulfilled' && playlistsResult.value.length > 0)
+    if (!hasContent && firstFailure) throw firstFailure
+
+    recommendationProviderId.value = providerId
+    homeSectionDefinitions.value = definitions
+    recommendationTracks.value = nextTracks
+    recommendPlaylists.value =
+      playlistsResult.status === 'fulfilled' ? [...playlistsResult.value] : []
   } catch (e) {
+    if (requestId !== recommendationRequestId || providerId !== activeProvider.value) return
     recsError.value = friendlyStreamingError(e, '加载推荐失败')
   } finally {
-    recsLoading.value = false
+    if (requestId === recommendationRequestId) recsLoading.value = false
   }
 }
 
-const recSections = computed<RecSection[]>(() => [
-  { key: 'daily', title: '每日推荐', tracks: dailySongs.value, icon: 'pi pi-calendar' },
-  { key: 'fm', title: '私人漫游', tracks: personalFmSongs.value, icon: 'pi pi-compass' },
-  { key: 'radar', title: '私人雷达', tracks: privateContentSongs.value, icon: 'pi pi-send' }
-])
+const recSections = computed<RecSection[]>(() =>
+  homeSectionDefinitions.value.map((section) => ({
+    key: section.key,
+    title: section.title,
+    tracks: recommendationTracks.value[section.key] ?? [],
+    icon: section.icon
+  }))
+)
 
 async function openRecSection(section: RecSection): Promise<void> {
   detailLoadToken++
@@ -409,13 +489,24 @@ async function loadMorePersonalizedStream(
   session: PersonalizedStreamSession | null = null
 ): Promise<void> {
   if (personalizedStreamLoading[key] || Date.now() < personalizedStreamRetryAfter[key]) return
+  const providerId = activeProvider.value
+  const providerInfo = providerStore.getProvider(providerId)
+  const method = key === 'fm' ? 'fetchPersonalFm' : 'fetchPrivateContent'
+  if (!providerInfo?.supportedMethods.includes(method)) return
   personalizedStreamLoading[key] = true
   try {
-    const current = key === 'fm' ? personalFmSongs.value : privateContentSongs.value
-    const incoming = await (key === 'fm' ? fetchPersonalFm() : fetchPrivateContent())
+    const current = recommendationTracks.value[key] ?? []
+    const incoming = await providerStore.callProvider<Track[]>(providerId, method)
     let additions = appendUniqueTracks(current, incoming)
-    if (key === 'radar' && additions.length === 0) {
-      additions = appendUniqueTracks(current, await fetchPersonalFm())
+    if (
+      key === 'radar' &&
+      additions.length === 0 &&
+      providerInfo.supportedMethods.includes('fetchPersonalFm')
+    ) {
+      additions = appendUniqueTracks(
+        current,
+        await providerStore.callProvider<Track[]>(providerId, 'fetchPersonalFm')
+      )
     }
     if (additions.length === 0) {
       personalizedStreamRetryAfter[key] = Date.now() + PERSONALIZED_STREAM_RETRY_COOLDOWN_MS
@@ -423,8 +514,7 @@ async function loadMorePersonalizedStream(
     }
 
     const merged = [...current, ...additions]
-    if (key === 'fm') personalFmSongs.value = merged
-    else privateContentSongs.value = merged
+    recommendationTracks.value = { ...recommendationTracks.value, [key]: merged }
 
     const detail = currentDetail.value
     if (detail?.type === 'rec' && detail.section.key === key) {
@@ -496,13 +586,6 @@ const {
   downloadCloudSong,
   cancelCloudTransfer,
   removeCloudSelectedFile,
-  fetchRecommendSongs,
-  fetchRecommendPlaylists,
-  fetchPlaylistCategories,
-  fetchDiscoveryPlaylists,
-  fetchHighQualityPlaylists,
-  fetchPersonalFm,
-  fetchPrivateContent,
   searchSongs,
   searchPlaylists,
   searchArtists,
@@ -735,10 +818,64 @@ const {
   playTrack
 })
 
+const discoveryProviderId = computed(() => activeProvider.value)
+
+async function fetchProviderPlaylistCategories(
+  providerId: string
+): Promise<MediaProviderPlaylistCatalogue> {
+  if (
+    !providerStore.getProvider(providerId)?.supportedMethods.includes('fetchPlaylistCategories')
+  ) {
+    return { hotTags: [], groups: [] }
+  }
+  return providerStore.callProvider<MediaProviderPlaylistCatalogue>(
+    providerId,
+    'fetchPlaylistCategories'
+  )
+}
+
+async function fetchProviderDiscoveryPlaylists(
+  providerId: string,
+  cat?: string,
+  order?: 'hot' | 'new',
+  limit?: number,
+  offset?: number
+): Promise<MediaProviderDiscoveryPlaylistPage> {
+  if (
+    !providerStore.getProvider(providerId)?.supportedMethods.includes('fetchDiscoveryPlaylists')
+  ) {
+    throw new Error(`${providerStore.getProvider(providerId)?.name ?? providerId} 暂不支持发现歌单`)
+  }
+  return providerStore.callProvider<MediaProviderDiscoveryPlaylistPage>(
+    providerId,
+    'fetchDiscoveryPlaylists',
+    [cat, order, limit, offset]
+  )
+}
+
+async function fetchProviderHighQualityPlaylists(
+  providerId: string,
+  cat?: string,
+  limit?: number,
+  before?: number
+): Promise<MediaProviderHighQualityPlaylistPage> {
+  if (
+    !providerStore.getProvider(providerId)?.supportedMethods.includes('fetchHighQualityPlaylists')
+  ) {
+    throw new Error(`${providerStore.getProvider(providerId)?.name ?? providerId} 暂不支持精品歌单`)
+  }
+  return providerStore.callProvider<MediaProviderHighQualityPlaylistPage>(
+    providerId,
+    'fetchHighQualityPlaylists',
+    [cat, limit, before]
+  )
+}
+
 const discovery = useStreamingDiscovery({
-  fetchPlaylistCategories,
-  fetchDiscoveryPlaylists,
-  fetchHighQualityPlaylists
+  providerId: discoveryProviderId,
+  fetchPlaylistCategories: fetchProviderPlaylistCategories,
+  fetchDiscoveryPlaylists: fetchProviderDiscoveryPlaylists,
+  fetchHighQualityPlaylists: fetchProviderHighQualityPlaylists
 })
 
 // Like button state
@@ -767,8 +904,18 @@ async function onLikeTrack(track: Track, event: MouseEvent): Promise<void> {
 const activeProfile = computed(() =>
   isExternalActive.value ? (activeExternalState.value?.profile ?? null) : profile.value
 )
-const activeLoggedIn = computed(() =>
-  isExternalActive.value ? (activeExternalState.value?.loggedIn ?? false) : isLoggedIn.value
+const activeProviderRequiresLogin = computed(
+  () => activeProviderInfo.value?.capabilities.includes('login') === true
+)
+const activeLoggedIn = computed(() => {
+  if (!activeProviderRequiresLogin.value) return true
+  return isExternalActive.value ? (activeExternalState.value?.loggedIn ?? false) : isLoggedIn.value
+})
+const activeProviderSupportsCategories = computed(
+  () => activeProviderInfo.value?.supportedMethods.includes('fetchPlaylistCategories') === true
+)
+const activeProviderSupportsHighQuality = computed(
+  () => activeProviderInfo.value?.supportedMethods.includes('fetchHighQualityPlaylists') === true
 )
 const activeProviderAvailable = computed(() =>
   isExternalActive.value
@@ -1042,7 +1189,6 @@ const detailFollowButtonIcon = computed(() =>
 )
 
 function selectTab(key: StreamingTab): void {
-  if (isExternalActive.value && key !== 'library' && key !== 'recent') return
   if (activeTab.value !== key) {
     const oldIndex = getStreamingTabIndex(visibleTabs.value, activeTab.value)
     const newIndex = getStreamingTabIndex(visibleTabs.value, key)
@@ -1107,6 +1253,19 @@ function selectSidebarItem(item: SidebarItem, options: { persistProvider?: boole
       selectProvider(provider, persistProvider)
     }
     selectTab('library')
+    return
+  }
+  if (item.provider === 'shared' && item.tab) {
+    const providers =
+      item.tab === 'home'
+        ? homeProviderOptions.value
+        : item.tab === 'discover'
+          ? discoveryProviderOptions.value
+          : []
+    if (!providers.some((provider) => provider.id === activeProvider.value) && providers[0]) {
+      selectProvider(providers[0].id, false)
+    }
+    selectTab(item.tab)
     return
   }
   if (item.tab === 'cloud') {
@@ -1245,6 +1404,19 @@ function ensureVisibleSidebarSelection(): void {
     clearSearch()
     return
   }
+  const surfaceProviders =
+    activeTab.value === 'home'
+      ? homeProviderOptions.value
+      : activeTab.value === 'discover'
+        ? discoveryProviderOptions.value
+        : []
+  if (
+    surfaceProviders.length > 0 &&
+    !surfaceProviders.some((provider) => provider.id === activeProvider.value)
+  ) {
+    selectProvider(surfaceProviders[0].id, false)
+    return
+  }
   if (sidebarItems.value.some((item) => isSidebarItemActive(item))) {
     return
   }
@@ -1306,6 +1478,12 @@ async function refreshExternalProviderState(id: string): Promise<void> {
     state.likedPlaylist = null
     state.pinnedPlaylistIds = []
     state.libraryLoaded = false
+    state.libraryError = ''
+    return
+  }
+  if (!providerStore.getProvider(id)?.capabilities.includes('login')) {
+    state.loggedIn = true
+    state.profile = null
     state.libraryError = ''
     return
   }
@@ -2829,7 +3007,13 @@ watch(
 )
 
 watch(
-  () => getSidebarItemsSignature(sidebarItems.value),
+  () =>
+    [
+      getSidebarItemsSignature(sidebarItems.value),
+      activeTab.value,
+      homeProviderOptions.value.map((provider) => provider.id).join(','),
+      discoveryProviderOptions.value.map((provider) => provider.id).join(',')
+    ].join('|'),
   () => {
     ensureVisibleSidebarSelection()
   },
@@ -2844,50 +3028,79 @@ watch(activeProvider, async (provider, oldProvider) => {
   if (provider === oldProvider) return
   resetDetail()
   clearSearch()
-  if (provider === NCM_PROVIDER_ID) {
-    if (!ncmNavigationAvailable.value) return
-    if (activeTab.value === 'home' && isLoggedIn.value) {
-      loadRecommendations()
-    } else if (activeTab.value === 'discover') {
-      void discovery.ensureLoaded()
-    } else if (activeTab.value === 'library') {
-      await ensureLibraryLoaded()
-    } else if (activeTab.value === 'cloud' && isLoggedIn.value && cloudSongs.value.length === 0) {
-      await refreshCloudSongs().catch(() => undefined)
-    }
+  recommendationRequestId += 1
+  recommendationProviderId.value = ''
+  homeSectionDefinitions.value = []
+  recommendationTracks.value = {}
+  recommendPlaylists.value = []
+  if (activeTab.value === 'home' && !providerSupportsHome(provider)) {
+    const fallback = homeProviderOptions.value[0]?.id
+    if (fallback && fallback !== provider) fallbackProvider.value = fallback
     return
   }
-  // External provider: default to the library tab and load its state.
-  const providerInfo = providerStore.getProvider(provider)
-  if (providerInfo?.ui?.streamingLibraryTab !== false) {
-    activeTab.value = 'library'
+  if (activeTab.value === 'discover' && !providerSupportsDiscovery(provider)) {
+    const fallback = discoveryProviderOptions.value[0]?.id
+    if (fallback && fallback !== provider) fallbackProvider.value = fallback
+    return
   }
-  await refreshExternalProviderState(provider)
-  await ensureExternalLibraryLoaded(provider)
+  if (
+    provider !== NCM_PROVIDER_ID &&
+    activeProviderRequiresLogin.value &&
+    activeTab.value !== 'discover'
+  ) {
+    await refreshExternalProviderState(provider)
+  }
+  if (activeTab.value === 'home') {
+    await loadRecommendations()
+  } else if (activeTab.value === 'discover') {
+    await discovery.ensureLoaded()
+  } else if (activeTab.value === 'library') {
+    if (provider === NCM_PROVIDER_ID) await ensureLibraryLoaded()
+    else await ensureExternalLibraryLoaded(provider)
+  } else if (
+    activeTab.value === 'cloud' &&
+    provider === NCM_PROVIDER_ID &&
+    isLoggedIn.value &&
+    cloudSongs.value.length === 0
+  ) {
+    await refreshCloudSongs().catch(() => undefined)
+  }
 })
 
 watch(activeTab, async (tab) => {
-  if (isExternalActive.value) {
-    if (tab !== 'library') {
-      activeTab.value = 'library'
+  if (tab === 'home') {
+    if (!providerSupportsHome(activeProvider.value)) {
+      const fallback = homeProviderOptions.value[0]?.id
+      if (fallback) fallbackProvider.value = fallback
       return
     }
-    const state = ensureExternalState(activeProvider.value)
-    if (state.loggedIn) await ensureExternalLibraryLoaded(activeProvider.value)
+    if (activeLoggedIn.value) await loadRecommendations()
     return
   }
-  if (!ncmNavigationAvailable.value) return
-  if (tab === 'home' && isLoggedIn.value) {
-    loadRecommendations()
-  }
   if (tab === 'discover') {
-    // Discovery browsing is anonymous-capable — no login gate here.
-    void discovery.ensureLoaded()
+    if (!providerSupportsDiscovery(activeProvider.value)) {
+      const fallback = discoveryProviderOptions.value[0]?.id
+      if (fallback) fallbackProvider.value = fallback
+      return
+    }
+    await discovery.ensureLoaded()
   }
-  if (tab === 'library' && isLoggedIn.value) {
-    await ensureLibraryLoaded()
+  if (tab === 'library') {
+    if (activeProvider.value === NCM_PROVIDER_ID) {
+      if (isLoggedIn.value) await ensureLibraryLoaded()
+    } else {
+      const state = ensureExternalState(activeProvider.value)
+      if (!activeProviderRequiresLogin.value || state.loggedIn) {
+        await ensureExternalLibraryLoaded(activeProvider.value)
+      }
+    }
   }
-  if (tab === 'cloud' && isLoggedIn.value && cloudSongs.value.length === 0) {
+  if (
+    tab === 'cloud' &&
+    activeProvider.value === NCM_PROVIDER_ID &&
+    isLoggedIn.value &&
+    cloudSongs.value.length === 0
+  ) {
     await refreshCloudSongs().catch(() => undefined)
   }
 })
@@ -2898,20 +3111,22 @@ watch(
     if (!loggedIn) {
       resetDetail()
       likedCount.value = null
-      dailySongs.value = []
-      personalFmSongs.value = []
-      privateContentSongs.value = []
+      if (activeProvider.value === NCM_PROVIDER_ID) {
+        recommendationProviderId.value = ''
+        homeSectionDefinitions.value = []
+        recommendationTracks.value = {}
+        recommendPlaylists.value = []
+      }
       return
     }
-    if (isExternalActive.value) return
     if (!ncmNavigationAvailable.value) return
-    if (activeTab.value === 'home') {
-      loadRecommendations()
+    if (activeProvider.value === NCM_PROVIDER_ID && activeTab.value === 'home') {
+      await loadRecommendations()
     }
-    if (activeTab.value === 'library') {
+    if (activeProvider.value === NCM_PROVIDER_ID && activeTab.value === 'library') {
       await ensureLibraryLoaded(true)
     }
-    if (activeTab.value === 'cloud') {
+    if (activeProvider.value === NCM_PROVIDER_ID && activeTab.value === 'cloud') {
       await refreshCloudSongs().catch(() => undefined)
     }
   }
@@ -2921,24 +3136,23 @@ async function refreshStreamingSurface(): Promise<void> {
   if (activeProvider.value === NCM_PROVIDER_ID) {
     if (!ncmNavigationAvailable.value) return
     await checkLogin()
-    if (activeTab.value === 'home' && isLoggedIn.value) {
-      loadRecommendations()
-    } else if (activeTab.value === 'discover') {
-      void discovery.ensureLoaded()
-    } else if (activeTab.value === 'library') {
-      await ensureLibraryLoaded()
-    } else if (activeTab.value === 'cloud' && isLoggedIn.value && cloudSongs.value.length === 0) {
-      await refreshCloudSongs().catch(() => undefined)
-    }
-    return
+  } else if (activeTab.value !== 'discover') {
+    await refreshExternalProviderState(activeProvider.value)
   }
-  // External provider active (e.g. returning from a successful login on the
-  // login page): re-check login state and load the library. The provider id
-  // didn't change, so the activeProvider watcher won't fire — we must refresh
-  // explicitly here, otherwise a just-completed login wouldn't be reflected.
-  await refreshExternalProviderState(activeProvider.value)
-  if (activeExternalState.value?.loggedIn) {
-    await ensureExternalLibraryLoaded(activeProvider.value)
+
+  if (activeTab.value === 'home' && activeLoggedIn.value) {
+    await loadRecommendations()
+  } else if (activeTab.value === 'discover') {
+    await discovery.ensureLoaded()
+  } else if (activeTab.value === 'library') {
+    await ensureLibraryLoaded()
+  } else if (
+    activeTab.value === 'cloud' &&
+    activeProvider.value === NCM_PROVIDER_ID &&
+    isLoggedIn.value &&
+    cloudSongs.value.length === 0
+  ) {
+    await refreshCloudSongs().catch(() => undefined)
   }
 }
 
@@ -3068,18 +3282,27 @@ onMounted(async () => {
           />
 
           <StreamingHome
-            v-else-if="activeTab === 'home' && !currentDetail && activeProviderAvailable"
-            :is-logged-in="isLoggedIn"
+            v-else-if="
+              activeTab === 'home' &&
+              !currentDetail &&
+              activeProviderAvailable &&
+              providerSupportsHome(activeProvider)
+            "
+            :provider-id="activeProvider"
+            :provider-label="activeProviderLabel"
+            :provider-options="homeProviderOptions"
+            :is-logged-in="activeLoggedIn"
             :recs-loading="recsLoading"
             :recs-error="recsError"
             :rec-sections="recSections"
             :recommend-playlists="recommendPlaylists"
             :current-track-id="currentTrack?.id ?? null"
-            @load-recommendations="loadRecommendations"
+            @load-recommendations="loadRecommendations(true)"
             @open-rec-section="openRecSection"
             @open-playlist="openPlaylist"
             @play-track="playHomeTrack"
             @request-login="emit('login', activeProvider)"
+            @select-provider="selectProvider"
           />
 
           <StreamingDiscovery
@@ -3087,8 +3310,13 @@ onMounted(async () => {
               activeTab === 'discover' &&
               !currentDetail &&
               activeProviderAvailable &&
-              !isExternalActive
+              providerSupportsDiscovery(activeProvider)
             "
+            :provider-id="activeProvider"
+            :provider-label="activeProviderLabel"
+            :provider-options="discoveryProviderOptions"
+            :supports-categories="activeProviderSupportsCategories"
+            :supports-high-quality="activeProviderSupportsHighQuality"
             :catalogue="discovery.catalogue.value"
             :catalogue-loading="discovery.catalogueLoading.value"
             :catalogue-error="discovery.catalogueError.value"
@@ -3111,6 +3339,7 @@ onMounted(async () => {
             @load-more="discovery.loadMore"
             @open-playlist="openPlaylist"
             @retry="discovery.retry"
+            @select-provider="selectProvider"
           />
 
           <StreamingPlaceholder

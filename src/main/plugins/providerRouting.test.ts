@@ -25,6 +25,7 @@ type TestRunningProvider = {
     capabilities: Array<
       'search' | 'playbackUrl' | 'lyrics' | 'cover' | 'playlist' | 'library' | 'login' | 'download'
     >
+    supportedMethods?: Array<'fetchPlaylistTracks' | 'fetchDiscoveryPlaylists'>
   }>
 }
 
@@ -89,6 +90,18 @@ test('routes download lifecycle calls only to providers declaring download capab
       downloadProvider.pluginId
     )
   }
+})
+
+test('actual provider methods narrow broad capabilities when supplied by the host', () => {
+  const provider: TestRunningProvider['providers'][number] = {
+    id: 'playlist-only',
+    name: 'Playlist Only',
+    capabilities: ['playlist'],
+    supportedMethods: ['fetchPlaylistTracks']
+  }
+
+  assert.equal(providerSupportsMethod(provider, 'fetchPlaylistTracks'), true)
+  assert.equal(providerSupportsMethod(provider, 'fetchDiscoveryPlaylists'), false)
 })
 
 test('prefers the latest registration when multiple plugins expose the same provider id', () => {
@@ -239,11 +252,12 @@ test('bundled provider missing-method errors mention restarting the app', () => 
   assert.match(source, /内置音源插件尚未加载最新代码，请重启应用/)
 })
 
-test('plugin host exposes account login provider methods', () => {
+test('plugin host exposes account login methods and reports its actual handler set', () => {
   const source = readFileSync(new URL('./host.ts', import.meta.url), 'utf8')
 
   assert.match(source, /'sendCaptcha'/)
   assert.match(source, /'loginByPhonePassword'/)
   assert.match(source, /'loginByPhoneCaptcha'/)
   assert.match(source, /'loginByEmailPassword'/)
+  assert.match(source, /supportedMethods: Object\.keys\(handlers\)/)
 })

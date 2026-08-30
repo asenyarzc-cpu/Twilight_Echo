@@ -8,6 +8,7 @@ test('provider store exposes provider health metadata from the host', () => {
   assert.match(source, /export interface ProviderHealth/)
   assert.match(source, /health\?: ProviderHealth/)
   assert.match(source, /health: provider\.health as ProviderHealth \| undefined/)
+  assert.match(source, /supportedMethods: provider\.supportedMethods \?\? \[\]/)
 })
 
 test('streaming library surfaces provider health diagnostics to users', () => {

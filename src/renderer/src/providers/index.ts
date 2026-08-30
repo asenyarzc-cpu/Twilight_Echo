@@ -2,7 +2,10 @@ import { MediaProviderRegistry, toProviderIpcArgs } from './mediaProvider.ts'
 import type {
   MediaProviderArtistSummary,
   MediaProviderAlbumSummary,
+  MediaProviderDiscoveryPlaylistPage,
   MediaProviderHealth,
+  MediaProviderHighQualityPlaylistPage,
+  MediaProviderPlaylistCatalogue,
   MediaProviderPlaylistSummary,
   MediaProviderProfile,
   MediaProviderSearchResult,
@@ -113,6 +116,9 @@ export async function syncPluginProviders(): Promise<void> {
             }
           }
         }
+        type SupportedMethod = NonNullable<(typeof provider)['supportedMethods']>[number]
+        const supports = (method: SupportedMethod): boolean =>
+          provider.supportedMethods?.includes(method) === true
         mediaProviders.register({
           id: provider.id,
           name: provider.name,
@@ -197,16 +203,36 @@ export async function syncPluginProviders(): Promise<void> {
           fetchLikedTracks: provider.capabilities.includes('library')
             ? (force) => callProvider<Track[]>('fetchLikedTracks', [force])
             : undefined,
-          fetchRecommendSongs: provider.capabilities.includes('library')
+          fetchRecommendSongs: supports('fetchRecommendSongs')
             ? () => callProvider<Track[]>('fetchRecommendSongs')
             : undefined,
-          fetchRecommendPlaylists: provider.capabilities.includes('library')
+          fetchRecommendPlaylists: supports('fetchRecommendPlaylists')
             ? () => callProvider<MediaProviderPlaylistSummary[]>('fetchRecommendPlaylists')
             : undefined,
-          fetchPersonalFm: provider.capabilities.includes('library')
+          fetchPlaylistCategories: supports('fetchPlaylistCategories')
+            ? () => callProvider<MediaProviderPlaylistCatalogue>('fetchPlaylistCategories')
+            : undefined,
+          fetchDiscoveryPlaylists: supports('fetchDiscoveryPlaylists')
+            ? (cat, order, limit, offset) =>
+                callProvider<MediaProviderDiscoveryPlaylistPage>('fetchDiscoveryPlaylists', [
+                  cat,
+                  order,
+                  limit,
+                  offset
+                ])
+            : undefined,
+          fetchHighQualityPlaylists: supports('fetchHighQualityPlaylists')
+            ? (cat, limit, before) =>
+                callProvider<MediaProviderHighQualityPlaylistPage>('fetchHighQualityPlaylists', [
+                  cat,
+                  limit,
+                  before
+                ])
+            : undefined,
+          fetchPersonalFm: supports('fetchPersonalFm')
             ? () => callProvider<Track[]>('fetchPersonalFm')
             : undefined,
-          fetchPrivateContent: provider.capabilities.includes('library')
+          fetchPrivateContent: supports('fetchPrivateContent')
             ? () => callProvider<Track[]>('fetchPrivateContent')
             : undefined,
           fetchArtistTopSongs: provider.capabilities.includes('search')

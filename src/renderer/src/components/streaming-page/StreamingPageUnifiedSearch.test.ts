@@ -7,6 +7,11 @@ import type { Track } from '../../types/music.ts'
 
 const source = readFileSync(new URL('../StreamingPage.vue', import.meta.url), 'utf8')
 const homeSource = readFileSync(new URL('../StreamingHome.vue', import.meta.url), 'utf8')
+const discoverySource = readFileSync(new URL('../StreamingDiscovery.vue', import.meta.url), 'utf8')
+const providerSwitcherSource = readFileSync(
+  new URL('./StreamingProviderSwitcher.vue', import.meta.url),
+  'utf8'
+)
 const { executeStreamingBatchRemoval, removeStreamingProviderFavorite } = (await import(
   new URL('./streamingBatchRemoval.ts', import.meta.url).href
 )) as typeof import('./streamingBatchRemoval.ts')
@@ -143,12 +148,31 @@ test('liked playback resolves the complete provider list instead of queueing onl
   assert.match(source, /playStreamingTrack\(tracks\[0\], tracks\)/)
 })
 
-test('recommendations retry missing sections without letting populated FM block radar', () => {
-  assert.match(source, /const needsDaily = dailySongs\.value\.length === 0/)
-  assert.match(source, /const needsFm = personalFmSongs\.value\.length === 0/)
-  assert.match(source, /const needsRadar = privateContentSongs\.value\.length === 0/)
-  assert.match(source, /const needsPlaylists = recommendPlaylists\.value\.length === 0/)
-  assert.match(source, /needsRadar \? fetchPrivateContent\(\)/)
+test('recommendations load declared provider sections and fence stale source results', () => {
+  assert.match(source, /provider\?\.ui\?\.streamingSections/)
+  assert.match(source, /supportedMethods\.has\(section\.method\)/)
+  assert.match(source, /Promise\.allSettled\(/)
+  assert.match(source, /providerStore\.callProvider<Track\[]>\(providerId, section\.method/)
+  assert.match(
+    source,
+    /requestId !== recommendationRequestId \|\| providerId !== activeProvider\.value/
+  )
+  assert.match(source, /const surfaceProviders =\s*activeTab\.value === 'home'/)
+  assert.match(source, /selectProvider\(surfaceProviders\[0\]\.id, false\)/)
+})
+
+test('streaming home and discovery expose the shared provider switcher', () => {
+  assert.match(providerSwitcherSource, /<select/)
+  assert.match(providerSwitcherSource, /emit\('change', providerId\)/)
+  assert.match(providerSwitcherSource, /v-if="options\.length > 1"/)
+  assert.match(providerSwitcherSource, /class="provider-switcher-control is-static"/)
+  assert.match(providerSwitcherSource, /inset:\s*0/)
+  assert.match(providerSwitcherSource, /opacity:\s*0/)
+  assert.match(homeSource, /StreamingProviderSwitcher/)
+  assert.match(discoverySource, /StreamingProviderSwitcher/)
+  assert.match(source, /:provider-options="homeProviderOptions"/)
+  assert.match(source, /:provider-options="discoveryProviderOptions"/)
+  assert.match(source, /@select-provider="selectProvider"/)
 })
 
 test('private FM and radar use a session-fenced queue stream in shuffle mode', () => {
@@ -156,8 +180,8 @@ test('private FM and radar use a session-fenced queue stream in shuffle mode', (
   assert.match(source, /async function loadMorePersonalizedStream/)
   assert.match(source, /session: PersonalizedStreamSession \| null = null/)
   assert.match(source, /let additions = appendUniqueTracks\(current, incoming\)/)
-  assert.match(source, /key === 'radar' && additions\.length === 0/)
-  assert.match(source, /appendUniqueTracks\(current, await fetchPersonalFm\(\)\)/)
+  assert.match(source, /key === 'radar' &&\s*additions\.length === 0/)
+  assert.match(source, /providerStore\.callProvider<Track\[]>\(providerId,\s*'fetchPersonalFm'\)/)
   assert.match(source, /if \(session\) appendPersonalizedStreamTracks\(session, additions\)/)
   assert.match(source, /playTrack\(track, trackQueue\)[\s\S]*startPersonalizedStream\(streamKey\)/)
   assert.match(source, /personalizedStreamRemaining/)

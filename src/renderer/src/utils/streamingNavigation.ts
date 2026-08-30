@@ -4,11 +4,21 @@ export interface StreamingNavigationProvider {
   id: string
   name: string
   capabilities: string[]
+  supportedMethods?: string[]
   ui?: {
     icon?: string
+    color?: string
+    streamingSections?: Array<{ method: string }>
     streamingLibraryTab?: boolean
     unifiedLibrary?: boolean
   }
+}
+
+export interface StreamingProviderOption {
+  id: string
+  name: string
+  icon: string
+  color?: string
 }
 
 export interface StreamingSidebarItem {
@@ -20,6 +30,72 @@ export interface StreamingSidebarItem {
 }
 
 const NCM_PROVIDER_ID = 'ncm'
+const SHARED_SURFACE_PROVIDER_ID = 'shared'
+
+function getAvailableProviders({
+  ncmAvailable,
+  providers
+}: {
+  ncmAvailable: boolean
+  providers: StreamingNavigationProvider[]
+}): StreamingNavigationProvider[] {
+  const available = providers.filter((provider) => provider.id !== NCM_PROVIDER_ID || ncmAvailable)
+  if (ncmAvailable && !available.some((provider) => provider.id === NCM_PROVIDER_ID)) {
+    available.unshift({
+      id: NCM_PROVIDER_ID,
+      name: '网易云音乐',
+      capabilities: ['library', 'playlist'],
+      supportedMethods: [
+        'fetchRecommendSongs',
+        'fetchRecommendPlaylists',
+        'fetchPlaylistCategories',
+        'fetchDiscoveryPlaylists',
+        'fetchHighQualityPlaylists',
+        'fetchPersonalFm',
+        'fetchPrivateContent'
+      ],
+      ui: {
+        icon: 'pi pi-cloud',
+        streamingSections: [
+          { method: 'fetchRecommendSongs' },
+          { method: 'fetchPersonalFm' },
+          { method: 'fetchPrivateContent' }
+        ]
+      }
+    })
+  }
+  return available
+}
+
+function toProviderOption(provider: StreamingNavigationProvider): StreamingProviderOption {
+  return {
+    id: provider.id,
+    name: provider.id === NCM_PROVIDER_ID ? '网易云音乐' : provider.name,
+    icon: provider.ui?.icon || 'pi pi-music',
+    color: provider.ui?.color
+  }
+}
+
+export function getStreamingHomeProviders(options: {
+  ncmAvailable: boolean
+  providers: StreamingNavigationProvider[]
+}): StreamingProviderOption[] {
+  return getAvailableProviders(options)
+    .filter((provider) => {
+      const methods = new Set(provider.supportedMethods ?? [])
+      return provider.ui?.streamingSections?.some((section) => methods.has(section.method)) === true
+    })
+    .map(toProviderOption)
+}
+
+export function getStreamingDiscoveryProviders(options: {
+  ncmAvailable: boolean
+  providers: StreamingNavigationProvider[]
+}): StreamingProviderOption[] {
+  return getAvailableProviders(options)
+    .filter((provider) => provider.supportedMethods?.includes('fetchDiscoveryPlaylists') === true)
+    .map(toProviderOption)
+}
 
 export function getUnifiedLibraryProviders({
   ncmAvailable,
@@ -53,17 +129,19 @@ export function buildStreamingSidebarItems({
   providers: StreamingNavigationProvider[]
 }): StreamingSidebarItem[] {
   const items: StreamingSidebarItem[] = []
-  if (ncmAvailable) {
+  if (getStreamingHomeProviders({ ncmAvailable, providers }).length > 0) {
     items.push({
       key: 'home',
-      provider: NCM_PROVIDER_ID,
+      provider: SHARED_SURFACE_PROVIDER_ID,
       label: '主页',
       icon: 'pi pi-sparkles',
       tab: 'home'
     })
+  }
+  if (getStreamingDiscoveryProviders({ ncmAvailable, providers }).length > 0) {
     items.push({
       key: 'discover',
-      provider: NCM_PROVIDER_ID,
+      provider: SHARED_SURFACE_PROVIDER_ID,
       label: '发现歌单',
       icon: 'pi pi-th-large',
       tab: 'discover'
@@ -131,6 +209,7 @@ export function isSidebarItemActiveForProvider({
   activeProvider: string
   activeTab: string
 }): boolean {
+  if (itemProvider === SHARED_SURFACE_PROVIDER_ID) return activeTab === itemKey
   if (itemProvider === 'ncm') {
     return activeProvider === 'ncm' && activeTab === itemKey
   }

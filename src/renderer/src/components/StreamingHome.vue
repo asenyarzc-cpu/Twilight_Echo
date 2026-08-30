@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Track } from '../types/music'
-import type { NcmPlaylistSummary } from '../stores/useNcmStore'
+import type { MediaProviderPlaylistSummary } from '../providers/mediaProvider'
+import type { StreamingProviderOption } from '../utils/streamingNavigation'
 import { useSettingsStore } from '../stores/useSettingsStore'
 import { resolveMotionMode } from '../../../shared/motion.ts'
 import CoverImg from './CoverImg.vue'
+import StreamingProviderSwitcher from './streaming-page/StreamingProviderSwitcher.vue'
 
 interface RecSection {
   key: string
@@ -19,27 +21,49 @@ interface CollageCover {
 }
 
 const props = defineProps<{
+  providerId: string
+  providerLabel: string
+  providerOptions: StreamingProviderOption[]
   isLoggedIn: boolean
   recsLoading: boolean
   recsError: string
   recSections: RecSection[]
-  recommendPlaylists: NcmPlaylistSummary[]
+  recommendPlaylists: MediaProviderPlaylistSummary[]
   currentTrackId?: string | null
 }>()
 
 const emit = defineEmits<{
   loadRecommendations: []
   openRecSection: [section: RecSection]
-  openPlaylist: [playlist: NcmPlaylistSummary]
+  openPlaylist: [playlist: MediaProviderPlaylistSummary]
   playTrack: [track: Track, queue: Track[]]
   requestLogin: []
+  selectProvider: [providerId: string]
 }>()
 
 // ─── Sections ───────────────────────────────────────────────────────────────
 
-const dailySection = computed(() => props.recSections.find((s) => s.key === 'daily') ?? null)
-const fmSection = computed(() => props.recSections.find((s) => s.key === 'fm') ?? null)
-const radarSection = computed(() => props.recSections.find((s) => s.key === 'radar') ?? null)
+const dailySection = computed(
+  () => props.recSections.find((section) => section.key === 'daily') ?? props.recSections[0] ?? null
+)
+const secondarySections = computed(() =>
+  props.recSections.filter((section) => section !== dailySection.value).slice(0, 2)
+)
+const fmSection = computed(
+  () =>
+    props.recSections.find((section) => section.key === 'fm') ?? secondarySections.value[0] ?? null
+)
+const radarSection = computed(
+  () =>
+    props.recSections.find((section) => section.key === 'radar') ??
+    secondarySections.value.find((section) => section !== fmSection.value) ??
+    null
+)
+const heroTitle = computed(() => dailySection.value?.title ?? '为你推荐')
+const isDailyHero = computed(() => dailySection.value?.key === 'daily')
+const heroEnglishTitle = computed(() =>
+  isDailyHero.value ? 'DAILY\u00a0MIX' : 'MADE\u00a0FOR\u00a0YOU'
+)
 
 const dateLabel = computed(() => {
   const now = new Date()
@@ -183,6 +207,13 @@ function playPersonalizedStream(section: RecSection | null): void {
 
 <template>
   <div class="home-view">
+    <div class="home-toolbar">
+      <StreamingProviderSwitcher
+        :model-value="providerId"
+        :options="providerOptions"
+        @change="emit('selectProvider', $event)"
+      />
+    </div>
     <!-- ── Signed-out invite ─────────────────────────────────────────── -->
     <section v-if="!isLoggedIn" class="hero-invite">
       <div class="invite-orb invite-orb-a" aria-hidden="true"></div>
@@ -190,14 +221,14 @@ function playPersonalizedStream(section: RecSection | null): void {
       <div class="invite-notes" aria-hidden="true">
         <i class="pi pi-headphones invite-note-icon"></i>
       </div>
-      <p class="invite-kicker">Twilight Echo · 在线漫游</p>
+      <p class="invite-kicker">{{ providerLabel }} · 在线漫游</p>
       <h2 class="invite-title">听见为你而来的音乐</h2>
       <p class="invite-desc">
-        登录网易云音乐后，这里会生成你的每日推荐、私人漫游与私人雷达——持续发现符合你口味的歌曲。
+        登录 {{ providerLabel }} 后，这里会加载此音源提供的个性化推荐与精选歌单。
       </p>
       <button type="button" class="invite-cta" @click="emit('requestLogin')">
         <i class="pi pi-user"></i>
-        登录网易云音乐
+        登录 {{ providerLabel }}
       </button>
     </section>
 
@@ -230,7 +261,7 @@ function playPersonalizedStream(section: RecSection | null): void {
     <!-- ── Content ───────────────────────────────────────────────────── -->
     <div v-else class="home-flow">
       <!-- Hero: daily mix -->
-      <section class="hero" aria-label="每日推荐">
+      <section v-if="dailySection" class="hero" :aria-label="heroTitle">
         <div class="hero-ambient" aria-hidden="true">
           <CoverImg
             v-if="ambientCover"
@@ -244,15 +275,17 @@ function playPersonalizedStream(section: RecSection | null): void {
         <div class="hero-inner">
           <div class="hero-copy">
             <p class="hero-kicker">
-              <span class="hero-kicker-day">{{ dayNumber }}</span>
+              <span class="hero-kicker-day">{{ isDailyHero ? dayNumber : '荐' }}</span>
               <span class="hero-kicker-meta">
-                <span>{{ dateLabel }}</span>
-                <span class="hero-kicker-sub">每日 06:00 焕新</span>
+                <span>{{ isDailyHero ? dateLabel : providerLabel }}</span>
+                <span class="hero-kicker-sub">
+                  {{ isDailyHero ? '每日 06:00 焕新' : '个性化内容持续更新' }}
+                </span>
               </span>
             </p>
-            <h1 class="hero-title">每日推荐</h1>
-            <p class="hero-title-en" aria-hidden="true">DAILY&nbsp;MIX</p>
-            <p class="hero-desc">从你的听歌足迹里长出来的今日歌单，每一首都有它出现的理由。</p>
+            <h1 class="hero-title">{{ heroTitle }}</h1>
+            <p class="hero-title-en" aria-hidden="true">{{ heroEnglishTitle }}</p>
+            <p class="hero-desc">来自 {{ providerLabel }} 的个性化内容，随你的收听偏好持续更新。</p>
             <div class="hero-actions">
               <button type="button" class="hero-play" @click="playDailyAll">
                 <i class="pi pi-play"></i>
@@ -267,7 +300,7 @@ function playPersonalizedStream(section: RecSection | null): void {
           <button
             type="button"
             class="hero-stage"
-            aria-label="打开每日推荐"
+            :aria-label="`打开${heroTitle}`"
             @click="openDaily"
             @mouseenter="stopCollageRotation"
             @mouseleave="startCollageRotation"
@@ -299,7 +332,7 @@ function playPersonalizedStream(section: RecSection | null): void {
       </section>
 
       <!-- Duo: FM + radar -->
-      <section class="duo" aria-label="电台推荐">
+      <section v-if="fmSection || radarSection" class="duo" aria-label="电台推荐">
         <button
           v-if="fmSection"
           type="button"
@@ -323,8 +356,8 @@ function playPersonalizedStream(section: RecSection | null): void {
             </span>
           </span>
           <span class="duo-copy">
-            <span class="duo-name">私人漫游</span>
-            <span class="duo-sub">Roaming FM · 随心而行的电台</span>
+            <span class="duo-name">{{ fmSection.title }}</span>
+            <span class="duo-sub">{{ providerLabel }} · 为你持续推荐</span>
           </span>
           <span class="duo-arrow" aria-hidden="true"><i class="pi pi-arrow-right"></i></span>
         </button>
@@ -352,19 +385,18 @@ function playPersonalizedStream(section: RecSection | null): void {
             </span>
           </span>
           <span class="duo-copy">
-            <span class="duo-name">私人雷达</span>
-            <span class="duo-sub">Private Radar · 捕捉你错过的好歌</span>
+            <span class="duo-name">{{ radarSection.title }}</span>
+            <span class="duo-sub">{{ providerLabel }} · 发现更多好音乐</span>
           </span>
           <span class="duo-arrow" aria-hidden="true"><i class="pi pi-arrow-right"></i></span>
         </button>
       </section>
 
-      <!-- Chart: quick taste of today's mix -->
-      <section v-if="chartTracks.length > 0" class="chart" aria-label="今日精选速览">
+      <section v-if="chartTracks.length > 0" class="chart" :aria-label="`${heroTitle}速览`">
         <header class="section-head">
           <div class="section-head-copy">
-            <h3>今日为你精选</h3>
-            <p>点一首就开始 · 队列自动接上整份每日推荐</p>
+            <h3>{{ providerLabel }} 为你精选</h3>
+            <p>点一首就开始 · 队列自动接上整份推荐</p>
           </div>
           <button type="button" class="section-more" @click="openDaily">
             完整歌单
@@ -409,7 +441,7 @@ function playPersonalizedStream(section: RecSection | null): void {
       <section class="shelf" aria-label="精选歌单">
         <header class="section-head">
           <div class="section-head-copy">
-            <h3>精选歌单</h3>
+            <h3>{{ providerLabel }} 精选歌单</h3>
             <p>为你挑选 {{ recommendPlaylists.length }} 份歌单</p>
           </div>
         </header>
@@ -457,6 +489,12 @@ function playPersonalizedStream(section: RecSection | null): void {
   --home-cyan-tint: color-mix(in srgb, var(--te-accent-cyan) 12%, transparent);
   --home-shadow: 0 18px 44px color-mix(in srgb, var(--te-neutral-900) 8%, transparent);
   --home-shadow-lift: 0 24px 56px color-mix(in srgb, var(--te-neutral-900) 13%, transparent);
+}
+
+.home-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 18px;
 }
 
 .home-flow {

@@ -64,6 +64,8 @@ renderer 位于 `src/renderer/src/`，入口是 `main.ts` 与 `App.vue`。主要
 - `stores/useMusicStore.ts`：本地曲库、艺术家/专辑/文件夹派生集合、歌单、收藏、曲库修复与元数据补全。
 - `stores/useProviderStore.ts`：插件 provider 注册状态、能力与健康度。
 - `providers/mediaProvider.ts`：统一 provider 抽象。
+- 流媒体主页以 `ui.streamingSections` 显式准入并校验 provider 实际注册的
+  `supportedMethods`；发现歌单以标准 playlist discovery 方法准入。两个页面仅在有多个可用音源时显示可交互切换器，切源会重置筛选并废弃旧请求。
 - `utils/logicalTrackModel.ts`：跨来源曲目的逻辑合并和优先级排序。
 
 ## 音频链路

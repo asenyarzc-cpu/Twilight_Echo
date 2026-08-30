@@ -71,6 +71,7 @@ export interface ProviderInfo {
   id: string
   name: string
   capabilities: string[]
+  supportedMethods: string[]
   ui?: ProviderUiMetadata
   health?: ProviderHealth
 }
@@ -110,6 +111,7 @@ async function syncProviders(): Promise<void> {
     id: provider.id,
     name: provider.name,
     capabilities: provider.capabilities,
+    supportedMethods: provider.supportedMethods ?? [],
     ui: provider.ui as ProviderUiMetadata | undefined,
     health: provider.health as ProviderHealth | undefined
   }))

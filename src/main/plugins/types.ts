@@ -221,6 +221,7 @@ export interface TwilightMediaProviderRegistration {
   id: string
   name: string
   capabilities: TwilightMediaProviderCapability[]
+  supportedMethods?: TwilightMediaProviderMethod[]
   ui?: TwilightProviderUiMetadata
   health?: TwilightMediaProviderHealth
 }
