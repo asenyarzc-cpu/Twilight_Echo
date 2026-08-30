@@ -3827,9 +3827,9 @@ html[data-window-transparent='on'][data-platform='linux'] .player-bar-liquid .pl
 /* ===== Mini shape =====
 
    Geometry is keyed off the shell's data attribute so it can out-specify preset
-   theme layouts. `theme-layouts/aurora-reference.css` rewrites the playbar with
+   theme layouts. A preset sheet rewrites the playbar from
    `html[…] body .player-bar-shell.menu-open .player-bar.player-bar` — (0,5,2) —
-   and sets exactly the properties mini needs (height, max-width, padding,
+   and sets at least the properties mini needs (height, max-width, padding,
    grid-template-columns). Repeating `.player-bar-mini` lands these rules at
    (0,6,0), which wins on class count without `!important`; going the
    `!important` route would force every mini rule below to match it.
@@ -4287,11 +4287,11 @@ html[data-theme='dark']
    the bar's edge: like mini it carries no border, because a 1px light line on a
    flat strip reads as an outline drawn around the bar rather than as its top.
 
-   Geometry repeats `.player-bar-compact` for the same reason mini does —
-   `theme-layouts/aurora-reference.css` rewrites the playbar with
-   `html[…] body .player-bar-shell .player-bar.player-bar`, (0,5,2), and sets
-   exactly the four properties below, so compact has to win all four on class
-   count without `!important`.
+   Geometry repeats `.player-bar-compact` for the same reason mini does — a
+   preset sheet rewrites the playbar from
+   `html[…] body .player-bar-shell .player-bar.player-bar` and sets exactly the
+   four properties below, so compact has to win all four on class count without
+   `!important`.
 
    Motion tiers need no variants here: base.css already collapses transition
    durations under html[data-te-motion='reduced'|'off'] for every element. */
@@ -4299,7 +4299,7 @@ html[data-theme='dark']
 /* Compact also claims the shell's insets, which mini never does: the strip is
    meant to sit against the window edges and four of the six preset layouts move
    the shell away from them. Three `.player-bar-shell` compounds plus the
-   attribute land at (0,4,0), beating aurora's
+   attribute land at (0,4,0), beating a preset sheet's
    `html[…] body .player-bar-shell.player-bar-shell` at (0,3,2) on class count.
 
    `html[data-te-shell-layout='custom']` in App.vue overrides this with
@@ -4313,9 +4313,8 @@ html[data-theme='dark']
 }
 
 /* Start after the open menu's real right edge, not after its width. A preset may
-   float the menu as an inset island — aurora-reference sets
-   `left: clamp(10px, 1.4vw, 22px)` — which puts its edge ~21px further right
-   than `--te-menu-width` implies, and a width-based `left` left the strip
+   inset the menu from the window edge, which puts its edge that much further
+   right than `--te-menu-width` implies, and a width-based `left` left the strip
    covering that gap. App.vue publishes the measured edge on the player wrapper;
    the token is the fallback for the first frame, before the measurement lands,
    and for any consumer that renders the bar without the clearance monitor. */

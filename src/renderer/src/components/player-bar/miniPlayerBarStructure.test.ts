@@ -244,7 +244,7 @@ test('mini geometry out-specifies the preset theme layouts without !important', 
   assert.ok(geometry, 'mini geometry rule must repeat the class to beat the preset layouts')
   const [rule] = geometry
   assert.doesNotMatch(rule, /!important/)
-  // aurora-reference rewrites exactly these four; mini has to win all of them.
+  // Every preset layout rewrites at least these four; mini has to win them.
   for (const property of ['height', 'max-width', 'padding', 'grid-template-columns']) {
     assert.match(rule, new RegExp(`\\b${property}\\s*:`), `mini geometry must set ${property}`)
   }
@@ -467,7 +467,7 @@ test('the playing-page flat strips stay dark even under the light app theme', ()
   // own copy of it.
   assert.match(
     playerBarCss,
-    /\.player-bar\.player-bar-glass\.player-bar-mini\.player-bar-mini\.player-bar-mini\s*\.player-right \.icon-btn[^{]*\{[^}]*color:\s*var\(--te-flat-bar-control\)/
+    /\.player-bar\.player-bar-glass\.player-bar-mini\.player-bar-mini\.player-bar-mini\s*\.player-right\s*\.icon-btn[^{]*\{[^}]*color:\s*var\(--te-flat-bar-control\)/
   )
 })
 

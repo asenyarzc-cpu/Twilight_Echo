@@ -106,13 +106,12 @@ test('the open local menu keeps its full height while the bar moves beside it', 
 
 /**
  * An edge-to-edge bar has to start after the menu's *right edge*, and CSS cannot
- * name that: `--te-menu-width` is the menu's width alone, so a preset that floats
- * the menu as an inset island (aurora-reference sets `left: clamp(10px, 1.4vw,
- * 22px)`) puts its edge that much further right, and a width-based `left` leaves
- * the bar covering the gap. Measured from the untransformed box so the value does
- * not sweep while the menu slides in.
+ * name that: `--te-menu-width` is the menu's width alone, so a preset that insets
+ * the menu from the window edge puts its edge that much further right, and a
+ * width-based `left` leaves the bar covering the gap. Measured from the
+ * untransformed box so the value does not sweep while the menu slides in.
  */
-test('the measured menu edge follows a preset that floats the menu inward', () => {
+test('the measured menu edge follows a preset that insets the menu', () => {
   function inlineEnd(options: Parameters<typeof installDom>[0]): number {
     installDom(options)
     const clearance = useSideMenuClearance({
@@ -128,7 +127,7 @@ test('the measured menu edge follows a preset that floats the menu inward', () =
 
   // Flush against the window edge: the edge is just the width.
   assert.equal(inlineEnd({}), 216)
-  // aurora-reference-style inset island: 21px further right than the token says.
+  // Inset menu: 21px further right than the token says.
   assert.equal(inlineEnd({ sideMenuInset: 21 }), 237)
   // A tucked-away bar must not suppress the edge — the menu is still there, and
   // the shape that reads this can be revealed again at any moment.

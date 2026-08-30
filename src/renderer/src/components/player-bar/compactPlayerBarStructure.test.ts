@@ -307,7 +307,7 @@ test('compact geometry out-specifies the preset theme layouts without !important
   assert.ok(geometry, 'compact geometry rule must repeat the class to beat the preset layouts')
   const [rule] = geometry
   assert.doesNotMatch(rule, /!important/)
-  // aurora-reference rewrites exactly these four; compact has to win all of them.
+  // Every preset layout rewrites at least these four; compact has to win them.
   for (const property of ['height', 'max-width', 'padding', 'grid-template-columns']) {
     assert.match(rule, new RegExp(`\\b${property}\\s*:`), `compact geometry must set ${property}`)
   }
@@ -411,9 +411,9 @@ test('compact pins the shell to the window edges harder than any preset layout d
   /**
    * The edge comes from the measured right edge of the open menu, not from
    * `--te-menu-width`. The token is only the menu's own width, so a preset that
-   * floats the menu inward as an island (aurora-reference insets it ~21px) puts
-   * its edge that much further right, and a width-based `left` left the bar
-   * covering the gap. The token stays as the fallback for the frames before the
+   * insets the menu from the window edge puts its edge that much further right,
+   * and a width-based `left` left the bar covering the gap. The token stays as
+   * the fallback for the frames before the
    * first measurement lands, and `max()` keeps whichever is further right.
    */
   assert.match(

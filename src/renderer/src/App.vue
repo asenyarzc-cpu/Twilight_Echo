@@ -924,9 +924,9 @@ useLiquidGlassEnvironment({
     </div>
     <!-- Where the open side menu's right edge actually lands, measured rather than
          derived: `--te-menu-width` is only the menu's width, and a preset layout
-         may float the menu inward as an island (aurora-reference insets it ~21px),
-         which leaves a width-based `left` short by that inset. The edge-to-edge
-         shapes start after this so they never cover the menu. -->
+         may inset the menu from the window edge, which leaves a width-based
+         `left` short by that inset. The edge-to-edge shapes start after this so
+         they never cover the menu. -->
     <div
       class="app-shell-player"
       :style="{ '--te-side-menu-inline-end': `${sideMenuInlineEnd}px` }"
