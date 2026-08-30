@@ -19,10 +19,10 @@
 #include "WasapiFormatNegotiator.h"
 
 #include <avrt.h>
-#include <functiondiscoverykeys_devpkey.h>
 #include <mmdeviceapi.h>
 #include <propidl.h>
 #include <propsys.h>
+#include <functiondiscoverykeys_devpkey.h>
 #include <wrl/client.h>
 #endif
 
