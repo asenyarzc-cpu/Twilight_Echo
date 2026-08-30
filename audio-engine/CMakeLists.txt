@@ -479,16 +479,16 @@ if(TAE_BUILD_TESTS)
     add_test(NAME twilight_wasapi_format_negotiator_unit COMMAND twilight_wasapi_format_negotiator_tests)
   endif()
 
-  add_executable(twilight_asio_backend_tests
-    tests/asio_backend_tests.cpp
-    output/asio/AsioBackend.cpp
-    output/asio/DeviceCapabilityCache.cpp
-    output/asio/MockAsioHost.cpp
-    output/asio/RealAsioHost.cpp
-    core/AudioTypes.cpp
-  )
-  target_include_directories(twilight_asio_backend_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   if(TAE_ASIO_AVAILABLE)
+    add_executable(twilight_asio_backend_tests
+      tests/asio_backend_tests.cpp
+      output/asio/AsioBackend.cpp
+      output/asio/DeviceCapabilityCache.cpp
+      output/asio/MockAsioHost.cpp
+      output/asio/RealAsioHost.cpp
+      core/AudioTypes.cpp
+    )
+    target_include_directories(twilight_asio_backend_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(twilight_asio_backend_tests PRIVATE TAE_ENABLE_ASIO=1)
     target_sources(twilight_asio_backend_tests PRIVATE
       output/asio/windows/AsioCallbackRouter.cpp
@@ -497,8 +497,8 @@ if(TAE_BUILD_TESTS)
       output/asio/windows/AsioDriverSession.cpp
     )
     target_link_libraries(twilight_asio_backend_tests PRIVATE ole32 uuid advapi32 user32)
+    add_test(NAME twilight_asio_backend_unit COMMAND twilight_asio_backend_tests)
   endif()
-  add_test(NAME twilight_asio_backend_unit COMMAND twilight_asio_backend_tests)
 
   if(TAE_ASIO_AVAILABLE)
     add_executable(twilight_asio_abi_checks output/asio/abi/AsioAbiChecks.cpp)
