@@ -165,6 +165,21 @@ void testWasapiSharedRenderLoopUsesMmcss() {
   assert(renderLoopBody.find("AvRevertMmThreadCharacteristics") != std::string::npos);
 }
 
+void testWasapiSharedOpenRefreshesInvalidatedDefaultEndpointOnce() {
+  const std::filesystem::path testFilePath(__FILE__);
+  const std::filesystem::path sourcePath =
+      testFilePath.parent_path().parent_path() / "output" / "wasapi" / "WasapiSharedBackend.cpp";
+  const std::string openBody = extractFunctionBody(
+      readTextFile(sourcePath),
+      "bool WasapiSharedBackend::open(const std::string& deviceId, const AudioFormat& requestedFormat, std::string* error)");
+
+  const size_t invalidatedRetry =
+      openBody.find("usesDefaultDevice && hr == AUDCLNT_E_DEVICE_INVALIDATED");
+  assert(invalidatedRetry != std::string::npos);
+  assert(openBody.find("selectOutputDevice()", invalidatedRetry) != std::string::npos);
+  assert(openBody.find("activateAudioClient()", invalidatedRetry) != std::string::npos);
+}
+
 void testWasapiSharedRenderLoopUsesNonBlockingFailureTelemetry() {
   const std::filesystem::path testFilePath(__FILE__);
   const std::filesystem::path sourcePath =
@@ -842,6 +857,7 @@ int main() {
   testWasapiExclusiveFloat32RenderPacketBypassesScratchPackCopy();
   testWasapiExclusiveRenderFailurePublishingStaysOffMmcssPath();
   testWasapiSharedRenderLoopUsesMmcss();
+  testWasapiSharedOpenRefreshesInvalidatedDefaultEndpointOnce();
   testWasapiSharedRenderLoopUsesNonBlockingFailureTelemetry();
   testWasapiSharedRenderLoopDefersDeviceInvalidatedCallbackUntilAfterMmcss();
   testWasapiSharedStopDoesNotJoinCurrentRenderThread();
