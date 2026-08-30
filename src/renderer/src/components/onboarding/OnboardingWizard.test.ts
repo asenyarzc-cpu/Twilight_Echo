@@ -140,7 +140,11 @@ test('finishing can hand off to the plugin market, but login wins', () => {
 test('the finish scene reports live scan progress and offers desktop lyrics', () => {
   const finish = readFileSync(new URL('./steps/StepFinish.vue', import.meta.url), 'utf8')
   assert.match(finish, /libraryScanProgress/)
-  assert.match(finish, /desktopLyrics\.toggle\(\)/)
+  assert.match(
+    finish,
+    /window\.api\.desktopLyrics\.setEnabled\(!settings\.value\.desktopLyrics\.enabled\)/
+  )
+  assert.match(finish, /updateSettings\(\{ desktopLyrics:/)
 })
 
 test('blur-sensitive effects honor the global no-blur escape hatch', () => {
