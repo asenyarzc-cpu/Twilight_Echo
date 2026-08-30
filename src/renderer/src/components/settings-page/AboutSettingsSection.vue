@@ -56,6 +56,11 @@ const SPONSORS: readonly Sponsor[] = [
     id: 'yu',
     name: '羽',
     avatarUrl: 'https://s41.ax1x.com/2026/08/10/pmbqHr8.jpg'
+  },
+  {
+    id: 'mumu-hina',
+    name: 'MuMuHina',
+    avatarUrl: 'https://s41.ax1x.com/2026/08/30/pnP5zOH.jpg'
   }
 ]
 
