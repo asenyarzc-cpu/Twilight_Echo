@@ -51,7 +51,7 @@ test('audio visualizer display mapping uses deterministic low-frequency shelf co
   )
 
   assert.match(visualizer, /const SPECTRUM_BAR_COUNT = 140/)
-  assert.match(visualizer, /const SPECTRUM_DISPLAY_GAIN = 1\.32;/)
+  assert.match(visualizer, /const SPECTRUM_DISPLAY_GAIN = 1\.32\b/)
   assert.match(visualizer, /const SPECTRUM_DISPLAY_RANGE = 1\.42/)
   assert.match(visualizer, /const SPECTRUM_DISPLAY_GAMMA = 0\.78/)
   assert.match(visualizer, /const SPECTRUM_DISPLAY_HEADROOM = 1/)
@@ -160,7 +160,7 @@ test('audio visualizer fixed curve keeps headroom while strong peaks can touch t
   )
 
   assert.match(visualizer, /const SPECTRUM_DISPLAY_RANGE = 1\.42/)
-  assert.match(visualizer, /const SPECTRUM_DISPLAY_GAIN = 1\.32;/)
+  assert.match(visualizer, /const SPECTRUM_DISPLAY_GAIN = 1\.32\b/)
   assert.match(visualizer, /const level = Math\.min\(1, contrasted \* SPECTRUM_DISPLAY_GAIN\)/)
 })
 
@@ -171,7 +171,7 @@ test('audio visualizer uses fixed per-bin mapping so peaks can touch zero withou
   )
 
   assert.match(visualizer, /const SPECTRUM_DISPLAY_RANGE = 1\.42/)
-  assert.match(visualizer, /const SPECTRUM_DISPLAY_GAIN = 1\.32;/)
+  assert.match(visualizer, /const SPECTRUM_DISPLAY_GAIN = 1\.32\b/)
   assert.doesNotMatch(visualizer, /function expandFrameContrast/)
   assert.doesNotMatch(visualizer, /function smoothAdaptiveDisplayGain/)
   assert.doesNotMatch(visualizer, /SPECTRUM_GAIN_TARGET_MIX/)
@@ -328,10 +328,10 @@ test('audio visualizer metadata typography follows target hierarchy without reco
   assert.match(visualizer, /function syncTitleLineClass\(\)/)
   assert.match(visualizer, /titleEl\.classList\.remove\('single-line'\)/)
   assert.match(visualizer, /titleEl\.classList\.toggle\('single-line', lineTops\.size <= 1\)/)
-  assert.match(visualizer, /updateHzLabels\(\);\s*syncTitleLineClass\(\);/)
+  assert.match(visualizer, /updateHzLabels\(\);?\s*syncTitleLineClass\(\);?/)
   assert.match(
     visualizer,
-    /document\.getElementById\('display-title'\)\.innerText = track\.title \|\| '--';\s*syncTitleLineClass\(\);/
+    /document\.getElementById\('display-title'\)\.innerText = track\.title \|\| '--';?\s*syncTitleLineClass\(\);?/
   )
   assert.match(visualizer, /\.track-artist \{[\s\S]*font-size: 18px/)
   assert.match(visualizer, /\.track-artist::before \{[\s\S]*content: 'By'/)
