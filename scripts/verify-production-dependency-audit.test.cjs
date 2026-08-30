@@ -112,7 +112,8 @@ test('production audit locates Corepack from PATH when a bundled runtime has no 
     'C:/isolated-runtime/node.exe',
     { PATH: 'C:/tools;C:/node-install' },
     'win32',
-    (candidate) => candidate.endsWith('node-install\\node_modules\\corepack\\dist\\corepack.js')
+    (candidate) =>
+      /node-install[\\/]node_modules[\\/]corepack[\\/]dist[\\/]corepack\.js$/.test(candidate)
   )
   assert.match(
     corepackScript,
