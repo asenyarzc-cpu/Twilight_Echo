@@ -415,6 +415,7 @@ watch(
     settings.value.fontSize,
     settings.value.fontWeight,
     settings.value.windowWidth,
+    settings.value.windowHeight,
     settings.value.translationVisible,
     settings.value.romanizationVisible,
     settings.value.displayMode,

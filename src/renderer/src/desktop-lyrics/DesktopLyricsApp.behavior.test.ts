@@ -40,6 +40,7 @@ test('vertical desktop lyrics place the active line on the right and controls on
     css,
     /\.dl-slots\.is-vertical\.has-active-line \.dl-slot-shell:not\(\.is-active\) \{\s*grid-column: 1;/
   )
+  assert.match(css, /\.dl-slots\.is-vertical \.dl-slot-shell \{\s*grid-row: 1;/)
   assert.match(css, /\.dl-root\.is-vertical \.dl-overlay \{[\s\S]*left: 8px/)
   assert.match(css, /\.dl-root\.is-vertical \.dl-toolbar \{[\s\S]*flex-direction: column/)
   assert.match(css, /\.dl-slots\.is-vertical \{[\s\S]*width: max-content/)

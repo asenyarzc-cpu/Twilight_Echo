@@ -83,6 +83,10 @@
   grid-template-columns: repeat(2, max-content);
 }
 
+.dl-slots.is-vertical .dl-slot-shell {
+  grid-row: 1;
+}
+
 .dl-slots.is-vertical .dl-slot-shell:first-child {
   grid-column: 2;
 }
