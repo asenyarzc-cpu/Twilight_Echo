@@ -5,9 +5,11 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 // fonts: MiSans SC subsets + Latin UI fonts
+// cssChunk: the index chunk carries all six preset layout sheets (~11 kB each
+// minified); the Solstice Ledger redesign pushed it past 400 kB.
 const BUDGETS = Object.freeze({
   jsChunk: 900 * 1024,
-  cssChunk: 400 * 1024,
+  cssChunk: 448 * 1024,
   fonts: 32 * 1024 * 1024
 })
 
