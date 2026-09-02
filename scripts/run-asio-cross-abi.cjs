@@ -7,6 +7,7 @@ const {
   resolveMingwEnvironment
 } = require('./audio-engine-toolchain.cjs')
 const {
+  cmakeCachePath,
   prepareAsioMsvcNinjaToolchain,
   resolveAsioMsvcBuildDirectory,
   resolveAsioMsvcEnvironment
@@ -44,9 +45,9 @@ if (
       msvcBuildDir,
       '-G',
       'Ninja',
-      `-DCMAKE_MAKE_PROGRAM=${msvcToolchain.ninjaPath}`,
+      `-DCMAKE_MAKE_PROGRAM=${cmakeCachePath(msvcToolchain.ninjaPath)}`,
       '-DCMAKE_BUILD_TYPE=Release',
-      `-DCMAKE_RC_COMPILER=${msvcToolchain.rcPath}`
+      `-DCMAKE_RC_COMPILER=${cmakeCachePath(msvcToolchain.rcPath)}`
     ],
     msvcToolchain.environment
   ) !== 0

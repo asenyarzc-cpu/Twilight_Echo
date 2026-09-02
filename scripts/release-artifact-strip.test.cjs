@@ -64,6 +64,8 @@ test('release strip only processes the packaged runtime copy and fails closed', 
       calls.push({ command, args })
       return { status: 0 }
     },
+    copy: () => {},
+    remove: () => {},
     clearDebugDirectory: (filePath) => cleared.push(filePath),
     clearSymbolTablePointer: (filePath) => symbolCleared.push(filePath)
   })
@@ -97,6 +99,8 @@ test('release strip skips optional VST3 helpers when a release did not stage the
       calls.push({ command, args })
       return { status: 0 }
     },
+    copy: () => {},
+    remove: () => {},
     clearDebugDirectory: () => {},
     clearSymbolTablePointer: () => {}
   })
@@ -161,14 +165,40 @@ test('release strip normalizes the COFF symbol pointer only when the table is go
   }
 })
 
-test('release strip propagates a strip failure instead of shipping debug binaries', () => {
+test('release strip retries transient file locks and still fails closed', () => {
+  const attemptsByFile = new Map()
+  stripNativeArtifacts('C:/release', {
+    stripCommand: 'strip',
+    exists: () => true,
+    wait: () => {},
+    copy: () => {},
+    remove: () => {},
+    run: (_, [, filePath]) => {
+      const attempts = (attemptsByFile.get(filePath) || 0) + 1
+      attemptsByFile.set(filePath, attempts)
+      return { status: attempts < 3 ? 1 : 0 }
+    },
+    clearDebugDirectory: () => {},
+    clearSymbolTablePointer: () => {}
+  })
+  assert.ok(attemptsByFile.size >= 3)
+  assert.deepEqual(new Set(attemptsByFile.values()), new Set([3]))
+
+  let attempts = 0
   assert.throws(
     () =>
       stripNativeArtifacts('C:/release', {
         stripCommand: 'strip',
         exists: () => true,
-        run: () => ({ status: 1, stderr: 'bad binary' })
+        wait: () => {},
+        copy: () => {},
+        remove: () => {},
+        run: () => {
+          attempts += 1
+          return { status: 1, stderr: 'bad binary' }
+        }
       }),
     /Failed to strip/
   )
+  assert.equal(attempts, 3)
 })

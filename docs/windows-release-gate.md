@@ -254,6 +254,13 @@ Microsoft VC runtimes are size-checked but are not stripped.
 `pnpm run test:release-artifacts` validates this policy and its failure paths without needing a
 packaged installer. A passing test is release-integrity evidence, not a platform trust endorsement.
 
+`pnpm run generate:release-capability-status` and `pnpm run verify:release-capabilities` are part
+of `gate:release:preflight`. They reconcile `audio-capabilities.json`, the staged DLL/node/helper
+hashes and PE imports, and the controlled product declaration in
+`docs/release-capability-status.md`. The packaged release repeats that check. Missing core binaries,
+an incomplete VST3 helper pair, missing dynamic imports, manifest/status drift, or a declaration that
+overstates staged facts fails the gate; absent real devices remain `unverified` / `not-run`.
+
 macOS CoreAudio and Linux ALSA package targets remain unverified. Their buildability is not a
 release-readiness claim; keep their real-device smoke evidence separate from the Windows gate.
 
@@ -315,10 +322,10 @@ This command never runs in CI and must not be represented by the controlled-pump
 
 Product honesty surfaces (`Loudnorm`, `Gapless Album`, `Unity Volume`) are always listed by
 `pnpm run smoke:audio-evidence` and default to `not-run` until a maintainer records evidence.
-They do **not** gate `coverage.complete` (still 5/5 hardware surfaces). See
+They do **not** gate `coverage.complete` (still 7/7 hardware surfaces). See
 `docs/audio-smoke-evidence.md`.
 
 Release candidates that only run `test:no-real-device` (or equivalent software gates) must keep
 real-device smoke and product honesty surfaces as **`not-run`**. Controlled-pump CTest is not
 hardware smoke and must not be substituted for WASAPI Exclusive / ASIO / DoP / Native DSD /
-SACD ISO evidence.
+SACD ISO / CoreAudio Hog / ALSA `hw:` evidence.

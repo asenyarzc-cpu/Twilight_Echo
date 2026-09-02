@@ -104,7 +104,9 @@ bool MockAsioHost::probeDevice(const std::string& deviceId, AsioDeviceInfo* info
   }
   if (failProbeCount > 0) {
     --failProbeCount;
-    if (error) *error = "mock ASIO capability probe failed";
+    if (error) {
+      *error = lastHostError.empty() ? "mock ASIO capability probe failed" : lastHostError;
+    }
     return false;
   }
   const auto probed = std::find_if(probeResults.begin(), probeResults.end(), [&](const AsioDeviceInfo& entry) {
@@ -277,6 +279,8 @@ bool MockAsioHost::outputReady() {
 }
 
 long MockAsioHost::activeBufferSize() const { return openResult.bufferSizeFrames; }
+
+std::string MockAsioHost::lastCloseError() const { return lastHostError; }
 
 void MockAsioHost::triggerBufferSwitch(long bufferIndex) {
   if (bufferSwitch_) bufferSwitch_(bufferIndex);

@@ -67,6 +67,13 @@ DsdOutputMode parseDsdOutputMode(const std::string& mode) {
   return DsdOutputMode::Auto;
 }
 
+DsdRatePolicy parseDsdRatePolicy(const std::string& policy) {
+  const std::string normalized = toLower(policy);
+  if (normalized == "exact") return DsdRatePolicy::Exact;
+  if (normalized == "downrate") return DsdRatePolicy::Downrate;
+  return DsdRatePolicy::PcmFallback;
+}
+
 DsdRouteOverride parseDsdRouteOverride(const std::string& json) {
   DsdRouteOverride route;
   const std::string object = json_utils::fieldObject(json, "dsdRoute");
@@ -967,6 +974,8 @@ DspConfig DspChain::parseConfigJson(const std::string& json) {
   config.gapless = extractBoolField(json, "gapless").value_or(true);
   config.dsdOutputMode = parseDsdOutputMode(extractStringField(json, "dsdOutputMode").value_or(
       extractBoolField(json, "dsdToPcm").value_or(false) ? "pcm" : "auto"));
+  config.dsdRatePolicy =
+      parseDsdRatePolicy(extractStringField(json, "dsdRatePolicy").value_or("pcm-fallback"));
   config.dsdRoute = parseDsdRouteOverride(json);
   config.sacdProgramMode =
       parseSacdProgramMode(extractStringField(json, "sacdProgramMode").value_or("auto"));

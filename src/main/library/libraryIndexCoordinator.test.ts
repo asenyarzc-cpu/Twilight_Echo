@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import type {
+  LocalLibraryScanBatch,
+  LocalLibraryScanIdentityBatch,
   LocalLibraryScanProgress,
   LocalLibraryWorkerScanRequest,
   LocalLibraryWorkerScanResult
@@ -13,6 +15,7 @@ import type { LocalMusicLibraryDocument } from '../../shared/localLibrary.ts'
 import { loadLocalLibraryFileIndex, persistLocalLibraryFileIndex } from './fileIndex.ts'
 import {
   LocalLibraryIndexCoordinator,
+  toLocalLibraryScanUpdate,
   type LocalLibraryIndexCoordinatorOptions
 } from './libraryIndexCoordinator.ts'
 import type { LocalLibraryScanRunner } from './libraryScanServiceClient.ts'
@@ -22,6 +25,9 @@ type ScanCall = {
   jobId: string
   request: LocalLibraryWorkerScanRequest
   onProgress?: (progress: Omit<LocalLibraryScanProgress, 'jobId' | 'mode'>) => void
+  onBatch?: (batch: LocalLibraryScanBatch) => void
+  onIdentityBatch?: (batch: LocalLibraryScanIdentityBatch) => void
+  onAttemptReset?: () => void
 }
 
 class ScriptedRunner implements LocalLibraryScanRunner {
@@ -36,9 +42,12 @@ class ScriptedRunner implements LocalLibraryScanRunner {
   async scan(
     jobId: string,
     request: LocalLibraryWorkerScanRequest,
-    onProgress?: ScanCall['onProgress']
+    onProgress?: ScanCall['onProgress'],
+    onBatch?: ScanCall['onBatch'],
+    onIdentityBatch?: ScanCall['onIdentityBatch'],
+    onAttemptReset?: ScanCall['onAttemptReset']
   ): Promise<LocalLibraryWorkerScanResult> {
-    const call = { jobId, request, onProgress }
+    const call = { jobId, request, onProgress, onBatch, onIdentityBatch, onAttemptReset }
     this.calls.push(call)
     return await this.handler(call, this.calls.length - 1)
   }
@@ -275,6 +284,95 @@ test('full scan exposes progress, pause, resume, and cancellation without commit
   } finally {
     fixture.cleanup()
   }
+})
+
+test('cancellation observed in the commit transaction skips library and index writes', async () => {
+  const fixture = createFixture('cancel-before-commit')
+  try {
+    const filePath = join(fixture.root, 'new.flac')
+    fixture.persist(createDocument(1, [fixture.root], []))
+    let resolveRootsCalls = 0
+    let persistCalls = 0
+    const runner = new ScriptedRunner(async () =>
+      scanResult({
+        identities: [{ filePath, size: 1, mtimeMs: 1 }],
+        parsedTracks: [createTrack('new', filePath)],
+        parsedFilePaths: [filePath],
+        parsedFileCount: 1
+      })
+    )
+    const coordinator = fixture.coordinator(runner, {
+      resolveRoots: async (folders) => {
+        resolveRootsCalls += 1
+        if (resolveRootsCalls === 2) {
+          await Promise.resolve()
+          coordinator.cancel()
+        }
+        return [...folders]
+      },
+      persistDocument: (document) => {
+        persistCalls += 1
+        fixture.persist(document)
+      }
+    })
+
+    const result = await coordinator.scanFull()
+
+    assert.equal(result.state, 'cancelled')
+    assert.equal(persistCalls, 0)
+    assert.deepEqual(fixture.load().tracks, [])
+    coordinator.destroy()
+  } finally {
+    fixture.cleanup()
+  }
+})
+
+test('worker restart resets streamed batches before accepting the replacement snapshot', async () => {
+  const fixture = createFixture('restart-stream-reset')
+  try {
+    const filePath = join(fixture.root, 'vanished.flac')
+    const existing = createTrack('existing', filePath)
+    fixture.persist(createDocument(1, [fixture.root], [existing]))
+    const identity = { filePath, size: 1, mtimeMs: 1 }
+    const runner = new ScriptedRunner(async (call) => {
+      call.onIdentityBatch?.({ identities: [identity] })
+      call.onBatch?.({
+        parsedTracks: [createTrack('stale', filePath)],
+        parsedFilePaths: [filePath]
+      })
+      call.onAttemptReset?.()
+      return scanResult({ identities: [], parsedFileCount: 0 })
+    })
+    const coordinator = fixture.coordinator(runner)
+
+    const result = await coordinator.scanFull()
+
+    assert.deepEqual(result.library.tracks, [])
+    assert.deepEqual(fixture.load().tracks, [])
+    coordinator.destroy()
+  } finally {
+    fixture.cleanup()
+  }
+})
+
+test('large scan deltas use a reload marker instead of crossing IPC inline', () => {
+  const removedFilePaths = Array.from({ length: 2_001 }, (_, index) => `C:\\Music\\${index}.mp3`)
+  const update = toLocalLibraryScanUpdate({
+    jobId: 'large-delta',
+    mode: 'full',
+    state: 'completed',
+    library: createDocument(2, [], []),
+    addedTracks: [],
+    updatedTracks: [],
+    removedFilePaths,
+    parsedFileCount: 2_001,
+    skippedUnchanged: 0
+  })
+
+  assert.equal(update.reloadRequired, true)
+  assert.deepEqual(update.addedTracks, [])
+  assert.deepEqual(update.updatedTracks, [])
+  assert.deepEqual(update.removedFilePaths, [])
 })
 
 test('background worker failure becomes an observable failed status', () => {

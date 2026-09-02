@@ -51,7 +51,7 @@ test('Windows x64 ASIO runtime is enabled by default with an explicit opt-out', 
 
 test('ASIO device catalog exports a user-facing label instead of exposing only the CLSID id', () => {
   const source = readFileSync(
-    join(__dirname, '..', 'audio-engine', 'output', 'asio', 'RealAsioHost.cpp'),
+    join(__dirname, '..', 'audio-engine', 'output', 'asio', 'AsioHostQueries.cpp'),
     'utf8'
   )
 

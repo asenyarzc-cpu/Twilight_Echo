@@ -173,13 +173,19 @@ function restoreHoverAfterUnlock(): void {
 
 function schedulePauseHide(): void {
   clearPauseTimer()
-  pausedHidden.value = false
+  setPausedHidden(false)
   if (!settings.value.hideWhenPaused || playing.value || hovering.value) return
   pauseTimer = setTimeout(() => {
     pauseTimer = null
-    pausedHidden.value = true
+    setPausedHidden(true)
     clearActiveLineTimer()
   }, settings.value.pauseHideDelaySeconds * 1000)
+}
+
+function setPausedHidden(hidden: boolean): void {
+  if (pausedHidden.value === hidden) return
+  pausedHidden.value = hidden
+  void api.setPausedHidden(hidden).catch(() => undefined)
 }
 
 function positionNow(): number {
@@ -432,6 +438,7 @@ watch(
 
 onBeforeUnmount(() => {
   clearPauseTimer()
+  setPausedHidden(false)
   clearToolbarTimer()
   clearUnlockAffordanceTimer()
   if (lockedInteractionActive) setLockedInteractionActive(false)

@@ -2,6 +2,7 @@
 
 #include "AsioRenderUtils.h"
 #include "IAsioHost.h"
+#include "AsioQuirkRegistry.h"
 #include "../IOutputBackend.h"
 
 #include <atomic>
@@ -19,7 +20,9 @@ namespace twilight::audio {
 class AsioBackend final : public IOutputBackend {
  public:
   AsioBackend();
-  explicit AsioBackend(std::unique_ptr<IAsioHost> host);
+  explicit AsioBackend(
+      std::unique_ptr<IAsioHost> host,
+      AsioQuirkRegistry quirkRegistry = AsioQuirkRegistry::builtIn());
   ~AsioBackend() override;
 
   const char* id() const override;
@@ -62,11 +65,11 @@ class AsioBackend final : public IOutputBackend {
    * cache miss. Falls back to the identity-only record when the probe fails so
    * a probe-hostile driver still gets the legacy best-effort path.
    */
-  void ensureDeviceCapabilities(AsioDeviceInfo* device) const;
+  bool ensureDeviceCapabilities(AsioDeviceInfo* device, std::string* error) const;
   long chooseBufferSize(const AsioDeviceInfo& device, const AudioFormat& requestedFormat) const;
   int routedOutputChannels(const AsioDeviceInfo& device, int sourceChannels) const;
   void renderBuffer(long bufferIndex);
-  void notifyOutputReady() noexcept;
+  void commitAndNotifyOutputReady(long bufferIndex, size_t frameCount) noexcept;
   void recordRenderUnderrun() noexcept;
   void recordRenderBufferDrop() noexcept;
   void queueRecoveryFromHostCallback(AsioHostEvent event, std::string message);
@@ -78,6 +81,8 @@ class AsioBackend final : public IOutputBackend {
   bool createAndStartHost(std::string* error);
 
   std::unique_ptr<IAsioHost> host_;
+  AsioQuirkRegistry quirkRegistry_;
+  AsioQuirkApplication quirkApplication_;
   mutable std::mutex mutex_;
   std::mutex recoveryQueueMutex_;
   std::condition_variable recoveryQueueCv_;
@@ -140,6 +145,7 @@ class AsioBackend final : public IOutputBackend {
    * only, like the rest of the render session fields.
    */
   size_t renderDsdUnitFramesSession_ = 0;
+  uint32_t renderDsdCadenceConfirmCallbacksSession_ = 2;
   asio::DsdRenderUnitProbe dsdRenderUnitProbe_;
   std::chrono::high_resolution_clock::time_point lastRenderTime_{};
   uint32_t renderCallbacksSeen_ = 0;

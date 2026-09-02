@@ -5,6 +5,7 @@
 #include "../output/asio/AsioRenderUtils.h"
 
 #include <cassert>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -531,6 +532,36 @@ void testDeviceLostAndBufferFailureDiagnostics() {
   }
 }
 
+void testAsioHelperFailureStopsWithoutRecovery() {
+  auto host = makeHost();
+  auto* rawHost = host.get();
+  AsioBackend backend(std::move(host));
+  std::string error;
+  assert(backend.open("asio:phase5b", sourceFormat(), &error));
+  std::atomic<int> event{-1};
+  assert(backend.start(
+      [](float*, size_t frames) { return frames; },
+      [&](OutputBackendEvent value, const std::string&) {
+        event.store(static_cast<int>(value), std::memory_order_release);
+      },
+      &error));
+  const int openCalls = rawHost->openCalls;
+  rawHost->triggerEvent(
+      AsioHostEvent::HelperFailure,
+      "asio_helper_process_exited: fixture helper terminated");
+  assert(waitUntil([&] {
+    return event.load(std::memory_order_acquire) ==
+        static_cast<int>(OutputBackendEvent::RenderError);
+  }));
+  const auto info = backend.outputInfo();
+  assert(info.perfectReasonCode == "asio_helper_process_exited");
+  assert(info.recoveryCount == 0);
+  assert(!info.deviceRecovered);
+  assert(rawHost->openCalls == openCalls);
+  assert(rawHost->stopCalls > 0);
+  assert(rawHost->closeCalls > 0);
+}
+
 }  // namespace
 
 int main() {
@@ -555,5 +586,6 @@ int main() {
   testAsioTypedChannelHelperCopiesSingleFrameFirstChannel();
   testDiagnostics();
   testDeviceLostAndBufferFailureDiagnostics();
+  testAsioHelperFailureStopsWithoutRecovery();
   return 0;
 }

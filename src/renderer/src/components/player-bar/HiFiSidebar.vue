@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import {
   DSD_OUTPUT_MODE_OPTIONS,
+  DSD_RATE_POLICY_OPTIONS,
   gaplessRuntimeStatusCopy,
   HIFI_STATUS_COPY,
   loudnormStatusCopy,
@@ -26,6 +27,7 @@ import type {
   AudioProcessingSettings,
   ChannelRoutingMode,
   DsdOutputMode,
+  DsdRatePolicy,
   OutputConfig,
   VolumeNormalizationMode
 } from '../../types/settings'
@@ -132,6 +134,7 @@ const emit = defineEmits<{
   setRoutingMode: [mode: ChannelRoutingMode]
   setPcmToDsdMode: [mode: import('../../types/settings').PcmToDsdMode]
   setDsdOutputMode: [mode: DsdOutputMode]
+  setDsdRatePolicy: [policy: DsdRatePolicy]
   setOutputStage: [partial: Partial<DspOutputStageConfig>]
   setStereoImage: [partial: Partial<DspStereoImageConfig>]
   setAudioOutput: [output: AudioOutputId]
@@ -247,6 +250,7 @@ const pcmToDsdModeOptions: { value: import('../../types/settings').PcmToDsdMode;
   ]
 
 const dsdOutputModeOptions = DSD_OUTPUT_MODE_OPTIONS
+const dsdRatePolicyOptions = DSD_RATE_POLICY_OPTIONS
 const replayGainOptions = VOLUME_NORMALIZATION_OPTIONS
 const sampleRateOptions = DSP_OUTPUT_SAMPLE_RATE_OPTIONS
 const resamplerOptions = DSP_RESAMPLER_QUALITY_OPTIONS
@@ -492,6 +496,10 @@ function onPcmToDsdModeChange(event: Event): void {
 
 function onDsdModeChange(event: Event): void {
   emit('setDsdOutputMode', (event.target as HTMLSelectElement).value as DsdOutputMode)
+}
+
+function onDsdRatePolicyChange(event: Event): void {
+  emit('setDsdRatePolicy', (event.target as HTMLSelectElement).value as DsdRatePolicy)
 }
 
 function onReplayGainChange(event: Event): void {
@@ -1010,6 +1018,22 @@ const deckAccentVars = computed(() => {
                 >
                   <option
                     v-for="option in dsdOutputModeOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+              <label class="deck-field">
+                <span>DSD Rate Policy</span>
+                <select
+                  class="deck-select"
+                  :value="audioProcessing.dsdRatePolicy"
+                  @change="onDsdRatePolicyChange"
+                >
+                  <option
+                    v-for="option in dsdRatePolicyOptions"
                     :key="option.value"
                     :value="option.value"
                   >

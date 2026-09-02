@@ -1,14 +1,15 @@
 const { existsSync } = require('node:fs')
 const { join } = require('node:path')
 const { spawnSync } = require('node:child_process')
-const { stripNativeArtifacts } = require('./release-artifact-strip.cjs')
 
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== 'win32') return
 
-  if (process.env.TWILIGHT_RELEASE_BUILD === '1' || process.env.TWILIGHT_PACKAGE_STRIP === '1') {
-    // Strip the copied payload only; artifact verification checks these exact distributed bytes.
-    stripNativeArtifacts(join(context.appOutDir, 'resources', 'audio-engine'))
+  if (
+    (process.env.TWILIGHT_RELEASE_BUILD === '1' || process.env.TWILIGHT_PACKAGE_STRIP === '1') &&
+    process.env.TWILIGHT_PACKAGED_AUDIO_PRESTRIPPED !== '1'
+  ) {
+    throw new Error('Packaged audio staging was not prepared before electron-builder started')
   }
 
   const appInfo = context.packager.appInfo

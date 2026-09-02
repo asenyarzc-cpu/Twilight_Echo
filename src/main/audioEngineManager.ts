@@ -170,6 +170,9 @@ export class AudioEngineManager extends EventEmitter {
         setNativeOutputRouteSynced: (value) => {
           this.nativeOutputRouteSynced = value
         },
+        setNativePlaybackActive: (value) => {
+          this.nativePlaybackActive = value
+        },
         callNativeMaybeAsync: (context, method, ...args) =>
           this.callNativeMaybeAsync(context, method, ...args),
         applyNativeDspGraphOrThrow: (context) => this.applyNativeDspGraphOrThrow(context),

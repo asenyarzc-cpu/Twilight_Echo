@@ -58,6 +58,7 @@ import type {
   AudioOutputId,
   ChannelRoutingMode,
   DsdOutputMode,
+  DsdRatePolicy,
   PcmToDsdMode,
   VolumeNormalizationMode
 } from '../types/settings'
@@ -1129,6 +1130,10 @@ function onSetDsdOutputMode(mode: DsdOutputMode): void {
   void setAudioProcessing({ dsdOutputMode: mode })
 }
 
+function onSetDsdRatePolicy(policy: DsdRatePolicy): void {
+  void setAudioProcessing({ dsdRatePolicy: policy })
+}
+
 function onSetAudioOutput(output: AudioOutputId): void {
   void setAudioOutput(output)
 }
@@ -1477,7 +1482,8 @@ onBeforeUnmount(() => {
     class="player-bar-shell"
     :class="{
       'menu-open': menuOpen,
-      'is-geometry-animating': geometryAnimating
+      'is-geometry-animating': geometryAnimating,
+      'compact-visualizer-active': showCompactVisualizer
     }"
     v-bind="shellDataAttrs"
   >
@@ -2159,6 +2165,7 @@ onBeforeUnmount(() => {
           @set-routing-mode="onSetRoutingMode"
           @set-pcm-to-dsd-mode="onSetPcmToDsdMode"
           @set-dsd-output-mode="onSetDsdOutputMode"
+          @set-dsd-rate-policy="onSetDsdRatePolicy"
           @set-output-stage="setOutputStage"
           @set-stereo-image="setStereoImage"
           @set-audio-output="onSetAudioOutput"

@@ -12,11 +12,13 @@ import type { Vst3CatalogState } from '../../../../shared/dspGraph.ts'
 import type {
   AudioProcessingSettings,
   DsdOutputMode,
+  DsdRatePolicy,
   SacdProgramMode,
   VolumeNormalizationMode
 } from '../../types/settings'
 import {
   dsdOutputModeOptions,
+  dsdRatePolicyOptions,
   fftResolutionOptions,
   replayGainOptions,
   sacdProgramModeOptions
@@ -177,6 +179,12 @@ function setDsdOutputMode(event: Event): void {
   void selectDsdOutputMode((event.target as HTMLSelectElement).value as DsdOutputMode)
 }
 
+function setDsdRatePolicy(event: Event): void {
+  updateAudioProcessing({
+    dsdRatePolicy: (event.target as HTMLSelectElement).value as DsdRatePolicy
+  })
+}
+
 function setSacdProgramMode(event: Event): void {
   updateAudioProcessing({
     sacdProgramMode: (event.target as HTMLSelectElement).value as SacdProgramMode
@@ -271,7 +279,8 @@ const vst3HelpersReady = computed(() => {
 const vst3PlatformSupported = computed(() => vst3Helpers.value?.platformSupported !== false)
 const vst3HelpersNotice = computed(() => {
   if (!vst3Catalog.value || vst3HelpersReady.value || !vst3Helpers.value) return ''
-  if (!vst3Helpers.value.platformSupported) return 'VST3 仅在 Windows x64 构建中提供。'
+  if (!vst3Helpers.value.platformSupported)
+    return 'VST3 仅当 Windows x64 包暂存宿主和扫描组件时可用。'
   if (!vst3Helpers.value.scannerPresent || !vst3Helpers.value.hostPresent) {
     return '本构建未包含 VST3 扫描/宿主组件。开发环境请执行 pnpm run stage:vst3-msvc，或安装完整 Windows 签名包。'
   }
@@ -738,6 +747,22 @@ onMounted(() => {
               </select>
             </label>
             <label>
+              <span>DSD Rate Policy</span>
+              <select
+                class="preview-select"
+                :value="audioProcessing.dsdRatePolicy"
+                @change="setDsdRatePolicy"
+              >
+                <option
+                  v-for="option in dsdRatePolicyOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label>
               <span>SACD Program</span>
               <select
                 class="preview-select"
@@ -794,8 +819,11 @@ onMounted(() => {
       <h3>VST3 插件 (VST3 Host)</h3>
       <div class="mini-setting">
         <div>
-          <strong>启用 VST3 宿主</strong>
-          <span>允许在 DSP Rack 中加载扫描到的 VST3 效果插件。仅 Windows x64 可用。</span>
+          <strong>仅当已暂存宿主和扫描组件时启用 VST3 宿主</strong>
+          <span
+            >允许在 DSP Rack 中加载扫描到的 VST3 效果插件。仅当 Windows x64
+            包暂存宿主和扫描组件时可用。</span
+          >
         </div>
         <span
           class="toggle-switch"

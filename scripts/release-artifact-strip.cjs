@@ -6,6 +6,7 @@ const path = require('node:path')
 const NATIVE_RUNTIME_FILES = Object.freeze([
   'twilight-audio-engine.dll',
   'twilight_audio_node.node',
+  'twilight-asio-helper.exe',
   'twilight-vst3-host.exe',
   'twilight-vst3-scanner.exe'
 ])
@@ -16,7 +17,8 @@ const NATIVE_RUNTIME_FILES = Object.freeze([
 // only when a release staged them.
 const REQUIRED_NATIVE_RUNTIME_FILES = Object.freeze([
   'twilight-audio-engine.dll',
-  'twilight_audio_node.node'
+  'twilight_audio_node.node',
+  'twilight-asio-helper.exe'
 ])
 
 function executableCandidates(environment = process.env) {
@@ -129,13 +131,41 @@ function clearPeSymbolTablePointer(filePath, dependencies = {}) {
   return true
 }
 
-function stripNativeArtifacts(nativeDir, dependencies = {}) {
+function waitForRetry(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
+}
+
+function stripNativeFile(filePath, dependencies = {}) {
   const exists = dependencies.exists || fs.existsSync
   const run = dependencies.run || spawnSync
+  const wait = dependencies.wait || waitForRetry
   const clearDebugDirectory = dependencies.clearDebugDirectory || clearPeDebugDirectory
   const clearSymbolTablePointer = dependencies.clearSymbolTablePointer || clearPeSymbolTablePointer
   const stripCommand =
     dependencies.stripCommand || resolveStripCommand(dependencies.environment, exists)
+  let result
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    result = run(stripCommand, ['--strip-all', filePath], {
+      encoding: 'utf8',
+      windowsHide: true
+    })
+    if ((result.status ?? 1) === 0) break
+    if (attempt < 3) wait(250)
+  }
+  if ((result?.status ?? 1) !== 0) {
+    throw new Error(
+      [`Failed to strip ${filePath}`, result?.stdout, result?.stderr].filter(Boolean).join('\n')
+    )
+  }
+  clearDebugDirectory(filePath)
+  clearSymbolTablePointer(filePath)
+}
+
+function stripNativeArtifacts(nativeDir, dependencies = {}) {
+  const exists = dependencies.exists || fs.existsSync
+  const wait = dependencies.wait || waitForRetry
+  const copy = dependencies.copy || fs.copyFileSync
+  const remove = dependencies.remove || fs.rmSync
   const stripped = []
   const missing = []
   for (const name of REQUIRED_NATIVE_RUNTIME_FILES) {
@@ -148,18 +178,27 @@ function stripNativeArtifacts(nativeDir, dependencies = {}) {
       missing.push(filePath)
       continue
     }
-    const result = run(stripCommand, ['--strip-all', filePath], {
-      encoding: 'utf8',
-      windowsHide: true
-    })
-    if ((result.status ?? 1) !== 0) {
-      throw new Error(
-        [`Failed to strip ${filePath}`, result.stdout, result.stderr].filter(Boolean).join('\n')
-      )
+    const temporaryPath = `${filePath}.strip-${process.pid}`
+    copy(filePath, temporaryPath)
+    try {
+      stripNativeFile(temporaryPath, dependencies)
+      let copied = false
+      let copyError
+      for (let attempt = 1; attempt <= 60; attempt += 1) {
+        try {
+          copy(temporaryPath, filePath)
+          copied = true
+          break
+        } catch (error) {
+          copyError = error
+          if (attempt < 60) wait(500)
+        }
+      }
+      if (!copied) throw copyError
+      stripped.push(filePath)
+    } finally {
+      remove(temporaryPath, { force: true })
     }
-    clearDebugDirectory(filePath)
-    clearSymbolTablePointer(filePath)
-    stripped.push(filePath)
   }
   return { stripped, missing }
 }
@@ -171,5 +210,7 @@ module.exports = {
   clearPeSymbolTablePointer,
   executableCandidates,
   resolveStripCommand,
-  stripNativeArtifacts
+  stripNativeArtifacts,
+  stripNativeFile,
+  waitForRetry
 }

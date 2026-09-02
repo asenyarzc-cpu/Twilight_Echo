@@ -241,6 +241,12 @@ export const EN_US_MESSAGES: Record<string, string> = {
   'audio.reason.dsd_high_rate_pcm_fallback.fix':
     'Use a device that supports this rate, or play a lower-rate DSD file such as DSD64/DSD128.',
 
+  'audio.reason.dsd_downrated.label': 'DSD was downrated for the output device',
+  'audio.reason.dsd_downrated.explain':
+    'The source remained in the one-bit DSD domain, but its rate was low-pass filtered, decimated, and remodulated to a lower device-supported DSD rate. This is not source-exact.',
+  'audio.reason.dsd_downrated.fix':
+    'Use a device that supports the source DSD rate or choose Exact rate to reject conversion.',
+
   'audio.reason.dsd_converted_to_pcm.label': 'DSD is currently converted to PCM',
   'audio.reason.dsd_converted_to_pcm.explain':
     'The DSD bitstream is demodulated to PCM before output.',
@@ -354,6 +360,61 @@ export const EN_US_MESSAGES: Record<string, string> = {
     'The ASIO driver reported a sample format the engine cannot handle, so this format is unusable on this device for now.',
   'audio.reason.unsupported_asio_sample_type.fix':
     'Choose a different sample format in the ASIO control panel, or update the driver and retry.',
+
+  'audio.reason.dsd_mute_lock_timeout.label': 'DSD transport lock timed out',
+  'audio.reason.dsd_mute_lock_timeout.explain':
+    'The device did not confirm a stable DoP or Native DSD transport before the bounded mute window expired, so output was stopped instead of releasing unknown audio.',
+  'audio.reason.dsd_mute_lock_timeout.fix':
+    'Retry with a larger DSD transition timeout, choose DoP or PCM fallback, or reselect the output device.',
+
+  'audio.reason.asio_helper_launch_failed.label': 'The ASIO helper could not start',
+  'audio.reason.asio_helper_launch_failed.explain':
+    'The isolated ASIO driver process could not be launched, so ASIO playback was not started.',
+  'audio.reason.asio_helper_launch_failed.fix':
+    'Restart the audio service, or select a WASAPI output device.',
+
+  'audio.reason.asio_helper_protocol_error.label': 'The ASIO helper protocol failed',
+  'audio.reason.asio_helper_protocol_error.explain':
+    'The audio service received an invalid control response from the isolated ASIO driver process and stopped the route.',
+  'audio.reason.asio_helper_protocol_error.fix':
+    'Restart the audio service, or select a WASAPI output device.',
+
+  'audio.reason.asio_helper_control_timeout.label': 'The ASIO helper stopped responding',
+  'audio.reason.asio_helper_control_timeout.explain':
+    'An ASIO control operation exceeded its deadline. Playback was stopped without reopening or resuming automatically.',
+  'audio.reason.asio_helper_control_timeout.fix':
+    'Restart the audio service, or select a WASAPI output device.',
+
+  'audio.reason.asio_helper_process_exited.label': 'The ASIO helper exited unexpectedly',
+  'audio.reason.asio_helper_process_exited.explain':
+    'The isolated ASIO driver process ended during use. Playback was stopped and will not resume automatically.',
+  'audio.reason.asio_helper_process_exited.fix':
+    'Restart the audio service, or select a WASAPI output device.',
+
+  'audio.reason.asio_helper_callback_stalled.label': 'The ASIO driver callback stalled',
+  'audio.reason.asio_helper_callback_stalled.explain':
+    'The ASIO helper stopped receiving render callbacks from the driver. The route was stopped to avoid unknown output.',
+  'audio.reason.asio_helper_callback_stalled.fix':
+    'Restart the audio service, or select a WASAPI output device.',
+
+  'audio.reason.asio_helper_device_rejected.label': 'The ASIO driver rejected the device or format',
+  'audio.reason.asio_helper_device_rejected.explain':
+    'The selected ASIO driver did not accept the requested device configuration.',
+  'audio.reason.asio_helper_device_rejected.fix':
+    'Choose another ASIO format or select a WASAPI output device.',
+
+  'audio.reason.asio_helper_format_restore_failed.label':
+    'The ASIO driver format could not be restored',
+  'audio.reason.asio_helper_format_restore_failed.explain':
+    'After an ASIO operation failed, the helper could not restore the driver to its previous sample rate and channel format.',
+  'audio.reason.asio_helper_format_restore_failed.fix':
+    'Restart the audio service and the ASIO driver before trying again.',
+
+  'audio.reason.asio_helper_command_failed.label': 'An ASIO helper command failed',
+  'audio.reason.asio_helper_command_failed.explain':
+    'The isolated ASIO driver process rejected or could not complete a control command.',
+  'audio.reason.asio_helper_command_failed.fix':
+    'Restart the audio service, or select a WASAPI output device.',
 
   'audio.reason.topology_rollback_failed.label': 'Output chain rollback failed',
   'audio.reason.topology_rollback_failed.explain':

@@ -14,6 +14,7 @@ function makeSettings(): AudioProcessingSettings {
     highResolution: true,
     dsdToPcm: false,
     dsdOutputMode: 'auto',
+    dsdRatePolicy: 'pcm-fallback',
     dsdRoute: {
       enabled: false,
       backend: '',

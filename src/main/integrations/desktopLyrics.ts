@@ -20,6 +20,7 @@ import { stringifyJsonForIpcStorage } from '../security/ipcValidation.ts'
 let destroyingWindow = false
 let resumeBound = false
 let desktopLyricsInteractionActive = false
+let desktopLyricsPausedHidden = false
 let desktopLyricsHoverCheckTimer: ReturnType<typeof setInterval> | null = null
 let desktopLyricsPointerInside = false
 
@@ -99,7 +100,8 @@ function applyWindowSettings(): void {
   if (!win || win.isDestroyed()) return
   const settings = runtime.appSettings.desktopLyrics
   win.setAlwaysOnTop(settings.alwaysOnTop, 'screen-saver')
-  const ignoreMouseEvents = settings.locked && !desktopLyricsInteractionActive
+  const ignoreMouseEvents =
+    desktopLyricsPausedHidden || (settings.locked && !desktopLyricsInteractionActive)
   win.setIgnoreMouseEvents(ignoreMouseEvents, { forward: ignoreMouseEvents })
   syncDesktopLyricsHoverTracking()
   const bounds = win.getBounds()
@@ -147,6 +149,7 @@ function refreshDesktopLyricsHoverIntent(): void {
     !win ||
     win.isDestroyed() ||
     !win.isVisible() ||
+    desktopLyricsPausedHidden ||
     !runtime.appSettings.desktopLyrics.locked ||
     desktopLyricsInteractionActive
   ) {
@@ -171,6 +174,7 @@ function syncDesktopLyricsHoverTracking(): void {
     win &&
     !win.isDestroyed() &&
     win.isVisible() &&
+    !desktopLyricsPausedHidden &&
     runtime.appSettings.desktopLyrics.locked &&
     !desktopLyricsInteractionActive
   )
@@ -212,6 +216,12 @@ function updateDesktopLyricsSettings(
 
 function setDesktopLyricsInteractionActive(active: boolean): void {
   desktopLyricsInteractionActive = active && runtime.appSettings.desktopLyrics.locked
+  applyWindowSettings()
+}
+
+function setDesktopLyricsPausedHidden(hidden: boolean): void {
+  desktopLyricsPausedHidden = hidden
+  if (hidden) desktopLyricsInteractionActive = false
   applyWindowSettings()
 }
 
@@ -350,6 +360,7 @@ function validQuickSettingsPatch(raw: unknown): raw is Partial<DesktopLyricsSett
 
 function createDesktopLyricsWindow(): void {
   if (runtime.desktopLyricsWindow && !runtime.desktopLyricsWindow.isDestroyed()) return
+  desktopLyricsPausedHidden = false
   const settings = runtime.appSettings.desktopLyrics
   const position = windowPosition()
   if (position.x !== settings.windowX || position.y !== settings.windowY) {
@@ -409,6 +420,7 @@ function createDesktopLyricsWindow(): void {
     if (runtime.desktopLyricsWindow !== win) return
     runtime.desktopLyricsWindow = null
     desktopLyricsInteractionActive = false
+    desktopLyricsPausedHidden = false
     clearDesktopLyricsHoverTracking()
   })
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -441,6 +453,7 @@ export function destroyDesktopLyrics(): void {
   persistDesktopLyricsPosition(win)
   runtime.desktopLyricsWindow = null
   desktopLyricsInteractionActive = false
+  desktopLyricsPausedHidden = false
   clearDesktopLyricsHoverTracking()
   win.destroy()
   destroyingWindow = false
@@ -517,6 +530,13 @@ export function setupDesktopLyricsIpc(): void {
     if (!isDesktopLyricsSender(event)) throw new Error('desktop lyrics interaction rejected')
     if (typeof active !== 'boolean') throw new Error('invalid desktop lyrics interaction state')
     setDesktopLyricsInteractionActive(active)
+  })
+
+  ipcMain.handle('desktopLyrics:setPausedHidden', (event, hidden: unknown) => {
+    assertTrustedIpcSender(event, 'desktop lyrics IPC')
+    if (!isDesktopLyricsSender(event)) throw new Error('desktop lyrics visibility rejected')
+    if (typeof hidden !== 'boolean') throw new Error('invalid desktop lyrics visibility state')
+    setDesktopLyricsPausedHidden(hidden)
   })
 
   ipcMain.on('desktopLyrics:publishSession', (event, session: unknown) => {

@@ -26,6 +26,7 @@ const {
   validateMingwToolchain
 } = require('./audio-engine-toolchain.cjs')
 const {
+  cmakeCachePath,
   prepareAsioMsvcNinjaToolchain,
   resolveAsioMsvcBuildDirectory
 } = require('./asio-msvc-toolchain.cjs')
@@ -36,6 +37,10 @@ const { createMinimalPe } = require('./pe-fixture.cjs')
 const STAGING_SCRIPT_FILES = Object.freeze([
   'stage-audio-engine.cjs',
   'audio-engine-toolchain.cjs',
+  'generate-audio-capability-manifest.cjs',
+  'staged-audio-runtime-observation.cjs',
+  'verify-release-capability-consistency.cjs',
+  'verify-release-artifacts.cjs',
   'pe-imports.cjs'
 ])
 
@@ -43,6 +48,9 @@ function copyStagingScripts(fixtureScripts) {
   mkdirSync(fixtureScripts, { recursive: true })
   for (const file of STAGING_SCRIPT_FILES) {
     copyFileSync(join(__dirname, file), join(fixtureScripts, file))
+  }
+  for (const file of STAGING_SCRIPT_FILES) {
+    assert.ok(existsSync(join(fixtureScripts, file)), `staging fixture omitted ${file}`)
   }
 }
 
@@ -52,6 +60,14 @@ function nativeLibraryName() {
     : process.platform === 'darwin'
       ? 'libtwilight-audio-engine.dylib'
       : 'libtwilight-audio-engine.so'
+}
+
+function runtimeFileNames() {
+  return [
+    nativeLibraryName(),
+    'twilight_audio_node.node',
+    ...(process.platform === 'win32' ? ['twilight-asio-helper.exe'] : [])
+  ]
 }
 
 /** Staging parses import tables on Windows, so fixtures must be real PE files. */
@@ -142,6 +158,13 @@ test('prepares a deterministic MSVC and Ninja environment for the ASIO ABI fixtu
   assert.match(result.environment.LIB, /Windows Kits\\10\\Lib\\10\.0\.26100\.0\\um\\x64/)
   assert.match(result.cmakePath, /CMake\\bin\\cmake\.exe$/)
   assert.match(result.ninjaPath, /CMake\\Ninja\\ninja\.exe$/)
+})
+
+test('normalizes MSVC cache paths before passing them to CMake', () => {
+  assert.equal(
+    cmakeCachePath('C:\\Program Files (x86)\\Windows Kits\\10\\bin\\rc.exe'),
+    'C:/Program Files (x86)/Windows Kits/10/bin/rc.exe'
+  )
 })
 
 test('uses the MSVC Ninja build directory by default for ASIO ABI fixtures', () => {
@@ -749,7 +772,7 @@ test('MinGW staging rejects an explicitly selected build directory instead of us
   const nativeLibrary = nativeLibraryName()
   for (const fallbackBuildDir of fallbackBuildDirs) {
     mkdirSync(fallbackBuildDir, { recursive: true })
-    for (const file of [nativeLibrary, 'twilight_audio_node.node']) {
+    for (const file of runtimeFileNames()) {
       writeRuntimeFixture(fallbackBuildDir, file, { trailer: 'fallback artifact' })
     }
   }
@@ -781,7 +804,7 @@ for (const fallbackName of ['windows-msvc', 'default']) {
     const nativeLibrary = nativeLibraryName()
     const fallbackBuildDir = join(fixtureRoot, 'audio-engine', 'build', fallbackName)
     mkdirSync(fallbackBuildDir, { recursive: true })
-    for (const file of [nativeLibrary, 'twilight_audio_node.node']) {
+    for (const file of runtimeFileNames()) {
       writeRuntimeFixture(fallbackBuildDir, file, { trailer: `artifact from ${fallbackName}` })
     }
 
@@ -799,6 +822,13 @@ for (const fallbackName of ['windows-msvc', 'default']) {
       ).includes(`artifact from ${fallbackName}`),
       `staged ${nativeLibrary} did not come from the ${fallbackName} build directory`
     )
+    const manifest = JSON.parse(
+      readFileSync(
+        join(fixtureRoot, 'resources', 'audio-engine', 'audio-capabilities.json'),
+        'utf8'
+      )
+    )
+    assert.equal(manifest.artifactDirectory, '.')
   })
 }
 
@@ -818,6 +848,9 @@ function stageRuntimeDependencyFixture(fixtureRoot, { provideRuntimeDll }) {
   writeRuntimeFixture(buildDir, nativeLibrary, { imports: ['libstdc++-6.dll', 'KERNEL32.dll'] })
   writeRuntimeFixture(buildDir, 'twilight_audio_node.node', {
     imports: [nativeLibrary, 'libstdc++-6.dll']
+  })
+  writeRuntimeFixture(buildDir, 'twilight-asio-helper.exe', {
+    imports: ['libstdc++-6.dll']
   })
 
   const toolchainBin = join(fixtureRoot, 'toolchain', 'bin')
@@ -940,7 +973,7 @@ test('MinGW CTest validation requires every native test registration, including 
     ...cmakeLists.matchAll(/add_test\(\s*NAME\s+(twilight_[a-z0-9_]+)/g)
   ].map((match) => match[1])
 
-  assert.equal(MINGW_EXPECTED_CTESTS.length, 28)
+  assert.equal(MINGW_EXPECTED_CTESTS.length, 32)
   assert.ok(MINGW_EXPECTED_CTESTS.includes('twilight_audio_performance_gate'))
   assert.deepEqual([...MINGW_EXPECTED_CTESTS].sort(), registeredTests.sort())
 })

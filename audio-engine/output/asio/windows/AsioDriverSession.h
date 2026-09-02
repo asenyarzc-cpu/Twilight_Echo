@@ -31,6 +31,7 @@ class AsioDriverSession final {
   bool start(std::string* error);
   void stop();
   void close();
+  std::string lastCloseError() const;
   void* outputBuffer(long channel, long bufferIndex) const;
   AsioChannelFormat outputChannelFormat(long channel) const;
   bool outputReady();
@@ -44,6 +45,7 @@ class AsioDriverSession final {
   AsioDriverEntry entry_;
   std::shared_ptr<AsioControlThread> controlThread_;
   std::shared_ptr<State> state_;
+  std::string lastCloseError_;
 };
 
 }  // namespace twilight::audio::asio_windows

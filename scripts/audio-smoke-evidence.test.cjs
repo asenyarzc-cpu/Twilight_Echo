@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict')
+const crypto = require('node:crypto')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -42,27 +43,29 @@ test('audio smoke evidence report records opt-in real-device surfaces', () => {
   assert.match(report.markdown, /ASIO Native DSD/)
   assert.match(report.markdown, /pnpm run smoke:wasapi/)
   assert.match(report.markdown, /output\/audio-smoke-evidence\/wasapi-exclusive-pcm\.json/)
-  assert.equal(report.json.schemaVersion, 1)
+  assert.equal(report.json.schemaVersion, 2)
   assert.equal(report.json.requiredSurfaces.includes('DoP DAC'), true)
   assert.equal(report.json.requiredSurfaces.includes('SACD ISO'), true)
   assert.equal(report.json.entries[0].status, 'pass')
   assert.equal(report.json.entries[1].status, 'not-run')
   assert.equal(report.json.coverage.complete, false)
-  assert.equal(report.json.actionPlan.length, 4)
+  assert.equal(report.json.actionPlan.length, 7)
   assert.equal(
     report.json.actionPlan.some(
-      (item) => item.surface === 'SACD ISO' && item.artifact.endsWith('sacd-iso.json')
+      (item) => item.surface === 'SACD ISO' && item.artifact.endsWith('sacd-iso-raw.json')
     ),
     true
   )
   assert.deepEqual(report.json.coverage.missingSurfaces, [
-    'ASIO',
+    'ASIO PCM',
     'DoP DAC',
     'Native DSD',
-    'SACD ISO'
+    'SACD ISO',
+    'CoreAudio Hog',
+    'ALSA hw:'
   ])
-  // 5 required hardware + 3 product honesty surfaces
-  assert.equal(report.json.surfaceRows.length, 8)
+  // 7 required hardware + 3 product honesty surfaces
+  assert.equal(report.json.surfaceRows.length, 10)
   assert.deepEqual(report.json.optionalProductSurfaces, [
     'Loudnorm',
     'Gapless Album',
@@ -96,12 +99,12 @@ test('audio smoke evidence report records opt-in real-device surfaces', () => {
   assert.match(report.markdown, /\| Loudnorm \| not-run \|/)
   assert.match(report.markdown, /\| Gapless Album \| not-run \|/)
   assert.match(report.markdown, /\| Unity Volume \| not-run \|/)
-  assert.match(report.markdown, /Coverage: 1\/5 required surfaces passed/)
+  assert.match(report.markdown, /Coverage: 0\/7 required surfaces passed/)
   assert.match(report.markdown, /Complete: no/)
   assert.match(report.markdown, /Optional product honesty surfaces/)
   assert.match(report.markdown, /## Collection Action Plan/)
   assert.match(report.markdown, /pnpm run smoke:asio-native-dsd/)
-  assert.match(report.markdown, /output\/audio-smoke-evidence\/sacd-iso\.json/)
+  assert.match(report.markdown, /artifacts\/sacd-iso-raw\.json/)
 })
 
 test('audio smoke evidence report can derive entries from smoke JSON summaries', () => {
@@ -154,10 +157,12 @@ test('audio smoke evidence report expands missing required surfaces as not-run',
     report.json.surfaceRows.map((entry) => entry.surface),
     [
       'WASAPI Exclusive',
-      'ASIO',
+      'ASIO PCM',
       'DoP DAC',
       'Native DSD',
       'SACD ISO',
+      'CoreAudio Hog',
+      'ALSA hw:',
       'Loudnorm',
       'Gapless Album',
       'Unity Volume'
@@ -165,21 +170,30 @@ test('audio smoke evidence report expands missing required surfaces as not-run',
   )
   assert.equal(report.json.surfaceRows[0].status, 'pass')
   assert.equal(report.json.surfaceRows[1].status, 'not-run')
-  assert.match(report.markdown, /\| ASIO \| not-run \|/)
+  assert.match(report.markdown, /\| ASIO PCM \| not-run \|/)
   assert.match(report.markdown, /\| DoP DAC \| not-run \|/)
 })
 
 test('audio smoke evidence coverage is complete only when every required surface passes', () => {
   const coverage = buildCoverageSummary(
-    ['WASAPI Exclusive', 'ASIO', 'DoP DAC', 'Native DSD', 'SACD ISO'].map((surface) => ({
+    [
+      'WASAPI Exclusive',
+      'ASIO PCM',
+      'DoP DAC',
+      'Native DSD',
+      'SACD ISO',
+      'CoreAudio Hog',
+      'ALSA hw:'
+    ].map((surface) => ({
       surface,
       status: 'pass',
-      artifact: `output/audio-smoke-evidence/${surface.toLowerCase().replaceAll(' ', '-')}.json`
+      artifact: `output/audio-smoke-evidence/${surface.toLowerCase().replaceAll(' ', '-')}.json`,
+      evidenceKind: 'real-device'
     }))
   )
 
   assert.equal(coverage.complete, true)
-  assert.equal(coverage.passCount, 5)
+  assert.equal(coverage.passCount, 7)
   assert.deepEqual(coverage.missingSurfaces, [])
   assert.deepEqual(coverage.failedSurfaces, [])
   assert.deepEqual(coverage.unbackedPassSurfaces, [])
@@ -191,18 +205,27 @@ test('product honesty surfaces default not-run and do not gate coverage.complete
   const report = buildAudioSmokeEvidenceReport({
     generatedAt: '2026-07-15T00:00:00.000Z',
     platform: 'win32',
-    entries: ['WASAPI Exclusive', 'ASIO', 'DoP DAC', 'Native DSD', 'SACD ISO'].map((surface) => ({
+    entries: [
+      'WASAPI Exclusive',
+      'ASIO PCM',
+      'DoP DAC',
+      'Native DSD',
+      'SACD ISO',
+      'CoreAudio Hog',
+      'ALSA hw:'
+    ].map((surface) => ({
       surface,
       id: surface.toLowerCase().replaceAll(' ', '-'),
       label: surface,
       status: 'pass',
-      artifact: `output/audio-smoke-evidence/${surface.toLowerCase().replaceAll(' ', '-')}.json`
+      artifact: `output/audio-smoke-evidence/${surface.toLowerCase().replaceAll(' ', '-')}.json`,
+      evidenceKind: 'real-device'
     }))
   })
 
   assert.equal(report.json.coverage.complete, true)
-  assert.equal(report.json.coverage.passCount, 5)
-  assert.equal(report.json.surfaceRows.length, 8)
+  assert.equal(report.json.coverage.passCount, 7)
+  assert.equal(report.json.surfaceRows.length, 10)
   for (const surface of ['Loudnorm', 'Gapless Album', 'Unity Volume']) {
     const row = report.json.surfaceRows.find((entry) => entry.surface === surface)
     assert.equal(row?.status, 'not-run')
@@ -249,6 +272,7 @@ test('audio smoke evidence does not count pass rows without artifacts as complet
         id: 'wasapi-exclusive-no-artifact',
         label: 'WASAPI Exclusive hardware smoke',
         status: 'pass',
+        evidenceKind: 'real-device',
         notes: 'This pass row is missing its JSON artifact'
       }
     ]
@@ -263,7 +287,7 @@ test('audio smoke evidence does not count pass rows without artifacts as complet
   assert.equal(report.json.actionPlan[0].status, 'insufficient-evidence')
   assert.match(
     report.markdown,
-    /only counts as passed when at least one `pass` row includes an artifact path/
+    /only counts as passed when at least one `pass` row is marked `real-device` and includes an artifact path/
   )
 })
 
@@ -277,22 +301,24 @@ test('audio smoke evidence can require local pass artifacts to exist', () => {
         {
           surface: 'WASAPI Exclusive',
           status: 'pass',
-          artifact: artifactPath
+          artifact: artifactPath,
+          evidenceKind: 'real-device'
         },
         {
-          surface: 'ASIO',
+          surface: 'ASIO PCM',
           status: 'pass',
-          artifact: path.join(dir, 'missing-asio.json')
+          artifact: path.join(dir, 'missing-asio.json'),
+          evidenceKind: 'real-device'
         }
       ],
       { verifyArtifacts: true }
     )
 
-    assert.deepEqual(coverage.passedSurfaces, ['WASAPI Exclusive'])
-    assert.deepEqual(coverage.missingArtifactSurfaces, ['ASIO'])
+    assert.deepEqual(coverage.passedSurfaces, [])
+    assert.deepEqual(coverage.missingArtifactSurfaces, ['WASAPI Exclusive', 'ASIO PCM'])
     const actionPlan = buildCollectionActionPlan(coverage)
-    assert.equal(actionPlan[0].surface, 'ASIO')
-    assert.equal(actionPlan[0].status, 'missing-artifact')
+    assert.equal(actionPlan[0].surface, 'WASAPI Exclusive')
+    assert.equal(actionPlan[0].status, 'invalid-artifact')
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -303,26 +329,269 @@ test('audio smoke evidence action plan lists only unresolved required surfaces',
     {
       surface: 'WASAPI Exclusive',
       status: 'pass',
-      artifact: 'output/audio-smoke-evidence/wasapi-exclusive.json'
+      artifact: 'output/audio-smoke-evidence/wasapi-exclusive.json',
+      evidenceKind: 'real-device'
     },
-    { surface: 'ASIO', status: 'fail' },
+    { surface: 'ASIO PCM', status: 'fail' },
     { surface: 'DoP DAC', status: 'skip' },
     { surface: 'Native DSD', status: 'not-run' },
     {
       surface: 'SACD ISO',
       status: 'pass',
-      artifact: 'output/audio-smoke-evidence/sacd-iso.json'
+      artifact: 'output/audio-smoke-evidence/sacd-iso.json',
+      evidenceKind: 'real-device'
     }
   ])
 
   const actionPlan = buildCollectionActionPlan(coverage)
   assert.deepEqual(
     actionPlan.map((item) => `${item.surface}:${item.status}`),
-    ['ASIO:fail', 'Native DSD:not-run', 'DoP DAC:skip']
+    [
+      'ASIO PCM:fail',
+      'Native DSD:not-run',
+      'CoreAudio Hog:not-run',
+      'ALSA hw::not-run',
+      'DoP DAC:skip'
+    ]
   )
   assert.match(actionPlan[0].command, /smoke:audio-format-matrix/)
   assert.match(actionPlan[1].command, /smoke:asio-native-dsd/)
-  assert.match(actionPlan[2].requiredEvidence, /dsdMode=dop/)
+  assert.match(
+    actionPlan.find((item) => item.surface === 'DoP DAC').requiredEvidence,
+    /dsdMode=dop/
+  )
+})
+
+test('real-device pass requires complete collection metadata and a matching artifact SHA-256', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'twilight-audio-evidence-contract-test-'))
+  try {
+    const artifact = path.join(dir, 'wasapi-raw.json')
+    fs.writeFileSync(artifact, '{"result":"real device capture"}\n')
+    const artifactSha256 = crypto
+      .createHash('sha256')
+      .update(fs.readFileSync(artifact))
+      .digest('hex')
+    const entry = {
+      surface: 'WASAPI Exclusive',
+      status: 'pass',
+      evidenceKind: 'real-device',
+      device: 'USB DAC endpoint',
+      driver: 'USB Audio 3.2.1',
+      format: 'int24-in32/192000Hz/2ch',
+      bufferFrames: 256,
+      playbackDurationSeconds: 1800,
+      expectedState: 'actualBackend=wasapi-exclusive; exclusive=true',
+      artifact,
+      artifactSha256,
+      capturedAt: '2026-08-31T12:00:00.000Z',
+      inputCommand: 'pnpm run smoke:wasapi -- --device "USB DAC endpoint" --buffer 256 --json'
+    }
+    const valid = buildAudioSmokeEvidenceReport({
+      entries: [entry],
+      verifyArtifacts: true,
+      artifactBaseDir: dir
+    })
+    assert.deepEqual(valid.json.coverage.passedSurfaces, ['WASAPI Exclusive'])
+    assert.equal(valid.json.surfaceRows[0].status, 'pass')
+
+    fs.writeFileSync(artifact, '{"result":"tampered"}\n')
+    const invalid = buildAudioSmokeEvidenceReport({
+      entries: [entry],
+      verifyArtifacts: true,
+      artifactBaseDir: dir
+    })
+    assert.deepEqual(invalid.json.coverage.missingArtifactSurfaces, ['WASAPI Exclusive'])
+    assert.equal(invalid.json.actionPlan[0].status, 'invalid-artifact')
+    assert.match(invalid.markdown, /artifact-sha256-mismatch|invalid-artifact/)
+
+    const mock = buildAudioSmokeEvidenceReport({
+      entries: [{ ...entry, evidenceKind: 'mock' }],
+      operationalResults: [
+        { scenario: 'soak-2h', status: 'not-run', notes: 'No attached device.' }
+      ],
+      verifyArtifacts: true,
+      artifactBaseDir: dir
+    })
+    assert.deepEqual(mock.json.coverage.nonHardwareEvidenceSurfaces, ['WASAPI Exclusive'])
+    assert.equal(mock.json.actionPlan[0].status, 'not-real-device')
+    assert.equal(
+      mock.json.operationalScenarioRows.find((item) => item.scenario === 'soak-2h').status,
+      'not-run'
+    )
+    assert.equal(mock.json.operationalScenarioRows.length, 4)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('operational evidence preserves envelope fields and rejects mock, incomplete, and short passes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'twilight-audio-operational-evidence-test-'))
+  try {
+    const artifact = path.join(dir, 'track-switch-raw.json')
+    fs.writeFileSync(artifact, '{"result":"captured"}\n')
+    const artifactSha256 = crypto
+      .createHash('sha256')
+      .update(fs.readFileSync(artifact))
+      .digest('hex')
+    const operationalResult = {
+      scenario: 'track-switch-loop-30m',
+      status: 'pass',
+      surface: 'WASAPI Exclusive',
+      device: 'USB DAC endpoint',
+      driver: 'USB Audio 3.2.1',
+      format: 'int24-in32/192000Hz/2ch',
+      bufferFrames: 256,
+      playbackDurationSeconds: 1800,
+      expectedState: 'actualBackend=wasapi-exclusive; exclusive=true',
+      observedState: 'switches=600; no silent fallback',
+      artifact,
+      artifactSha256,
+      capturedAt: '2026-08-31T12:00:00.000Z',
+      inputCommand: 'pnpm run smoke:wasapi -- --device "USB DAC endpoint" --json',
+      evidenceKind: 'real-device',
+      switchCount: 600,
+      underrunCount: 0,
+      deviceLostCount: 0,
+      recoveryCount: 0
+    }
+    const envelopePath = path.join(dir, 'envelope.json')
+    fs.writeFileSync(envelopePath, JSON.stringify({ operationalResults: [operationalResult] }))
+    const outputDir = path.join(dir, 'out')
+    const result = spawnSync(
+      process.execPath,
+      [
+        path.join(__dirname, 'audio-smoke-evidence.cjs'),
+        '--input',
+        envelopePath,
+        '--output-dir',
+        outputDir
+      ],
+      { encoding: 'utf8' }
+    )
+    assert.equal(result.status, 0)
+    const report = JSON.parse(
+      fs.readFileSync(path.join(outputDir, 'audio-smoke-evidence.json'), 'utf8')
+    )
+    const row = report.operationalScenarioRows.find(
+      (item) => item.scenario === 'track-switch-loop-30m'
+    )
+    assert.equal(row.status, 'pass')
+    assert.equal(row.observedState, operationalResult.observedState)
+    assert.equal(row.switchCount, 600)
+    assert.equal(row.underrunCount, 0)
+    assert.equal(row.deviceLostCount, 0)
+    assert.equal(row.recoveryCount, 0)
+
+    const fallbackEnvelopePath = path.join(dir, 'fallback-envelope.json')
+    fs.writeFileSync(
+      fallbackEnvelopePath,
+      JSON.stringify({
+        operationalResults: [
+          {
+            ...operationalResult,
+            status: 'not-run',
+            artifact: '',
+            artifactSha256: ''
+          }
+        ]
+      })
+    )
+    const fallbackOutputDir = path.join(dir, 'fallback-out')
+    const fallback = spawnSync(
+      process.execPath,
+      [
+        path.join(__dirname, 'audio-smoke-evidence.cjs'),
+        '--input',
+        fallbackEnvelopePath,
+        '--output-dir',
+        fallbackOutputDir
+      ],
+      { encoding: 'utf8' }
+    )
+    assert.equal(fallback.status, 0)
+    const fallbackReport = JSON.parse(
+      fs.readFileSync(path.join(fallbackOutputDir, 'audio-smoke-evidence.json'), 'utf8')
+    )
+    const fallbackRow = fallbackReport.operationalScenarioRows.find(
+      (item) => item.scenario === 'track-switch-loop-30m'
+    )
+    assert.equal(fallbackRow.artifact, fallbackEnvelopePath)
+    assert.equal(fallbackRow.observedState, operationalResult.observedState)
+    assert.equal(fallbackRow.switchCount, 600)
+    assert.equal(fallbackRow.underrunCount, 0)
+    assert.equal(fallbackRow.deviceLostCount, 0)
+    assert.equal(fallbackRow.recoveryCount, 0)
+
+    const insufficientDuration = buildAudioSmokeEvidenceReport({
+      operationalResults: [{ ...operationalResult, playbackDurationSeconds: 120 }],
+      verifyArtifacts: true,
+      artifactBaseDir: dir
+    })
+    assert.equal(
+      insufficientDuration.json.operationalScenarioRows.find(
+        (item) => item.scenario === 'track-switch-loop-30m'
+      ).status,
+      'insufficient-duration'
+    )
+
+    const mock = buildAudioSmokeEvidenceReport({
+      operationalResults: [{ ...operationalResult, evidenceKind: 'mock' }],
+      verifyArtifacts: true,
+      artifactBaseDir: dir
+    })
+    assert.equal(
+      mock.json.operationalScenarioRows.find((item) => item.scenario === 'track-switch-loop-30m')
+        .status,
+      'not-real-device'
+    )
+
+    const incomplete = buildAudioSmokeEvidenceReport({
+      operationalResults: [{ scenario: 'track-switch-loop-30m', status: 'pass' }],
+      verifyArtifacts: true,
+      artifactBaseDir: dir
+    })
+    assert.equal(
+      incomplete.json.operationalScenarioRows.find(
+        (item) => item.scenario === 'track-switch-loop-30m'
+      ).status,
+      'not-real-device'
+    )
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('CoreAudio Hog action plan requires the exclusive backend and hog expected state', () => {
+  const coverage = buildCoverageSummary([])
+  const coreAudioGuide = buildCollectionActionPlan(coverage).find(
+    (item) => item.surface === 'CoreAudio Hog'
+  )
+  assert.match(coreAudioGuide.command, /--backend coreaudio-exclusive/)
+  assert.match(coreAudioGuide.requiredEvidence, /accessMode=hog/)
+
+  const report = buildAudioSmokeEvidenceReport({
+    entries: [
+      {
+        surface: 'CoreAudio Hog',
+        status: 'pass',
+        evidenceKind: 'real-device',
+        device: 'Mac DAC',
+        driver: 'CoreAudio',
+        format: 'int24/192000Hz/2ch',
+        bufferFrames: 256,
+        playbackDurationSeconds: 1800,
+        expectedState: 'actualBackend=coreaudio; accessMode=shared',
+        artifact: 'artifact.json',
+        artifactSha256: 'a'.repeat(64),
+        capturedAt: '2026-08-31T12:00:00.000Z',
+        inputCommand: 'pnpm run smoke:audio-format-matrix -- --backend coreaudio-exclusive'
+      }
+    ],
+    verifyArtifacts: true
+  })
+  assert.deepEqual(report.json.coverage.missingArtifactSurfaces, ['CoreAudio Hog'])
+  assert.equal(report.json.actionPlan[0].surface, 'CoreAudio Hog')
+  assert.equal(report.json.actionPlan[0].status, 'invalid-artifact')
 })
 
 test('audio smoke evidence CLI rejects missing flag values', () => {
@@ -394,7 +663,7 @@ test('audio smoke evidence can merge multiple smoke summary files', () => {
 
     assert.equal(entries.length, 2)
     assert.match(report.markdown, /\| WASAPI Exclusive \| pass \|/)
-    assert.match(report.markdown, /\| ASIO \| fail \|/)
+    assert.match(report.markdown, /\| ASIO PCM \| fail \|/)
     assert.match(report.markdown, /Driver rejected PCM open/)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
@@ -417,7 +686,7 @@ test('audio smoke evidence accepts UTF-16 LE smoke JSON from Windows PowerShell 
     const entries = readEntriesFromInputs([inputPath])
 
     assert.equal(entries.length, 1)
-    assert.equal(entries[0].surface, 'ASIO')
+    assert.equal(entries[0].surface, 'ASIO PCM')
     assert.equal(entries[0].status, 'pass')
     assert.equal(entries[0].artifact, inputPath)
   } finally {
@@ -495,9 +764,9 @@ test('audio smoke evidence CLI treats an input entries file as the fallback arti
       verifyArtifacts: true,
       artifactBaseDir: dir
     })
-    assert.deepEqual(report.json.coverage.passedSurfaces, ['WASAPI Exclusive'])
+    assert.deepEqual(report.json.coverage.passedSurfaces, [])
     assert.deepEqual(report.json.coverage.unbackedPassSurfaces, [])
-    assert.deepEqual(report.json.coverage.missingArtifactSurfaces, [])
+    assert.deepEqual(report.json.coverage.nonHardwareEvidenceSurfaces, ['WASAPI Exclusive'])
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -517,7 +786,8 @@ test('audio smoke evidence CLI reports missing artifact paths as incomplete evid
           id: 'wasapi-missing-artifact',
           label: 'WASAPI Exclusive missing artifact smoke',
           status: 'pass',
-          artifact: 'missing-wasapi.json'
+          artifact: 'missing-wasapi.json',
+          evidenceKind: 'real-device'
         }
       ])
     )
@@ -535,7 +805,7 @@ test('audio smoke evidence CLI reports missing artifact paths as incomplete evid
     )
 
     assert.equal(result.status, 1)
-    assert.match(result.stderr, /WASAPI Exclusive=missing-artifact/)
+    assert.match(result.stderr, /WASAPI Exclusive=invalid-artifact/)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -569,7 +839,7 @@ test('audio smoke evidence CLI can fail when required surface evidence is incomp
 
     assert.equal(result.status, 1)
     assert.match(result.stderr, /Audio smoke evidence incomplete/)
-    assert.match(result.stderr, /ASIO=not-run/)
+    assert.match(result.stderr, /ASIO PCM=not-run/)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

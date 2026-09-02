@@ -45,6 +45,109 @@ std::unique_ptr<MockAsioHost> makeHost() {
   return host;
 }
 
+AsioDeviceInfo makeQuirkDevice() {
+  MockAsioHost::DsdProfile profile;
+  profile.nativeDsdCapable = true;
+  profile.nativeDsdSampleRates = {2822400};
+  profile.nativeDsdSampleFormats = {AudioSampleFormat::DsdInt8Lsb1};
+  auto device = makeMockAsioDevice(
+      "asio:{12345678-1234-1234-1234-1234567890AB}",
+      {44100, 48000, 2822400},
+      2,
+      AudioSampleFormat::Float32Interleaved,
+      profile);
+  device.capabilityProbed = true;
+  device.driverVersion = 7;
+  device.minBufferSize = 16;
+  device.maxBufferSize = 256;
+  device.preferredBufferSize = 32;
+  device.bufferGranularity = 16;
+  return device;
+}
+
+void testAsioQuirkRegistryAppliesExactMechanisms() {
+  const auto device = makeQuirkDevice();
+  const std::string fingerprint = AsioQuirkRegistry::capabilityFingerprint(device);
+  const std::string json =
+      std::string(R"({"schemaVersion":1,"entries":[)" ) +
+      R"({"clsid":"{12345678-1234-1234-1234-1234567890AB}","minVersion":7,"maxVersion":7,"capabilityFingerprint":")" +
+      fingerprint +
+      R"(","type":"sample-type-mapping","source":"fake-case-sample","enabled":true,"value":"dsd-lsb1->dsd-msb1"},)" +
+      R"({"clsid":"{12345678-1234-1234-1234-1234567890AB}","minVersion":7,"maxVersion":7,"capabilityFingerprint":")" +
+      fingerprint +
+      R"(","type":"dsd-control-order","source":"fake-case-order","enabled":true,"value":"rate-only"}]})";
+  const auto registry = AsioQuirkRegistry::fromJson(json);
+  const auto application = registry.apply(device);
+  assert(application.registryState == "applied");
+  assert(application.sampleFormatMapping.has_value());
+  assert(application.sampleFormatMapping->reported == AudioSampleFormat::DsdInt8Lsb1);
+  assert(application.sampleFormatMapping->interpreted == AudioSampleFormat::DsdInt8Msb1);
+  assert(application.dsdControlOrder == AsioNativeDsdControlOrder::RateOnly);
+  assert(application.applied.size() == 2);
+
+  auto host = std::make_unique<MockAsioHost>();
+  host->devices.push_back(device);
+  auto* rawHost = host.get();
+  AsioBackend backend(std::move(host), registry);
+  std::string error;
+  assert(backend.open(device.id, sourceFormat(2822400, 1, 2, AudioSampleFormat::DsdInt8Lsb1), &error));
+  assert(rawHost->lastOpenConfig.sampleFormatMapping.has_value());
+  assert(rawHost->lastOpenConfig.nativeDsdControlOrder == AsioNativeDsdControlOrder::RateOnly);
+  assert(backend.outputInfo().diagnostics.quirkRegistryState == "applied");
+  assert(backend.outputInfo().diagnostics.quirkApplied.find("sample-type-mapping@fake-case-sample") != std::string::npos);
+}
+
+void testAsioQuirkRegistryDsDOnlyBoundsAndCadence() {
+  const auto device = makeQuirkDevice();
+  const std::string fingerprint = AsioQuirkRegistry::capabilityFingerprint(device);
+  const std::string json =
+      std::string(R"({"schemaVersion":1,"entries":[)" ) +
+      R"({"clsid":"{12345678-1234-1234-1234-1234567890AB}","minVersion":7,"maxVersion":7,"capabilityFingerprint":")" +
+      fingerprint +
+      R"(","type":"dsd-minimum-buffer","source":"fake-case-buffer","enabled":true,"value":"128"},)" +
+      R"({"clsid":"{12345678-1234-1234-1234-1234567890AB}","minVersion":7,"maxVersion":7,"capabilityFingerprint":")" +
+      fingerprint +
+      R"(","type":"dsd-callback-cadence","source":"fake-case-cadence","enabled":true,"value":"5"}]})";
+  const auto registry = AsioQuirkRegistry::fromJson(json);
+  auto host = std::make_unique<MockAsioHost>();
+  host->devices.push_back(device);
+  auto* rawHost = host.get();
+  AsioBackend backend(std::move(host), registry);
+  std::string error;
+  OutputConfig outputConfig;
+  outputConfig.preferredBufferSize = 64;
+  assert(backend.setOutputConfig(outputConfig, &error));
+  assert(backend.open(device.id, sourceFormat(2822400, 1, 2, AudioSampleFormat::DsdInt8Lsb1), &error));
+  assert(rawHost->lastOpenConfig.bufferSizeFrames == 128);
+  assert(rawHost->lastOpenConfig.dsdMinimumBufferFrames == 128);
+  assert(rawHost->lastOpenConfig.dsdCadenceConfirmCallbacks == 5);
+  backend.close();
+
+  auto pcmHost = std::make_unique<MockAsioHost>();
+  pcmHost->devices.push_back(device);
+  auto* rawPcmHost = pcmHost.get();
+  AsioBackend pcmBackend(std::move(pcmHost), registry);
+  assert(pcmBackend.open(device.id, sourceFormat(48000, 24, 2, AudioSampleFormat::Float32Interleaved), &error));
+  assert(rawPcmHost->lastOpenConfig.dsdMinimumBufferFrames == 128);
+  assert(rawPcmHost->lastOpenConfig.bufferSizeFrames != 128 || !isDsdSampleFormat(rawPcmHost->lastOpenConfig.format.sampleFormat));
+}
+
+void testAsioQuirkRegistrySafelyIgnoresInvalidAndUnprobed() {
+  const auto invalid = AsioQuirkRegistry::fromJson(R"({"schemaVersion":99,"entries":[]})");
+  AsioDeviceInfo unprobed = makeQuirkDevice();
+  unprobed.capabilityProbed = false;
+  const auto ignored = invalid.apply(unprobed);
+  assert(ignored.registryState == "ignored-incompatible-schema");
+
+  const auto valid = AsioQuirkRegistry::fromJson(R"({"schemaVersion":1,"entries":[{"clsid":"{12345678-1234-1234-1234-1234567890AB}","minVersion":1,"maxVersion":9,"capabilityFingerprint":"wrong","type":"dsd-minimum-buffer","source":"fake","enabled":true,"value":"999999"}]})");
+  const auto noProbe = valid.apply(unprobed);
+  assert(noProbe.registryState == "no-probed-clsid");
+  auto unknown = makeQuirkDevice();
+  unknown.id = "asio:{AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA}";
+  unknown.capabilityProbed = true;
+  assert(valid.apply(unknown).registryState == "no-match");
+}
+
 std::string readTextFile(const std::filesystem::path& path);
 
 void testAsioBooleanSemantics() {
@@ -243,7 +346,8 @@ void testAsioDriverSessionFallsBackToRateOnlyNativeDsdOrder() {
   assert(rateOnlyPos < allFailedPos);
   // The rate-only order must end with a restore so a failed channel-type proof
   // never leaves the driver parked at the DSD semantic rate.
-  const size_t restorePos = configureBody.find("restoreNativeDsdConfiguration()", rateOnlyPos);
+  const size_t restorePos =
+      configureBody.find("restoreNativeDsdConfiguration(&restoreError)", rateOnlyPos);
   assert(restorePos != std::string::npos);
   assert(restorePos < allFailedPos);
 }
@@ -581,6 +685,36 @@ void testOpenStillAttemptsWhenProbeFails() {
   assert(backend.open("asio:mock", sourceFormat(48000, 24), &error));
   assert(rawHost->probeCalls == 1);
   assert(rawHost->openCalls >= 1);
+}
+
+void testFatalHelperProbeFailureStopsBeforeOpen() {
+  auto host = std::make_unique<MockAsioHost>();
+  AsioDeviceInfo registryOnly;
+  registryOnly.id = "asio:mock";
+  registryOnly.name = "Mock ASIO";
+  registryOnly.driverName = "Mock ASIO";
+  host->devices.push_back(registryOnly);
+  host->failProbeCount = 1;
+  host->lastHostError = "asio_helper_control_timeout: fixture probe timed out";
+
+  auto* rawHost = host.get();
+  AsioBackend backend(std::move(host));
+  std::string error;
+  assert(!backend.open("asio:mock", sourceFormat(48000, 24), &error));
+  assert(error.starts_with("asio_helper_control_timeout"));
+  assert(rawHost->probeCalls == 1);
+  assert(rawHost->openCalls == 0);
+  assert(backend.outputInfo().perfectReasonCode == "asio_helper_control_timeout");
+}
+
+void testMissingHelperKeepsStructuredLaunchReason() {
+  auto host = std::make_unique<MockAsioHost>();
+  host->lastHostError = "asio_helper_launch_failed: fixture helper is missing";
+  AsioBackend backend(std::move(host));
+  std::string error;
+  assert(!backend.open("auto", sourceFormat(48000, 24), &error));
+  assert(error.starts_with("asio_helper_launch_failed"));
+  assert(backend.outputInfo().perfectReasonCode == "asio_helper_launch_failed");
 }
 
 void testAsioEmptyCatalogReportsArchitectureMismatch() {
@@ -2075,7 +2209,7 @@ bool runRealAsioSmokeRequested() {
 void testRealAsioSmokeOptIn() {
   if (!runRealAsioSmokeRequested()) return;
 
-  auto host = createRealAsioHost();
+  auto host = createIsolatedAsioHost();
   const auto devices = host->enumerateDevices();
   if (devices.empty()) {
     std::cerr << "TAE_RUN_REAL_ASIO_SMOKE=1 but no ASIO devices were enumerated; skipping real smoke\n";
@@ -2140,6 +2274,11 @@ int main() {
   testOpenProbesRegistryOnlyDeviceRecord();
   testOpenSkipsProbeWhenCapabilitiesAlreadyKnown();
   testOpenStillAttemptsWhenProbeFails();
+  testAsioQuirkRegistryAppliesExactMechanisms();
+  testAsioQuirkRegistryDsDOnlyBoundsAndCadence();
+  testAsioQuirkRegistrySafelyIgnoresInvalidAndUnprobed();
+  testFatalHelperProbeFailureStopsBeforeOpen();
+  testMissingHelperKeepsStructuredLaunchReason();
   testFormatNegotiation();
   testOpenFailureAndFallbackFormats();
   testExtremeSampleRates();

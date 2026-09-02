@@ -3,6 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { verifyPackagedDependencyClosure } = require('./verify-packaged-dependency-closure.cjs')
 const { verifyWindowsAppBranding } = require('./verify-windows-app-branding.cjs')
+const { preparePackagedAudioStaging } = require('./packaged-audio-staging.cjs')
 
 const root = path.resolve(__dirname, '..')
 const electronBuilder = require.resolve('electron-builder/out/cli/cli.js')
@@ -16,7 +17,16 @@ function run(args, environment = process.env) {
 }
 
 function main(args = process.argv.slice(2)) {
-  const result = run(args)
+  const staging = args.includes('--win') ? preparePackagedAudioStaging(root) : null
+  let result
+  try {
+    result = run(staging ? [...args, '--config', staging.configPath] : args, {
+      ...process.env,
+      TWILIGHT_PACKAGED_AUDIO_PRESTRIPPED: staging ? '1' : '0'
+    })
+  } finally {
+    staging?.dispose()
+  }
   if (result.error) throw result.error
   if ((result.status ?? 1) !== 0) process.exit(result.status ?? 1)
   const packagedAsar = path.join(root, 'dist', 'win-unpacked', 'resources', 'app.asar')

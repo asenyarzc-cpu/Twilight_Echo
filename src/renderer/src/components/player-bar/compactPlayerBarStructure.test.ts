@@ -110,6 +110,26 @@ test('the lyrics-page visualizer stage has no painted base colour', () => {
   )
 })
 
+test('compact queue drawer follows the control deck instead of the visualizer stage', () => {
+  assert.match(playerBar, /'compact-visualizer-active': showCompactVisualizer/)
+
+  const queueRule = playerBarCss.match(
+    /\.player-bar-shell\[data-te-playbar-mode='compact'\]\.compact-visualizer-active\s+\.playlist-panel\s*\{[^}]*\}/
+  )
+  assert.ok(queueRule, 'compact visualizer needs a queue drawer placement rule')
+  assert.match(
+    queueRule[0],
+    /margin-bottom:\s*calc\(12px - var\(--te-compact-visualizer-height\)\)/
+  )
+  assert.match(queueRule[0], /z-index:\s*3/)
+
+  const mobileOffset = playerBarCss.match(
+    /@media \(max-width: 760px\)[\s\S]{0,240}\.player-bar-shell\[data-te-playbar-mode='compact'\]\.compact-visualizer-active\s*\{[^}]*\}/
+  )
+  assert.ok(mobileOffset, 'compact queue drawer needs the mobile visualizer offset')
+  assert.match(mobileOffset[0], /--te-compact-visualizer-height:\s*96px/)
+})
+
 test('compact auto-hide keeps the lyrics visualizer while hiding its controls', () => {
   const retainedStage = playerBarCss.match(
     /\.player-bar-shell\[data-te-playbar-hidden='true'\]\[data-te-playbar-visibility='auto'\][\s\S]{0,360}\.player-bar\.player-bar-compact\.player-bar-compact\.player-bar-compact-visualizer\s*\{[^}]*\}/

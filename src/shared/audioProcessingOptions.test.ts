@@ -13,11 +13,13 @@ import {
   UNITY_SOFTWARE_VOLUME,
   VOLUME_NORMALIZATION_OPTIONS,
   dsdOutputModeValues,
+  dsdRatePolicyValues,
   dsdRouteSettingsEqual,
   dsdRouteTargetsDistinctRoute,
   gaplessBlockedReasonCopy,
   gaplessRuntimeStatusCopy,
   isDsdOutputMode,
+  isDsdRatePolicy,
   isDsdRouteSettings,
   isGaplessBlockedReason,
   isVolumeNormalizationMode,
@@ -47,6 +49,14 @@ test('DSD output mode options cover direct output routes', () => {
   assert.equal(isDsdOutputMode('dop'), true)
   assert.equal(isDsdOutputMode('native-dsd'), false)
   assert.equal(isDsdOutputMode('unknown'), false)
+})
+
+test('DSD rate policy exposes explicit rate safety choices', () => {
+  assert.deepEqual(dsdRatePolicyValues(), ['pcm-fallback', 'exact', 'downrate'])
+  assert.equal(isDsdRatePolicy('pcm-fallback'), true)
+  assert.equal(isDsdRatePolicy('exact'), true)
+  assert.equal(isDsdRatePolicy('downrate'), true)
+  assert.equal(isDsdRatePolicy('unknown'), false)
 })
 
 test('loudnorm defaults and unity volume contract stay Stage-1 honest', () => {

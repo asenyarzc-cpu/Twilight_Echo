@@ -181,10 +181,31 @@ std::string hostEventPrefix(AsioHostEvent event) {
       return "ASIO device lost";
     case AsioHostEvent::Xrun:
       return "ASIO driver load event";
+    case AsioHostEvent::HelperFailure:
+      return "ASIO helper failure";
     case AsioHostEvent::BufferFailure:
     default:
       return "ASIO buffer failure";
   }
+}
+
+std::string helperFailureReasonCode(const std::string& message) {
+  if (!message.starts_with("asio_helper_")) return "asio_helper_process_exited";
+  const size_t separator = message.find(':');
+  return message.substr(0, separator);
+}
+
+bool isHelperError(const std::string& message) {
+  return message.starts_with("asio_helper_");
+}
+
+bool isFatalHelperError(const std::string& message) {
+  if (!isHelperError(message)) return false;
+  return !message.starts_with("asio_helper_device_rejected");
+}
+
+std::string hostFailureReasonCode(const std::string& message, const char* fallback) {
+  return isHelperError(message) ? helperFailureReasonCode(message) : fallback;
 }
 
 std::string hostEventReason(AsioHostEvent event, const std::string& message) {
@@ -402,9 +423,10 @@ struct AsioBackend::FormatCandidate {
   bool isDefault = false;
 };
 
-AsioBackend::AsioBackend() : AsioBackend(createRealAsioHost()) {}
+AsioBackend::AsioBackend() : AsioBackend(createIsolatedAsioHost()) {}
 
-AsioBackend::AsioBackend(std::unique_ptr<IAsioHost> host) : host_(std::move(host)) {}
+AsioBackend::AsioBackend(std::unique_ptr<IAsioHost> host, AsioQuirkRegistry quirkRegistry)
+    : host_(std::move(host)), quirkRegistry_(std::move(quirkRegistry)) {}
 
 AsioBackend::~AsioBackend() {
   close();
@@ -486,16 +508,17 @@ bool AsioBackend::open(const std::string& deviceId, const AudioFormat& requested
 
   const auto devices = host_->enumerateDevices();
   if (devices.empty()) {
-    std::string reason = "未找到可用 ASIO 驱动";
-    if (!hostDiagnostics.buildEnabled) {
+    const std::string hostError = host_->lastCloseError();
+    std::string reason = isHelperError(hostError) ? hostError : "未找到可用 ASIO 驱动";
+    if (!isHelperError(hostError) && !hostDiagnostics.buildEnabled) {
       reason = "当前构建未启用 Windows x64 ASIO 输出";
-    } else if (hostDiagnostics.environmentDisabled) {
+    } else if (!isHelperError(hostError) && hostDiagnostics.environmentDisabled) {
       reason = "ASIO 已被 TWILIGHT_DISABLE_ASIO=1 禁用";
-    } else if (
+    } else if (!isHelperError(hostError) &&
         hostDiagnostics.registeredDriverCount32 > 0 &&
         hostDiagnostics.registeredDriverCount64 == 0) {
       reason = "仅检测到 32 位 ASIO 驱动；Twilight Echo x64 需要安装对应的 64 位 ASIO 驱动";
-    } else if (
+    } else if (!isHelperError(hostError) &&
         hostDiagnostics.registeredDriverCount64 > 0 &&
         hostDiagnostics.loadableDriverCount64 == 0) {
       reason = "检测到 64 位 ASIO 注册项，但未找到可加载的 64 位进程内驱动 DLL";
@@ -506,7 +529,7 @@ bool AsioBackend::open(const std::string& deviceId, const AudioFormat& requested
     outputInfo_.actualBackend = "asio";
     outputInfo_.accessMode = "exclusive";
     outputInfo_.devicePathKind = "asio";
-    outputInfo_.perfectReasonCode = "device_not_found";
+    outputInfo_.perfectReasonCode = hostFailureReasonCode(reason, "device_not_found");
     outputInfo_.capabilityReason = diagnostics_.lastError;
     outputInfo_.perfectReason = diagnostics_.lastError;
     outputInfo_.diagnostics = diagnostics_;
@@ -535,7 +558,28 @@ bool AsioBackend::open(const std::string& deviceId, const AudioFormat& requested
   // ranking formats so candidates come from real capabilities rather than a
   // hardcoded guess set.
   AsioDeviceInfo device = *deviceIt;
-  ensureDeviceCapabilities(&device);
+  std::string capabilityError;
+  if (!ensureDeviceCapabilities(&device, &capabilityError)) {
+    if (error) *error = capabilityError;
+    diagnostics_.lastError = capabilityError;
+    outputInfo_.deviceName = device.name.empty() ? device.driverName : device.name;
+    outputInfo_.actualDeviceName = outputInfo_.deviceName;
+    outputInfo_.driverName = device.driverName;
+    outputInfo_.actualDriverName = device.driverName;
+    outputInfo_.perfectReasonCode = hostFailureReasonCode(capabilityError, "backend_open_failure");
+    outputInfo_.capabilityReason = capabilityError;
+    outputInfo_.perfectReason = capabilityError;
+    outputInfo_.diagnostics = diagnostics_;
+    return false;
+  }
+  quirkApplication_ = quirkRegistry_.apply(device);
+  diagnostics_.quirkRegistryState = quirkApplication_.registryState;
+  diagnostics_.quirkFingerprint = quirkApplication_.fingerprint;
+  diagnostics_.quirkApplied.clear();
+  for (size_t index = 0; index < quirkApplication_.applied.size(); ++index) {
+    if (index != 0) diagnostics_.quirkApplied += ",";
+    diagnostics_.quirkApplied += quirkApplication_.applied[index];
+  }
 
   AudioFormat selected;
   const std::vector<AudioFormat> candidates = rankFormatCandidates(device, requestedFormat);
@@ -558,6 +602,10 @@ bool AsioBackend::open(const std::string& deviceId, const AudioFormat& requested
   }
   deviceInfo_ = device;
   openConfig_.deviceId = device.id;
+  openConfig_.sampleFormatMapping = quirkApplication_.sampleFormatMapping;
+  openConfig_.nativeDsdControlOrder = quirkApplication_.dsdControlOrder;
+  openConfig_.dsdMinimumBufferFrames = quirkApplication_.dsdMinimumBufferFrames;
+  openConfig_.dsdCadenceConfirmCallbacks = quirkApplication_.dsdCadenceConfirmCallbacks;
 
   // Walk the ranked candidates. A driver may reject a rate or sample type that
   // looked plausible from its capability record, and a single rejection must
@@ -580,6 +628,12 @@ bool AsioBackend::open(const std::string& deviceId, const AudioFormat& requested
     }
     if (lastOpenError.empty() || !attemptError.empty()) lastOpenError = attemptError;
     host_->close();
+    const std::string closeError = host_->lastCloseError();
+    if (isFatalHelperError(closeError)) {
+      lastOpenError = closeError;
+      result.failureKind = AsioOpenFailureKind::Driver;
+      break;
+    }
     // Only a format refusal leaves another candidate worth trying. A driver-wide
     // fault rejects everything identically, so retrying would just bury the real
     // error behind the last candidate's message.
@@ -600,7 +654,7 @@ bool AsioBackend::open(const std::string& deviceId, const AudioFormat& requested
     outputInfo_.actualDeviceName = outputInfo_.deviceName;
     outputInfo_.driverName = device.driverName;
     outputInfo_.actualDriverName = device.driverName;
-    outputInfo_.perfectReasonCode = "backend_open_failure";
+    outputInfo_.perfectReasonCode = hostFailureReasonCode(lastOpenError, "backend_open_failure");
     outputInfo_.capabilityReason = diagnostics_.lastError;
     outputInfo_.perfectReason = diagnostics_.lastError;
     outputInfo_.diagnostics = diagnostics_;
@@ -787,7 +841,11 @@ void AsioBackend::close() {
   recoveryQueueCv_.notify_all();
   joinRecoveryThread();
   stop();
-  if (host_) host_->close();
+  std::string closeError;
+  if (host_) {
+    host_->close();
+    closeError = host_->lastCloseError();
+  }
   std::lock_guard lock(mutex_);
   const uint64_t pendingUnderruns = pendingRenderUnderruns_.exchange(0, std::memory_order_relaxed);
   const uint64_t pendingBufferDrops = pendingRenderBufferDrops_.exchange(0, std::memory_order_relaxed);
@@ -827,6 +885,16 @@ void AsioBackend::close() {
   firstNativeDsdInspectedBytes_.store(0, std::memory_order_relaxed);
   firstNativeDsdIdleByte_.store(0, std::memory_order_relaxed);
   firstNativeDsdHash_.store(0, std::memory_order_relaxed);
+  if (!closeError.empty()) {
+    diagnostics_.lastError = closeError;
+    outputInfo_.perfectReasonCode = helperFailureReasonCode(closeError);
+    if (!closeError.starts_with("asio_helper_")) {
+      outputInfo_.perfectReasonCode = "asio_helper_format_restore_failed";
+    }
+    outputInfo_.capabilityReason = closeError;
+    outputInfo_.perfectReason = closeError;
+    outputInfo_.diagnostics = diagnostics_;
+  }
   opened_ = false;
 }
 
@@ -930,22 +998,27 @@ std::string AsioBackend::deviceName() const {
   return deviceName_;
 }
 
-void AsioBackend::ensureDeviceCapabilities(AsioDeviceInfo* device) const {
-  if (!device) return;
+bool AsioBackend::ensureDeviceCapabilities(AsioDeviceInfo* device, std::string* error) const {
+  if (!device) return true;
   // Sample rates plus a sample type is the minimum needed to rank candidates
   // against reality. Anything less means this record is registry-only.
   const bool hasCapabilities = !device->supportedSampleRates.empty() && !device->sampleFormats.empty();
-  if (hasCapabilities) return;
+  if (hasCapabilities) return true;
 
   AsioDeviceInfo probed = *device;
   std::string probeError;
   if (host_->probeDevice(device->id, &probed, &probeError)) {
     *device = probed;
-    return;
+    return true;
   }
   // A probe-hostile driver still deserves an attempt. Leaving the record as-is
   // keeps the legacy guess-set path, which the candidate retry loop now makes
   // survivable.
+  if (isFatalHelperError(probeError)) {
+    if (error) *error = probeError;
+    return false;
+  }
+  return true;
 }
 
 std::vector<AudioFormat> AsioBackend::rankFormatCandidates(
@@ -1133,7 +1206,12 @@ long AsioBackend::chooseBufferSize(const AsioDeviceInfo& device, const AudioForm
   if (outputConfig_.preferredBufferSize == 0) {
     if (!hasBufferRange) return nativeDsd ? std::max(preferred, 2048L) : preferred;
     const long automaticTarget = nativeDsd ? std::max(preferred, 2048L) : preferred;
-    return std::clamp(automaticTarget, minSize, maxSize);
+    long selected = std::clamp(automaticTarget, minSize, maxSize);
+    if (nativeDsd && quirkApplication_.dsdMinimumBufferFrames > 0 && hasBufferRange) {
+      selected = std::clamp(
+          std::max(selected, quirkApplication_.dsdMinimumBufferFrames), minSize, maxSize);
+    }
+    return selected;
   }
 
   const long requested = static_cast<long>(outputConfig_.preferredBufferSize);
@@ -1167,7 +1245,12 @@ long AsioBackend::chooseBufferSize(const AsioDeviceInfo& device, const AudioForm
     }
     return value;
   };
-  return legalize(requested);
+  long selected = legalize(requested);
+  if (nativeDsd && quirkApplication_.dsdMinimumBufferFrames > 0 && hasBufferRange) {
+    selected = std::clamp(
+        std::max(selected, quirkApplication_.dsdMinimumBufferFrames), minSize, maxSize);
+  }
+  return selected;
 }
 
 int AsioBackend::routedOutputChannels(const AsioDeviceInfo& device, int sourceChannels) const {
@@ -1219,7 +1302,7 @@ bool AsioBackend::createAndStartHost(std::string* error) {
     ++diagnostics_.lifetimeBufferDropCount;
     if (error) diagnostics_.lastError = *error;
     if (error) {
-      outputInfo_.perfectReasonCode = "buffer_failure";
+      outputInfo_.perfectReasonCode = hostFailureReasonCode(*error, "buffer_failure");
       outputInfo_.capabilityReason = *error;
       outputInfo_.perfectReason = "ASIO buffer creation failed: " + *error;
     }
@@ -1294,6 +1377,8 @@ bool AsioBackend::createAndStartHost(std::string* error) {
     renderOutputFormatSession_ = outputFormat_;
     renderOpenFormatSession_ = openConfig_.format;
     renderBufferSizeFramesSession_ = bufferSizeFrames_;
+    renderDsdCadenceConfirmCallbacksSession_ =
+        std::clamp<uint32_t>(openConfig_.dsdCadenceConfirmCallbacks, 2, 8);
     renderChannelFormatsMatchSession_ = actualOutputChannelFormatsMatch_;
     renderChannelFormatsSession_ = std::move(channelFormats);
     // Native DSD buffer-count calibration: start at the conservative probe
@@ -1371,6 +1456,10 @@ bool AsioBackend::createAndStartHost(std::string* error) {
         }
       }
     }
+    const size_t committedFrames =
+        nativeDsdFill ? std::max<size_t>(1, fillFrames / 8) : fillFrames;
+    host_->commitOutputBuffer(0, committedFrames);
+    host_->commitOutputBuffer(1, committedFrames);
   }
   running_ = true;
   if (!host_->start(error)) {
@@ -1378,7 +1467,7 @@ bool AsioBackend::createAndStartHost(std::string* error) {
     std::lock_guard lock(mutex_);
     if (error) diagnostics_.lastError = *error;
     if (error) {
-      outputInfo_.perfectReasonCode = "backend_start_failure";
+      outputInfo_.perfectReasonCode = hostFailureReasonCode(*error, "backend_start_failure");
       outputInfo_.capabilityReason = *error;
       outputInfo_.perfectReason = "ASIO start failed: " + *error;
     }
@@ -1412,7 +1501,8 @@ bool AsioBackend::createAndStartHost(std::string* error) {
   return true;
 }
 
-void AsioBackend::notifyOutputReady() noexcept {
+void AsioBackend::commitAndNotifyOutputReady(long bufferIndex, size_t frameCount) noexcept {
+  host_->commitOutputBuffer(bufferIndex, frameCount);
   if (!outputReadyEnabled_.load(std::memory_order_relaxed)) return;
   if (!host_->outputReady()) {
     outputReadyEnabled_.store(false, std::memory_order_relaxed);
@@ -1442,7 +1532,7 @@ void AsioBackend::renderBuffer(long bufferIndex) {
   const auto now = std::chrono::high_resolution_clock::now();
   const uint32_t callbacksSeen = renderCallbacksSeen_++;
   static constexpr uint32_t kUnderrunWarmupCallbacks = 2;
-  static constexpr uint32_t kDsdUnitConfirmCallbacks = 2;
+  const uint32_t kDsdUnitConfirmCallbacks = renderDsdCadenceConfirmCallbacksSession_;
   const double byteFrameExpectedMs =
       static_cast<double>(frames) * 1000.0 / asioCallbackFrameRate(outputFormat);
   const double elapsedMs =
@@ -1551,7 +1641,7 @@ void AsioBackend::renderBuffer(long bufferIndex) {
               channelFormat,
               output);
         }
-        notifyOutputReady();
+        commitAndNotifyOutputReady(bufferIndex, renderFrames);
         return;
       }
     }
@@ -1580,7 +1670,7 @@ void AsioBackend::renderBuffer(long bufferIndex) {
     }
     pendingDsdShortReads_.fetch_add(1, std::memory_order_relaxed);
     pendingDsdIdleFrames_.fetch_add(renderFrames, std::memory_order_relaxed);
-    notifyOutputReady();
+    commitAndNotifyOutputReady(bufferIndex, renderFrames);
     return;
   }
 
@@ -1596,7 +1686,7 @@ void AsioBackend::renderBuffer(long bufferIndex) {
           0,
           frames * asio::bytesPerSample(renderChannelFormatsSession_[static_cast<size_t>(channel)]));
     }
-    notifyOutputReady();
+    commitAndNotifyOutputReady(bufferIndex, frames);
     return;
   }
   const size_t renderedFrames = callback ? std::min(callback(renderScratch_.data(), frames), frames) : 0;
@@ -1625,7 +1715,7 @@ void AsioBackend::renderBuffer(long bufferIndex) {
         channelFormat,
         output);
   }
-  notifyOutputReady();
+  commitAndNotifyOutputReady(bufferIndex, frames);
 }
 
 void AsioBackend::queueRecoveryFromHostCallback(AsioHostEvent event, std::string message) {
@@ -1690,6 +1780,28 @@ bool AsioBackend::recover(AsioHostEvent event, const std::string& message) {
   {
     std::lock_guard lock(mutex_);
     eventCallback = eventCallback_;
+  }
+
+  if (event == AsioHostEvent::HelperFailure) {
+    running_ = false;
+    host_->stop();
+    host_->close();
+    const std::string reason = helperFailureReasonCode(message);
+    {
+      std::lock_guard lock(mutex_);
+      diagnostics_.lastError = hostEventReason(event, message);
+      outputInfo_.perfectReasonCode = reason;
+      outputInfo_.capabilityReason = diagnostics_.lastError;
+      outputInfo_.perfectReason = diagnostics_.lastError;
+      outputInfo_.deviceRecovered = false;
+      outputInfo_.diagnostics = diagnostics_;
+    }
+    if (eventCallback) {
+      eventCallback(
+          OutputBackendEvent::RenderError,
+          message.empty() ? "ASIO helper process failed" : message);
+    }
+    return false;
   }
 
   const auto now = std::chrono::steady_clock::now();

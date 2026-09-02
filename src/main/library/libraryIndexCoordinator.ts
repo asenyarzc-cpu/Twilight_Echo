@@ -2,6 +2,8 @@ import { randomUUID } from 'crypto'
 import { EventEmitter } from 'events'
 import type {
   LocalLibraryFileIdentity,
+  LocalLibraryScanBatch,
+  LocalLibraryScanIdentityBatch,
   LocalLibraryScanMode,
   LocalLibraryScanProgress,
   LocalLibraryScanResult,
@@ -228,6 +230,9 @@ export class LocalLibraryIndexCoordinator extends EventEmitter {
             ) {
               return { drifted: true as const, library: current, removedFilePaths: [] }
             }
+            if (job.cancelled) {
+              return { cancelled: true as const, library: current, removedFilePaths: [] }
+            }
 
             const removedFilePaths = collectTrackPaths(current)
             const changed = current.tracks.length > 0 || current.folders.length > 0
@@ -239,8 +244,17 @@ export class LocalLibraryIndexCoordinator extends EventEmitter {
                   folders: currentRoots
                 }
               : current
-            if (changed) this.options.persistDocument(nextDocument)
-            else replaceActiveLibraryExclusions(nextDocument.exclusions)
+            if (changed) {
+              if (job.cancelled) {
+                return { cancelled: true as const, library: current, removedFilePaths: [] }
+              }
+              this.options.persistDocument(nextDocument)
+            } else {
+              replaceActiveLibraryExclusions(nextDocument.exclusions)
+            }
+            if (job.cancelled) {
+              return { cancelled: true as const, library: current, removedFilePaths: [] }
+            }
             persistLocalLibraryFileIndex(this.options.libraryFilePath, {
               version: 1,
               libraryRevision: nextDocument.revision,
@@ -257,6 +271,11 @@ export class LocalLibraryIndexCoordinator extends EventEmitter {
             if (attempt + 1 < MAX_RECONCILE_ATTEMPTS) continue
             throw new Error('Local library roots changed repeatedly while the scan was reconciling')
           }
+          if ('cancelled' in committed || job.cancelled) {
+            const result = completeCancelledResult(job.id, mode, committed.library)
+            this.setStatus({ state: 'cancelled' })
+            return result
+          }
           const result = {
             ...completeNoopResult(job.id, mode, committed.library),
             removedFilePaths: committed.removedFilePaths
@@ -265,20 +284,42 @@ export class LocalLibraryIndexCoordinator extends EventEmitter {
           return result
         }
 
+        let scanAccumulator = createScanAccumulator(snapshot.document)
+        let streamedIdentities = new Map<string, LocalLibraryFileIdentity>()
         const workerResult = await this.options.scanRunner.scan(
           job.id,
           {
             mode,
             roots,
-            knownIdentities: snapshot.index.entries,
-            knownTrackPaths: collectTrackPaths(snapshot.document),
+            knownIdentities: mode === 'full' ? [] : snapshot.index.entries,
+            knownTrackPaths: mode === 'full' ? [] : collectTrackPaths(snapshot.document),
             excludedPaths: snapshot.document.exclusions.map((entry) => entry.filePath),
             coverCacheDir: this.options.getCoverCacheDir(),
             forceParse: snapshot.forceParse,
-            changes
+            changes,
+            streamResults: true
           },
-          (progress) => this.applyProgress(job, progress)
+          (progress) => this.applyProgress(job, progress),
+          (batch) => applyScanBatch(scanAccumulator, batch),
+          (batch) => collectScanIdentities(streamedIdentities, batch),
+          () => {
+            scanAccumulator = createScanAccumulator(snapshot.document)
+            streamedIdentities = new Map<string, LocalLibraryFileIdentity>()
+          }
         )
+        if (workerResult.parsedTracks.length > 0 || workerResult.parsedFilePaths.length > 0) {
+          applyScanBatch(scanAccumulator, {
+            parsedTracks: workerResult.parsedTracks,
+            parsedFilePaths: workerResult.parsedFilePaths
+          })
+        }
+        const effectiveWorkerResult: LocalLibraryWorkerScanResult = {
+          ...workerResult,
+          identities:
+            workerResult.identities.length > 0
+              ? workerResult.identities
+              : Array.from(streamedIdentities.values())
+        }
         if (workerResult.cancelled || job.cancelled) {
           const current = await this.options.enqueueTransaction(
             async () => this.options.loadDocument().document
@@ -297,17 +338,23 @@ export class LocalLibraryIndexCoordinator extends EventEmitter {
           ) {
             return { drifted: true as const, library: current }
           }
+          if (job.cancelled) return { cancelled: true as const, library: current }
 
-          const applied = applyWorkerResult(current, workerResult)
+          const applied = finalizeScanAccumulator(current, scanAccumulator, effectiveWorkerResult)
           const nextDocument = applied.changed
             ? { ...applied.document, revision: current.revision + 1 }
             : current
-          if (applied.changed) this.options.persistDocument(nextDocument)
-          else replaceActiveLibraryExclusions(nextDocument.exclusions)
+          if (applied.changed) {
+            if (job.cancelled) return { cancelled: true as const, library: current }
+            this.options.persistDocument(nextDocument)
+          } else {
+            replaceActiveLibraryExclusions(nextDocument.exclusions)
+          }
+          if (job.cancelled) return { cancelled: true as const, library: current }
 
           const nextIndex = mergeFileIndex(
             loadLocalLibraryFileIndex(this.options.libraryFilePath).document.entries,
-            workerResult,
+            effectiveWorkerResult,
             currentRoots
           )
           persistLocalLibraryFileIndex(this.options.libraryFilePath, {
@@ -321,12 +368,18 @@ export class LocalLibraryIndexCoordinator extends EventEmitter {
             library: nextDocument,
             addedTracks: applied.addedTracks,
             updatedTracks: applied.updatedTracks,
-            removedFilePaths: applied.removedFilePaths
+            removedFilePaths: applied.removedFilePaths,
+            reloadRequired: applied.reloadRequired
           }
         })
         if (committed.drifted) {
           if (attempt + 1 < MAX_RECONCILE_ATTEMPTS) continue
           throw new Error('Local library changed repeatedly while the scan was reconciling')
+        }
+        if ('cancelled' in committed || job.cancelled) {
+          const result = completeCancelledResult(job.id, mode, committed.library)
+          this.setStatus({ state: 'cancelled' })
+          return result
         }
 
         const result: LocalLibraryScanResult = {
@@ -338,7 +391,8 @@ export class LocalLibraryIndexCoordinator extends EventEmitter {
           updatedTracks: committed.updatedTracks,
           removedFilePaths: committed.removedFilePaths,
           parsedFileCount: workerResult.parsedFileCount,
-          skippedUnchanged: workerResult.skippedUnchanged
+          skippedUnchanged: workerResult.skippedUnchanged,
+          reloadRequired: committed.reloadRequired
         }
         this.setStatus({
           state: 'completed',
@@ -381,46 +435,42 @@ export class LocalLibraryIndexCoordinator extends EventEmitter {
   }
 }
 
+const MAX_INLINE_SCAN_DELTA_TRACKS = 2_000
+
+type ScanAccumulator = {
+  previousByPath: Map<string, Record<string, unknown>[]>
+  excludedPaths: Set<string>
+  replacementsByPath: Map<string, Record<string, unknown>[]>
+  replacementOrder: string[]
+  replacedPaths: Set<string>
+  addedTracks: unknown[]
+  updatedTracks: unknown[]
+  inlineDeltaTrackCount: number
+  reloadRequired: boolean
+  changed: boolean
+}
+
 export function toLocalLibraryScanUpdate(result: LocalLibraryScanResult): LocalLibraryScanUpdate {
+  const inlineDeltaSize =
+    result.addedTracks.length + result.updatedTracks.length + result.removedFilePaths.length
+  const reloadRequired =
+    result.reloadRequired === true || inlineDeltaSize > MAX_INLINE_SCAN_DELTA_TRACKS
   return {
     jobId: result.jobId,
     mode: result.mode,
     state: result.state,
     libraryRevision: result.library.revision,
     exclusions: result.library.exclusions,
-    addedTracks: result.addedTracks,
-    updatedTracks: result.updatedTracks,
-    removedFilePaths: result.removedFilePaths,
+    addedTracks: reloadRequired ? [] : result.addedTracks,
+    updatedTracks: reloadRequired ? [] : result.updatedTracks,
+    removedFilePaths: reloadRequired ? [] : result.removedFilePaths,
     parsedFileCount: result.parsedFileCount,
-    skippedUnchanged: result.skippedUnchanged
+    skippedUnchanged: result.skippedUnchanged,
+    ...(reloadRequired ? { reloadRequired: true } : {})
   }
 }
 
-function applyWorkerResult(
-  document: LocalMusicLibraryDocument,
-  workerResult: LocalLibraryWorkerScanResult
-): {
-  document: LocalMusicLibraryDocument
-  addedTracks: unknown[]
-  updatedTracks: unknown[]
-  removedFilePaths: string[]
-  changed: boolean
-} {
-  const excluded = new Set(
-    document.exclusions.map((entry) => normalizeLibraryFilePath(entry.filePath))
-  )
-  const parsedByPath = new Map<string, Record<string, unknown>[]>()
-  for (const track of workerResult.parsedTracks) {
-    if (!isTrackRecord(track) || typeof track.filePath !== 'string' || !track.filePath) continue
-    const key = normalizeLibraryFilePath(track.filePath)
-    if (excluded.has(key)) continue
-    const tracks = parsedByPath.get(key) ?? []
-    tracks.push(track)
-    parsedByPath.set(key, tracks)
-  }
-
-  const replacePaths = new Set(workerResult.parsedFilePaths.map(normalizeLibraryFilePath))
-  const removePaths = new Set(workerResult.removedFilePaths.map(normalizeLibraryFilePath))
+function createScanAccumulator(document: LocalMusicLibraryDocument): ScanAccumulator {
   const previousByPath = new Map<string, Record<string, unknown>[]>()
   for (const track of document.tracks) {
     if (!isTrackRecord(track) || typeof track.filePath !== 'string' || !track.filePath) continue
@@ -429,28 +479,132 @@ function applyWorkerResult(
     entries.push(track)
     previousByPath.set(key, entries)
   }
+  return {
+    previousByPath,
+    excludedPaths: new Set(
+      document.exclusions.map((entry) => normalizeLibraryFilePath(entry.filePath))
+    ),
+    replacementsByPath: new Map(),
+    replacementOrder: [],
+    replacedPaths: new Set(),
+    addedTracks: [],
+    updatedTracks: [],
+    inlineDeltaTrackCount: 0,
+    reloadRequired: false,
+    changed: false
+  }
+}
 
-  const addedTracks: unknown[] = []
-  const updatedTracks: unknown[] = []
-  const retained = document.tracks.filter((track) => {
-    if (!isTrackRecord(track) || typeof track.filePath !== 'string' || !track.filePath) return true
+function collectScanIdentities(
+  target: Map<string, LocalLibraryFileIdentity>,
+  batch: LocalLibraryScanIdentityBatch
+): void {
+  for (const identity of batch.identities) {
+    target.set(normalizeLibraryFilePath(identity.filePath), identity)
+  }
+}
+
+function applyScanBatch(accumulator: ScanAccumulator, batch: LocalLibraryScanBatch): void {
+  const parsedByPath = new Map<string, Record<string, unknown>[]>()
+  for (const track of batch.parsedTracks) {
+    if (!isTrackRecord(track) || typeof track.filePath !== 'string' || !track.filePath) continue
     const key = normalizeLibraryFilePath(track.filePath)
-    return !replacePaths.has(key) && !removePaths.has(key)
-  })
-  let changed = retained.length !== document.tracks.length
+    if (accumulator.excludedPaths.has(key)) continue
+    const tracks = parsedByPath.get(key) ?? []
+    tracks.push(track)
+    parsedByPath.set(key, tracks)
+  }
 
+  const replacePaths = new Set(batch.parsedFilePaths.map(normalizeLibraryFilePath))
+  for (const path of parsedByPath.keys()) replacePaths.add(path)
   for (const path of replacePaths) {
-    const parsed = preserveTrackIdentifiers(
-      previousByPath.get(path) ?? [],
-      parsedByPath.get(path) ?? []
-    )
-    const previous = previousByPath.get(path) ?? []
-    if (parsed.length > 0) {
-      if (previous.length === 0) addedTracks.push(...parsed)
-      else updatedTracks.push(...parsed)
-      retained.push(...parsed)
+    const previous = accumulator.previousByPath.get(path) ?? []
+    const wasReplaced = accumulator.replacedPaths.has(path)
+    const priorParsed = accumulator.replacementsByPath.get(path) ?? previous
+    const parsed = preserveTrackIdentifiers(priorParsed, parsedByPath.get(path) ?? [])
+    accumulator.replacementsByPath.set(path, parsed)
+    if (!wasReplaced) {
+      accumulator.replacedPaths.add(path)
+      accumulator.replacementOrder.push(path)
     }
-    if (!sameTrackCollection(previous, parsed)) changed = true
+
+    const comparison = wasReplaced ? priorParsed : previous
+    const same = sameTrackCollection(comparison, parsed)
+    if (same) continue
+    accumulator.changed = true
+    if (!wasReplaced && previous.length === 0 && parsed.length > 0) {
+      appendInlineDelta(accumulator, accumulator.addedTracks, parsed)
+    } else if (!wasReplaced && previous.length > 0 && parsed.length > 0) {
+      appendInlineDelta(accumulator, accumulator.updatedTracks, parsed)
+    }
+  }
+}
+
+function appendInlineDelta(
+  accumulator: ScanAccumulator,
+  target: unknown[],
+  tracks: Record<string, unknown>[]
+): void {
+  if (accumulator.reloadRequired || tracks.length === 0) return
+  if (accumulator.inlineDeltaTrackCount + tracks.length > MAX_INLINE_SCAN_DELTA_TRACKS) {
+    accumulator.reloadRequired = true
+    accumulator.addedTracks = []
+    accumulator.updatedTracks = []
+    return
+  }
+  target.push(...tracks)
+  accumulator.inlineDeltaTrackCount += tracks.length
+}
+
+function finalizeScanAccumulator(
+  document: LocalMusicLibraryDocument,
+  accumulator: ScanAccumulator,
+  workerResult: LocalLibraryWorkerScanResult
+): {
+  document: LocalMusicLibraryDocument
+  addedTracks: unknown[]
+  updatedTracks: unknown[]
+  removedFilePaths: string[]
+  changed: boolean
+  reloadRequired: boolean
+} {
+  const excluded = new Set(
+    document.exclusions.map((entry) => normalizeLibraryFilePath(entry.filePath))
+  )
+  const removePaths = new Set(workerResult.removedFilePaths.map(normalizeLibraryFilePath))
+  if (workerResult.completeIdentitySnapshot) {
+    const presentPaths = new Set([
+      ...workerResult.identities.map((identity) => normalizeLibraryFilePath(identity.filePath)),
+      ...(workerResult.skippedFilePaths ?? []).map(normalizeLibraryFilePath)
+    ])
+    for (const [path, tracks] of accumulator.previousByPath) {
+      if (!presentPaths.has(path) || excluded.has(path)) {
+        if (tracks.length > 0) removePaths.add(path)
+      }
+    }
+  }
+
+  const retained: unknown[] = []
+  const emittedReplacements = new Set<string>()
+  for (const track of document.tracks) {
+    if (!isTrackRecord(track) || typeof track.filePath !== 'string' || !track.filePath) {
+      retained.push(track)
+      continue
+    }
+    const key = normalizeLibraryFilePath(track.filePath)
+    if (removePaths.has(key)) continue
+    if (!accumulator.replacedPaths.has(key)) {
+      retained.push(track)
+      continue
+    }
+    if (emittedReplacements.has(key)) continue
+    emittedReplacements.add(key)
+    retained.push(...(accumulator.replacementsByPath.get(key) ?? []))
+  }
+  for (const path of accumulator.replacementOrder) {
+    if (emittedReplacements.has(path)) continue
+    emittedReplacements.add(path)
+    retained.push(...(accumulator.replacementsByPath.get(path) ?? []))
   }
 
   const next = createMusicLibraryDocument(
@@ -461,18 +615,21 @@ function applyWorkerResult(
     },
     document.exclusions
   )
-  changed = changed || next.tracks.length !== retained.length
+  const changed = accumulator.changed || next.tracks.length !== document.tracks.length
   return {
     document: next,
-    addedTracks,
-    updatedTracks,
+    addedTracks: accumulator.addedTracks,
+    updatedTracks: accumulator.updatedTracks,
     removedFilePaths: Array.from(removePaths).map((key) => {
       const matching = workerResult.removedFilePaths.find(
         (filePath) => normalizeLibraryFilePath(filePath) === key
       )
-      return matching ?? key
+      if (matching) return matching
+      const previous = accumulator.previousByPath.get(key)?.[0]
+      return typeof previous?.filePath === 'string' ? previous.filePath : key
     }),
-    changed
+    changed,
+    reloadRequired: accumulator.reloadRequired
   }
 }
 
@@ -516,10 +673,7 @@ function cueTrackIdentity(track: Record<string, unknown>): string {
     : ''
 }
 
-function sameTrackCollection(
-  left: Record<string, unknown>[],
-  right: Record<string, unknown>[]
-): boolean {
+function sameTrackCollection(left: unknown[], right: unknown[]): boolean {
   if (left.length !== right.length) return false
   return left.every((track, index) => JSON.stringify(track) === JSON.stringify(right[index]))
 }
@@ -538,9 +692,12 @@ function mergeFileIndex(
   for (const filePath of workerResult.removedFilePaths) {
     byPath.delete(normalizeLibraryFilePath(filePath))
   }
+  const skippedPaths = new Set((workerResult.skippedFilePaths ?? []).map(normalizeLibraryFilePath))
   for (const identity of workerResult.identities) {
-    byPath.set(normalizeLibraryFilePath(identity.filePath), identity)
+    const key = normalizeLibraryFilePath(identity.filePath)
+    if (!skippedPaths.has(key)) byPath.set(key, identity)
   }
+  for (const key of skippedPaths) byPath.delete(key)
   return Array.from(byPath.values())
 }
 

@@ -115,6 +115,7 @@ export const AUDIO_REASON_CODES: Record<string, ReasonCodeEntry> = {
     origin: 'output',
     settingsAnchor: 'playback'
   },
+  dsd_downrated: { severity: 'degraded', origin: 'output', settingsAnchor: 'playback' },
   dsd_converted_to_pcm: { severity: 'degraded', origin: 'processing', settingsAnchor: 'playback' },
   dsd_probe_failed: { severity: 'degraded', origin: 'source', settingsAnchor: 'playback' },
   dsd_backend_cannot_carry: { severity: 'degraded', origin: 'output', settingsAnchor: 'playback' },
@@ -125,6 +126,7 @@ export const AUDIO_REASON_CODES: Record<string, ReasonCodeEntry> = {
   native_dsd_runtime_unproven: { severity: 'info', origin: 'output' },
   native_dsd_typed_callback_missing: { severity: 'degraded', origin: 'engine' },
   native_dsd_buffer_unit_mismatch: { severity: 'degraded', origin: 'engine' },
+  dsd_mute_lock_timeout: { severity: 'blocking', origin: 'engine', settingsAnchor: 'playback' },
   sacd_iso_unsupported: { severity: 'degraded', origin: 'source' },
   dst_dsd_provider_unavailable: { severity: 'degraded', origin: 'source' },
   dst_dsd_provider_failed: { severity: 'degraded', origin: 'source' },
@@ -136,6 +138,42 @@ export const AUDIO_REASON_CODES: Record<string, ReasonCodeEntry> = {
   device_lost: { severity: 'blocking', origin: 'engine' },
   driver_restart: { severity: 'degraded', origin: 'engine' },
   unsupported_asio_sample_type: { severity: 'degraded', origin: 'engine' },
+  asio_helper_launch_failed: { severity: 'blocking', origin: 'engine', settingsAnchor: 'playback' },
+  asio_helper_protocol_error: {
+    severity: 'blocking',
+    origin: 'engine',
+    settingsAnchor: 'playback'
+  },
+  asio_helper_control_timeout: {
+    severity: 'blocking',
+    origin: 'engine',
+    settingsAnchor: 'playback'
+  },
+  asio_helper_process_exited: {
+    severity: 'blocking',
+    origin: 'engine',
+    settingsAnchor: 'playback'
+  },
+  asio_helper_callback_stalled: {
+    severity: 'blocking',
+    origin: 'engine',
+    settingsAnchor: 'playback'
+  },
+  asio_helper_device_rejected: {
+    severity: 'degraded',
+    origin: 'engine',
+    settingsAnchor: 'playback'
+  },
+  asio_helper_format_restore_failed: {
+    severity: 'blocking',
+    origin: 'engine',
+    settingsAnchor: 'playback'
+  },
+  asio_helper_command_failed: {
+    severity: 'blocking',
+    origin: 'engine',
+    settingsAnchor: 'playback'
+  },
   topology_rollback_failed: { severity: 'blocking', origin: 'engine' },
 
   // ── Misc ─────────────────────────────────────────────────────────────────

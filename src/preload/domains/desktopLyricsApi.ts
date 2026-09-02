@@ -81,6 +81,8 @@ export const desktopLyricsWindowApi = {
     ipcRenderer.invoke('desktopLyrics:setLocked', locked),
   setInteractionActive: (active: boolean): Promise<void> =>
     ipcRenderer.invoke('desktopLyrics:setInteractionActive', active),
+  setPausedHidden: (hidden: boolean): Promise<void> =>
+    ipcRenderer.invoke('desktopLyrics:setPausedHidden', hidden),
   transport: (action: DesktopLyricsTransportAction): void => {
     ipcRenderer.send('desktopLyrics:transport', action)
   },

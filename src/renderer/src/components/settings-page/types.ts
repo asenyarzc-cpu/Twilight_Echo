@@ -1,5 +1,6 @@
 import {
   DSD_OUTPUT_MODE_OPTIONS,
+  DSD_RATE_POLICY_OPTIONS,
   VOLUME_NORMALIZATION_OPTIONS
 } from '../../../../shared/audioProcessingOptions.ts'
 import type {
@@ -146,6 +147,7 @@ export const pcmToDsdModeOptions: {
 
 export const replayGainOptions = VOLUME_NORMALIZATION_OPTIONS
 export const dsdOutputModeOptions = DSD_OUTPUT_MODE_OPTIONS
+export const dsdRatePolicyOptions = DSD_RATE_POLICY_OPTIONS
 
 export const sacdProgramModeOptions: { value: SacdProgramMode; label: string }[] = [
   { value: 'auto', label: 'Auto' },

@@ -52,7 +52,7 @@ Electron main 侧有五个构建入口，均在 `electron.vite.config.ts` 中声
 
 `audioAnalysisService` 使用独立 `utilityProcess` worker pool 执行 BPM/loudness 完整文件解码。其有界优先级队列使用 aging 防止低优先级任务饥饿，并为等待任务设置 deadline；队列满时更高有效优先级可驱逐最差等待项。并发上限、取消、watchdog 和 worker 重启均与实时 `audioEngineService` 隔离，离线分析不得进入播放 RPC 队列。BPM/loudness manager 在 cache commit 期间收到取消时会按精确值条件回滚，且不得广播 completed 事件。
 
-`libraryScanService` 在独立 `utilityProcess` 中执行目录枚举、`music-metadata` 解析和封面落盘。主进程的 `libraryIndexCoordinator` 持久化 `path + size + mtime` 快速索引：启动只解析新增、变化或索引缺失的文件；文件 watcher 事件按 canonical path 合并后进入串行队列；完整 metadata/封面重扫只能由用户在设置页显式启动，并支持进度、暂停、继续和取消。扫描提交前必须重查曲库 revision、授权 roots 与 exclusions；发生 drift 时丢弃旧结果并重规划，禁止把已移除目录或 TE-0.4 排除项重新写回。
+`libraryScanService` 在独立 `utilityProcess` 中执行目录枚举、`music-metadata` 解析和封面落盘。主进程的 `libraryIndexCoordinator` 持久化 `path + size + mtime` 快速索引：启动只解析新增、变化或索引缺失的文件；文件 watcher 事件按 canonical path 合并后进入串行队列；完整 metadata/封面重扫只能由用户在设置页显式启动，并支持进度、暂停、继续和取消。大扫描通过有界批次传输 identity 与解析结果，进度按时间/文件数节流；单文件解析和扫描 worker 均有 watchdog，worker 重启后跳过当前阻塞路径并在下次扫描重试。扫描提交前必须重查曲库 revision、授权 roots 与 exclusions；发生 drift 时丢弃旧结果并重规划，禁止把已移除目录或 TE-0.4 排除项重新写回。
 
 主进程负责窗口生命周期、单实例锁、IPC 注册、设置持久化、本地库扫描、桌面歌词、快捷键托盘、Discord RPC、NCM API 启动和音频引擎编排。
 
@@ -86,7 +86,7 @@ DSD / passthrough 路径会绕过不安全的 DSP。WASAPI 与 CoreAudio 没有�
 
 ## 本地库与搜索数据流
 
-本地曲库加载时先把已保存曲目放入 renderer，使界面尽快可用；`libraryScanService` 随后用快速索引做启动增量核对，provider 元数据补全也在后台进行。后台结果按 track id/path 合并，避免覆盖用户在加载期间新增、删除或排除的曲目。主进程加载路径不得遍历解析全库 metadata、转换 base64 封面或逐项修复封面；这些工作只允许在显式后台重扫中执行。
+本地曲库加载时先把已保存曲目放入 renderer，使界面尽快可用；`libraryScanService` 随后用快速索引做启动增量核对，provider 元数据补全也在后台进行。后台结果按 track id/path 合并，避免覆盖用户在加载期间新增、删除或排除的曲目。完整扫描的大规模提交只返回有界增量；renderer 收到 reload 标记后重新加载已原子提交的曲库文档。主进程加载路径不得遍历解析全库 metadata、转换 base64 封面或逐项修复封面；这些工作只允许在显式后台重扫中执行。
 
 `useMusicStore` 维护两个非响应式索引：
 

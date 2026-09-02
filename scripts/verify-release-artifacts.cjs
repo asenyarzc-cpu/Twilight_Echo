@@ -7,6 +7,7 @@ const MIB = 1024 * 1024
 const DEFAULT_BUDGETS = Object.freeze({
   'twilight-audio-engine.dll': 192 * MIB,
   'twilight_audio_node.node': 16 * MIB,
+  'twilight-asio-helper.exe': 32 * MIB,
   'twilight-vst3-host.exe': 32 * MIB,
   'twilight-vst3-scanner.exe': 32 * MIB,
   installer: 384 * MIB
@@ -18,7 +19,8 @@ const DEFAULT_SHIPPED_BINARY_BUDGET = 64 * MIB
 // release gate verifies them only when a release staged them.
 const REQUIRED_NATIVE_BINARIES = Object.freeze([
   'twilight-audio-engine.dll',
-  'twilight_audio_node.node'
+  'twilight_audio_node.node',
+  'twilight-asio-helper.exe'
 ])
 
 function parseArgs(argv) {

@@ -90,6 +90,13 @@ test('desktop lyrics waits for a settled hover before showing the toolbar', () =
   assert.match(app, /function hideToolbar\(\): void/)
 })
 
+test('pause auto-hide synchronizes native window click-through state', () => {
+  assert.match(app, /function setPausedHidden\(hidden: boolean\): void/)
+  assert.match(app, /api\.setPausedHidden\(hidden\)/)
+  assert.match(app, /pauseTimer = setTimeout\([\s\S]*setPausedHidden\(true\)/)
+  assert.match(app, /function schedulePauseHide\(\): void \{[\s\S]*setPausedHidden\(false\)/)
+})
+
 test('locking clears hover UI and does not schedule the toolbar again', () => {
   assert.match(
     app,

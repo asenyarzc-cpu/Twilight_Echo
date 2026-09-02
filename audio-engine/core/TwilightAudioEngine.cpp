@@ -87,6 +87,15 @@ void writeDiagnosticsJson(std::ostringstream& json, const OutputInfo::Diagnostic
        << "\"processingBypassed\":" << (diagnostics.processingBypassed ? "true" : "false") << ","
        << "\"nativeDsdNegotiation\":\"" << json_utils::escape(diagnostics.nativeDsdNegotiation) << "\","
        << "\"dopRuntimeEvidence\":\"" << json_utils::escape(diagnostics.dopRuntimeEvidence) << "\","
+       << "\"quirkRegistryState\":\"" << json_utils::escape(diagnostics.quirkRegistryState) << "\","
+       << "\"quirkFingerprint\":\"" << json_utils::escape(diagnostics.quirkFingerprint) << "\","
+       << "\"quirkApplied\":\"" << json_utils::escape(diagnostics.quirkApplied) << "\","
+       << "\"dsdMuteState\":\"" << json_utils::escape(diagnostics.dsdMuteState) << "\","
+       << "\"dsdMuteTransition\":\"" << json_utils::escape(diagnostics.dsdMuteTransition) << "\","
+       << "\"dsdMutePreRollFrames\":" << diagnostics.dsdMutePreRollFrames << ","
+       << "\"dsdMutePostRollFrames\":" << diagnostics.dsdMutePostRollFrames << ","
+       << "\"dsdMuteTimeoutFrames\":" << diagnostics.dsdMuteTimeoutFrames << ","
+       << "\"dsdMuteFallback\":\"" << json_utils::escape(diagnostics.dsdMuteFallback) << "\","
        << "\"firstBufferSummary\":\"" << json_utils::escape(diagnostics.firstBufferSummary) << "\","
        << "\"processArchitecture\":\"" << json_utils::escape(diagnostics.processArchitecture) << "\","
        << "\"asioBuildEnabled\":" << (diagnostics.asioBuildEnabled ? "true" : "false") << ","
@@ -395,6 +404,10 @@ std::string playbackInfoToJson(const PlaybackInfo& info) {
        << "\"isDsd\":" << (out.isDsd ? "true" : "false") << ","
        << "\"dsdMode\":\"" << json_utils::escape(out.dsdMode) << "\","
        << "\"dsdRate\":" << out.dsdRate << ","
+       << "\"actualDsdRate\":" << out.actualDsdRate << ","
+       << "\"dsdRatePolicy\":\"" << json_utils::escape(out.dsdRatePolicy) << "\","
+       << "\"dsdConversion\":\"" << json_utils::escape(out.dsdConversion) << "\","
+       << "\"dsdConversionReason\":\"" << json_utils::escape(out.dsdConversionReason) << "\","
        << "\"outputSampleRate\":" << out.outputSampleRate << ","
        << "\"outputBitDepth\":" << out.outputBitDepth << ","
        << "\"backend\":\"" << json_utils::escape(out.backend) << "\","
@@ -507,6 +520,10 @@ std::string playbackInfoToJson(const PlaybackInfo& info) {
        << "\"isDsd\":" << (info.isDsd ? "true" : "false") << ","
        << "\"dsdMode\":\"" << json_utils::escape(info.dsdMode) << "\","
        << "\"dsdRate\":" << info.dsdRate << ","
+       << "\"actualDsdRate\":" << info.outputInfo.actualDsdRate << ","
+       << "\"dsdRatePolicy\":\"" << json_utils::escape(info.outputInfo.dsdRatePolicy) << "\","
+       << "\"dsdConversion\":\"" << json_utils::escape(info.outputInfo.dsdConversion) << "\","
+       << "\"dsdConversionReason\":\"" << json_utils::escape(info.outputInfo.dsdConversionReason) << "\","
        << "\"gaplessActive\":" << (info.gaplessActive ? "true" : "false") << ","
        << "\"preloadReady\":" << (info.preloadReady ? "true" : "false") << ","
        << "\"gaplessBlockedReason\":\"" << json_utils::escape(info.gaplessBlockedReason) << "\","
@@ -602,6 +619,9 @@ OutputConfig parseOutputConfigJson(const std::string& json) {
   config.routingMode = parseChannelRoutingMode(parseStringField(json, "routingMode", "auto"));
   config.wasapiExclusivePushMode = parseBoolField(json, "wasapiExclusivePushMode", false);
   config.pcmToDsdMode = parsePcmToDsdMode(parseStringField(json, "pcmToDsdMode", "off"));
+  config.dsdMutePreRollFrames = parseUintField(json, "dsdMutePreRollFrames", 256);
+  config.dsdMutePostRollFrames = parseUintField(json, "dsdMutePostRollFrames", 256);
+  config.dsdMuteTimeoutFrames = parseUintField(json, "dsdMuteTimeoutFrames", 4096);
   // 上混参数（可选，缺省走 OutputConfig 默认值）
   config.upmixCenterGain = parseFloatField(json, "upmixCenterGain", config.upmixCenterGain);
   config.upmixLfeGain = parseFloatField(json, "upmixLfeGain", config.upmixLfeGain);
@@ -937,53 +957,32 @@ TAE_Result TwilightAudioEngine::setLoopRange(double startSeconds, double endSeco
 }
 
 TAE_Result TwilightAudioEngine::setOutputDevice(const std::string& deviceId) {
-  std::string source;
-  double position = 0.0;
-  PlaybackState state = PlaybackState::Stopped;
-  {
-    std::lock_guard lock(mutex_);
-    const std::string nextDevice = deviceId.empty() ? "auto" : deviceId;
-    info_.outputDevice = nextDevice;
-    source = info_.source;
-    position = info_.positionSeconds;
-    state = info_.state;
-    if (state == PlaybackState::Stopped) {
-      info_.outputInfo.deviceName = nextDevice;
-      info_.outputInfo.actualDeviceName = nextDevice;
-    }
-    publishStateLocked();
+  std::lock_guard lock(mutex_);
+  const std::string nextDevice = deviceId.empty() ? "auto" : deviceId;
+  if (nextDevice != info_.outputDevice) outputRoutePending_ = true;
+  info_.outputDevice = nextDevice;
+  if (info_.state == PlaybackState::Stopped) {
+    info_.outputInfo.deviceName = nextDevice;
+    info_.outputInfo.actualDeviceName = nextDevice;
   }
-  if (state != PlaybackState::Stopped && !source.empty()) {
-    const TAE_Result result = play(source, position);
-    if (result == TAE_RESULT_OK && state == PlaybackState::Paused) pause();
-    return result;
-  }
+  publishStateLocked();
   return TAE_RESULT_OK;
 }
 
 TAE_Result TwilightAudioEngine::setOutputBackend(const std::string& backendId) {
   if (backendId.empty()) return TAE_RESULT_INVALID_ARGUMENT;
-  std::string source;
-  double position = 0.0;
-  PlaybackState state = PlaybackState::Stopped;
-  {
-    std::lock_guard lock(mutex_);
-    info_.outputBackend = backendId == "wasapi-shared" ? "wasapi" : backendId;
+  std::lock_guard lock(mutex_);
+  const std::string nextBackend = backendId == "wasapi-shared" ? "wasapi" : backendId;
+  if (nextBackend != info_.outputBackend) outputRoutePending_ = true;
+  info_.outputBackend = nextBackend;
+  if (info_.state == PlaybackState::Stopped) {
     info_.outputInfo = {};
     info_.outputInfo.backend = info_.outputBackend;
     info_.outputInfo.actualBackend = info_.outputBackend;
     info_.outputInfo.channelRoutingMode = channelRoutingModeToString(outputConfig_.routingMode);
-    source = info_.source;
-    position = info_.positionSeconds;
-    state = info_.state;
-    updatePerfectLocked();
-    publishStateLocked();
   }
-  if (state != PlaybackState::Stopped && !source.empty()) {
-    const TAE_Result result = play(source, position);
-    if (result == TAE_RESULT_OK && state == PlaybackState::Paused) pause();
-    return result;
-  }
+  updatePerfectLocked();
+  publishStateLocked();
   return TAE_RESULT_OK;
 }
 
@@ -1329,17 +1328,25 @@ TAE_Result TwilightAudioEngine::setOutputConfig(const std::string& outputConfigJ
   std::string rerouteReason;
   double reroutePosition = 0.0;
   PlaybackState rerouteState = PlaybackState::Stopped;
-  if (pipeline_ && !pipeline_->setOutputConfig(parsed, &error)) {
+  bool routePending = false;
+  {
+    std::lock_guard lock(mutex_);
+    routePending = outputRoutePending_ && pipeline_ && info_.state != PlaybackState::Stopped;
+  }
+  if (!routePending && pipeline_ && !pipeline_->setOutputConfig(parsed, &error)) {
     emitError(error.empty() ? "输出配置设置失败" : error, TAE_RESULT_INVALID_ARGUMENT, "output-config");
     return TAE_RESULT_INVALID_ARGUMENT;
   }
   {
     std::lock_guard lock(mutex_);
-    // Persist only after AudioPipeline has completed its native topology
-    // transaction and acknowledged the candidate output.
     outputConfig_ = parsed;
     info_.outputInfo.channelRoutingMode = channelRoutingModeToString(outputConfig_.routingMode);
-    if (pipeline_ && info_.state != PlaybackState::Stopped) {
+    if (routePending) {
+      rerouteReason = "output route transaction";
+      reroutePosition = info_.positionSeconds;
+      rerouteState = info_.state;
+      outputRoutePending_ = false;
+    } else if (pipeline_ && info_.state != PlaybackState::Stopped) {
       applyPipelineStatusLocked(pipeline_->status());
       if (shouldReroutePipelineLocked(&rerouteReason, &reroutePosition, &rerouteState)) {
         // Defer publish until the reroute completes.
@@ -1347,6 +1354,7 @@ TAE_Result TwilightAudioEngine::setOutputConfig(const std::string& outputConfigJ
         publishStateLocked();
       }
     } else {
+      outputRoutePending_ = false;
       updatePerfectLocked();
       publishStateLocked();
     }
@@ -1825,6 +1833,7 @@ void TwilightAudioEngine::clockLoop() {
         payload = playbackInfoToJson(info_);
         emitTick = true;
       }
+      if (pipeline_) pipeline_->stop();
       emitError(
           renderErrorMessage.empty() ? "音频渲染失败" : renderErrorMessage,
           TAE_RESULT_BACKEND_UNAVAILABLE,

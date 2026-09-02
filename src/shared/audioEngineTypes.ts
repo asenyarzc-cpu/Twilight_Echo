@@ -5,9 +5,14 @@ export type { DsdRouteSettings }
 export type {
   VolumeNormalizationMode,
   DsdOutputMode,
+  DsdRatePolicy,
   LoudnormStatus
 } from './audioProcessingOptions.ts'
-import type { DsdOutputMode, VolumeNormalizationMode } from './audioProcessingOptions.ts'
+import type {
+  DsdOutputMode,
+  DsdRatePolicy,
+  VolumeNormalizationMode
+} from './audioProcessingOptions.ts'
 
 export type AudioOutputId = 'wasapi' | 'asio' | 'coreaudio' | 'alsa'
 export type PlayMode = 'sequential' | 'listLoop' | 'repeat' | 'shuffle' | 'heart'
@@ -51,6 +56,8 @@ export interface AudioProcessingSettings {
   highResolution: boolean
   dsdToPcm: boolean
   dsdOutputMode: DsdOutputMode
+  /** DSD 倍率不受设备支持时的行为；默认保持 PCM fallback 兼容语义。 */
+  dsdRatePolicy: DsdRatePolicy
   /** DSD 兼容层路由：与 dsdOutputMode 正交，决定 DSD 走哪条 backend/device。 */
   dsdRoute: DsdRouteSettings
   sacdProgramMode: SacdProgramMode
@@ -128,6 +135,9 @@ export interface OutputConfig {
   wasapiExclusivePushMode?: boolean
   /** After float decode/DSP, modulate PCM to DSD64/128/256 via native DSD or DoP. */
   pcmToDsdMode?: PcmToDsdMode
+  dsdMutePreRollFrames?: number
+  dsdMutePostRollFrames?: number
+  dsdMuteTimeoutFrames?: number
   upmixCenterGain?: number
   upmixLfeGain?: number
   upmixLfeLowpassHz?: number
@@ -182,6 +192,15 @@ export interface OutputDiagnostics {
   processingBypassed?: boolean
   nativeDsdNegotiation?: string
   dopRuntimeEvidence?: string
+  quirkRegistryState?: string
+  quirkFingerprint?: string
+  quirkApplied?: string
+  dsdMuteState?: string
+  dsdMuteTransition?: string
+  dsdMutePreRollFrames?: number
+  dsdMutePostRollFrames?: number
+  dsdMuteTimeoutFrames?: number
+  dsdMuteFallback?: string
   firstBufferSummary?: string
   processArchitecture?: string
   asioBuildEnabled?: boolean
@@ -474,6 +493,10 @@ export interface PlaybackInfo extends PlaybackOutputInfoMirror {
   isDsd: boolean
   dsdMode: string
   dsdRate: number
+  actualDsdRate: number
+  dsdRatePolicy: DsdRatePolicy
+  dsdConversion: 'exact' | 'downrate' | 'pcm-fallback'
+  dsdConversionReason: string
   gaplessActive: boolean
   preloadReady: boolean
   /** Empty when unblocked; else disabled | dsd_path | typed_passthrough | crossfade | format_mismatch */
@@ -533,6 +556,10 @@ export interface OutputInfo {
   isDsd: boolean
   dsdMode: string
   dsdRate: number
+  actualDsdRate: number
+  dsdRatePolicy: DsdRatePolicy
+  dsdConversion: 'exact' | 'downrate' | 'pcm-fallback'
+  dsdConversionReason: string
 }
 
 export interface AudioEngineConfig {

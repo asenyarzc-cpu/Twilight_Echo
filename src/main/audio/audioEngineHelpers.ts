@@ -95,6 +95,7 @@ export const DEFAULT_AUDIO_PROCESSING: AudioProcessingSettings = {
   highResolution: true,
   dsdToPcm: false,
   dsdOutputMode: 'auto',
+  dsdRatePolicy: 'pcm-fallback',
   dsdRoute: DEFAULT_DSD_ROUTE,
   sacdProgramMode: 'auto',
   eqEnabled: false,
@@ -120,6 +121,9 @@ export const DEFAULT_OUTPUT_CONFIG: OutputConfig = {
   routingMode: 'auto',
   wasapiExclusivePushMode: false,
   pcmToDsdMode: 'off',
+  dsdMutePreRollFrames: 256,
+  dsdMutePostRollFrames: 256,
+  dsdMuteTimeoutFrames: 4096,
   upmixCenterGain: 0.7071,
   upmixLfeGain: 0.5,
   upmixLfeLowpassHz: 120,
@@ -473,6 +477,9 @@ export function normalizeOutputConfig(config?: Partial<OutputConfig>): OutputCon
     routingMode: normalizeChannelRoutingMode(config?.routingMode),
     wasapiExclusivePushMode: config?.wasapiExclusivePushMode === true,
     pcmToDsdMode: normalizePcmToDsdMode(config?.pcmToDsdMode),
+    dsdMutePreRollFrames: clampNumber(config?.dsdMutePreRollFrames, 0, 4096, 256),
+    dsdMutePostRollFrames: clampNumber(config?.dsdMutePostRollFrames, 0, 4096, 256),
+    dsdMuteTimeoutFrames: clampNumber(config?.dsdMuteTimeoutFrames, 1, 4096, 4096),
     upmixCenterGain: clampNumber(config?.upmixCenterGain, 0, 2, 0.7071),
     upmixLfeGain: clampNumber(config?.upmixLfeGain, 0, 2, 0.5),
     upmixLfeLowpassHz: clampNumber(config?.upmixLfeLowpassHz, 20, 500, 120),
@@ -488,6 +495,9 @@ export function outputConfigsEqual(left: OutputConfig, right: OutputConfig): boo
     left.routingMode === right.routingMode &&
     left.wasapiExclusivePushMode === right.wasapiExclusivePushMode &&
     (left.pcmToDsdMode ?? 'off') === (right.pcmToDsdMode ?? 'off') &&
+    left.dsdMutePreRollFrames === right.dsdMutePreRollFrames &&
+    left.dsdMutePostRollFrames === right.dsdMutePostRollFrames &&
+    left.dsdMuteTimeoutFrames === right.dsdMuteTimeoutFrames &&
     left.upmixCenterGain === right.upmixCenterGain &&
     left.upmixLfeGain === right.upmixLfeGain &&
     left.upmixLfeLowpassHz === right.upmixLfeLowpassHz &&
@@ -866,6 +876,10 @@ export function normalizeAudioProcessingSettings(
       : settings?.dsdToPcm === true
         ? 'pcm'
         : 'auto'
+  const dsdRatePolicy =
+    settings?.dsdRatePolicy === 'exact' || settings?.dsdRatePolicy === 'downrate'
+      ? settings.dsdRatePolicy
+      : 'pcm-fallback'
   const sacdProgramMode: SacdProgramMode =
     settings?.sacdProgramMode === 'stereo' || settings?.sacdProgramMode === 'multichannel'
       ? settings.sacdProgramMode
@@ -880,6 +894,7 @@ export function normalizeAudioProcessingSettings(
     highResolution: settings?.highResolution !== false,
     dsdToPcm: dsdOutputMode === 'pcm',
     dsdOutputMode,
+    dsdRatePolicy,
     dsdRoute: normalizeDsdRouteSettings(settings?.dsdRoute),
     sacdProgramMode,
     eqEnabled: settings?.eqEnabled === true,
@@ -1274,7 +1289,11 @@ export function createDefaultPlaybackInfo(
     nativeDsp: { plugins: [] },
     isDsd: false,
     dsdMode: 'pcm',
-    dsdRate: 0
+    dsdRate: 0,
+    actualDsdRate: 0,
+    dsdRatePolicy: 'pcm-fallback',
+    dsdConversion: 'exact',
+    dsdConversionReason: ''
   }
   return {
     state: 'stopped',
@@ -1342,6 +1361,10 @@ export function createDefaultPlaybackInfo(
     isDsd: false,
     dsdMode: 'pcm',
     dsdRate: 0,
+    actualDsdRate: 0,
+    dsdRatePolicy: 'pcm-fallback',
+    dsdConversion: 'exact',
+    dsdConversionReason: '',
     gaplessActive: false,
     preloadReady: false,
     gaplessBlockedReason: '',

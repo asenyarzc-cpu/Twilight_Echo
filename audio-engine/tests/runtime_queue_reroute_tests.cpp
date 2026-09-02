@@ -777,6 +777,7 @@ enum class FakeDopBehavior {
 
 enum class FakeNativeDsdBehavior {
   Proven,
+  CandidateAfterStart,
   AlsaTransportRate,
   Unsupported,
   Mismatch
@@ -787,6 +788,8 @@ FakeNativeDsdBehavior g_fakeNativeDsdBehavior = FakeNativeDsdBehavior::Proven;
 std::atomic<int> g_fakeTopologyOpenFailures{0};
 std::atomic<int> g_fakeTopologyStartFailures{0};
 std::atomic<bool> g_fakeTopologyDeviceInvalidated{false};
+std::atomic<int> g_maxNativeDsdSampleRate{0};
+std::atomic<int> g_maxDopCarrierSampleRate{0};
 // Simulates a compatibility-route device that is configured but not present
 // (proxy driver uninstalled, or the device is busy). Any open() for this id fails.
 constexpr const char* kMissingDsdProxyDeviceId = "missing-dsd-proxy";
@@ -1069,13 +1072,24 @@ class FakeOutputBackend final : public IOutputBackend {
       return false;
     }
     AudioFormat opened = requestedFormat;
+    if (formatLooksDopCarrier(requestedFormat) && g_maxDopCarrierSampleRate.load() > 0 &&
+        requestedFormat.sampleRate > g_maxDopCarrierSampleRate.load()) {
+      if (error) *error = "fake DoP rate unsupported";
+      return false;
+    }
+    if (formatLooksDsdSourceRequest(requestedFormat) && g_maxNativeDsdSampleRate.load() > 0 &&
+        requestedFormat.sampleRate > g_maxNativeDsdSampleRate.load()) {
+      if (error) *error = "fake Native DSD rate unsupported";
+      return false;
+    }
     if (formatLooksDopCarrier(requestedFormat)) {
       opened = requestedFormat;
       if (g_fakeDopBehavior == FakeDopBehavior::Mismatch) {
         opened.sampleFormat = AudioSampleFormat::Int24In32Interleaved;
       }
     } else if (formatLooksDsdSourceRequest(requestedFormat)) {
-      if (g_fakeNativeDsdBehavior == FakeNativeDsdBehavior::Proven) {
+      if (g_fakeNativeDsdBehavior == FakeNativeDsdBehavior::Proven ||
+          g_fakeNativeDsdBehavior == FakeNativeDsdBehavior::CandidateAfterStart) {
         opened = requestedFormat;
       } else if (g_fakeNativeDsdBehavior == FakeNativeDsdBehavior::AlsaTransportRate) {
         opened = requestedFormat;
@@ -1269,6 +1283,12 @@ class FakeOutputBackend final : public IOutputBackend {
       facts.reason = "Fake ASIO actual Native DSD format does not exactly match the negotiated format";
       return facts;
     }
+    if (g_fakeNativeDsdBehavior == FakeNativeDsdBehavior::CandidateAfterStart) {
+      facts.state = NativeDsdRuntimeFactState::Candidate;
+      facts.actualDsdRate = facts.requestedDsdRate;
+      facts.reason = "Fake Native DSD stream is waiting for runtime lock confirmation";
+      return facts;
+    }
     facts.state = NativeDsdRuntimeFactState::Proven;
     facts.actualDsdRate = facts.requestedDsdRate;
     facts.reason = "Fake ASIO Native DSD stream started with a matching runtime rate";
@@ -1353,6 +1373,8 @@ class EngineHarness {
     g_fakeTopologyOpenFailures = 0;
     g_fakeTopologyStartFailures = 0;
     g_fakeTopologyDeviceInvalidated = false;
+    g_maxNativeDsdSampleRate = 0;
+    g_maxDopCarrierSampleRate = 0;
     engine_.setOutputBackend("wasapi-exclusive");
   }
 
@@ -1363,6 +1385,8 @@ class EngineHarness {
     g_fakeTopologyOpenFailures = 0;
     g_fakeTopologyStartFailures = 0;
     g_fakeTopologyDeviceInvalidated = false;
+    g_maxNativeDsdSampleRate = 0;
+    g_maxDopCarrierSampleRate = 0;
     g_decodeFirstReadDelayMs = 0;
     g_decodeEveryReadDelayMs = 0;
     std::error_code ignored;
@@ -1970,6 +1994,30 @@ void testStoppedSetOutputDeviceKeepsOutputInfoDeviceNamesConsistent() {
   assert(jsonContains(json, "\"actualDeviceName\":\"device-b\""));
 }
 
+void testOutputRouteTransactionCommitsOnceAfterBackendDeviceConfig() {
+  EngineHarness harness;
+  auto& engine = harness.engine();
+
+  assert(engine.setOutputDevice("device-a") == TAE_RESULT_OK);
+  assert(engine.play("route-transaction.flac", 12.0) == TAE_RESULT_OK);
+  assert(waitForStartedBackendCount(1));
+
+  assert(engine.setOutputBackend("asio") == TAE_RESULT_OK);
+  assert(engine.setOutputDevice("device-b") == TAE_RESULT_OK);
+  assert(g_backendRegistry.snapshots().size() == 1);
+
+  assert(engine.setOutputConfig("{}") == TAE_RESULT_OK);
+  assert(waitForStartedBackendCount(2));
+  assert(waitUntil([] { return g_backendRegistry.snapshots().size() == 2; }));
+  const auto snapshots = g_backendRegistry.snapshots();
+  assert(snapshots[0].closed);
+  assert(snapshots[1].backendId == "asio");
+  assert(snapshots[1].info.actualDeviceName == "device-b");
+  assertLatestPlaybackContains(engine, "\"state\":\"playing\"");
+  assertLatestPlaybackContains(engine, "\"outputBackend\":\"asio\"");
+  assertLatestPlaybackContains(engine, "\"outputDevice\":\"device-b\"");
+}
+
 void testRenderWaitsForTransientDecoderLag() {
   EngineHarness harness;
   auto& engine = harness.engine();
@@ -2348,6 +2396,78 @@ void testAsioDopCandidateAfterStartFallsBackToPcm() {
   assertLatestPlaybackContains(engine, "\"perfectReasonCode\":\"dop_passthrough_unproven\"");
 }
 
+void testNativeDsdMuteTimeoutStopsWithoutAdvancingPosition() {
+  EngineHarness harness;
+  auto& engine = harness.engine();
+  assert(engine.setOutputBackend("asio") == TAE_RESULT_OK);
+  assert(engine.setOutputConfig(
+             "{\"dsdMutePreRollFrames\":0,\"dsdMutePostRollFrames\":0,\"dsdMuteTimeoutFrames\":3}") ==
+         TAE_RESULT_OK);
+  g_fakeNativeDsdBehavior = FakeNativeDsdBehavior::CandidateAfterStart;
+
+  assert(engine.play(harness.dsdPath(), 0.0) == TAE_RESULT_OK);
+  const auto backend = waitForLatestStartedBackendState();
+  assert(backend);
+  assert(backend->typedStarted);
+  renderBackendTypedBytes(backend, 4);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  assertLatestPlaybackContains(engine, "\"perfectReasonCode\":\"dsd_mute_lock_timeout\"");
+  assertLatestPlaybackContains(engine, "\"outputPerfect\":false");
+  assertLatestPlaybackContains(engine, "\"sourceExact\":false");
+  assertLatestPlaybackContains(engine, "\"position\":0");
+
+  const auto snapshots = g_backendRegistry.snapshots();
+  assert(!snapshots.empty());
+  assert(snapshots.back().stopCalls > 0);
+  assert(snapshots.back().closeCalls > 0);
+}
+
+void assertDsdToPcmTransitionMutesFloat(DsdMode sourceMode, const char* expectedTransition) {
+  EngineHarness harness;
+  AudioPipeline pipeline;
+
+  QueueItem dsd;
+  dsd.id = sourceMode == DsdMode::Native ? "native-to-pcm" : "dop-to-pcm";
+  dsd.source = harness.dsdPath();
+
+  std::string error;
+  const char* dsdConfig = sourceMode == DsdMode::Native
+                              ? "{\"dsdOutputMode\":\"native\"}"
+                              : "{\"dsdOutputMode\":\"dop\"}";
+  assert(
+      pipeline.play(dsd, std::nullopt, 0.0, "asio", "auto", 1.0, dsdConfig, true, &error) ==
+      TAE_RESULT_OK);
+  pipeline.stop();
+
+  QueueItem pcm;
+  pcm.id = "pcm-after-dsd";
+  pcm.source = "pcm-after-dsd.flac";
+  assert(
+      pipeline.play(pcm, std::nullopt, 0.0, "asio", "auto", 0.5, "{}", true, &error) ==
+      TAE_RESULT_OK);
+  const auto backend = waitForLatestStartedBackendState();
+  assert(backend);
+
+  const PipelineStatus opened = pipeline.status();
+  assert(opened.outputInfo.diagnostics.dsdMuteTransition == expectedTransition);
+  const auto preRoll = renderBackendFrames(backend, 256);
+  const auto postRoll = renderBackendFrames(backend, 256);
+  assert(std::all_of(preRoll.begin(), preRoll.end(), [](float sample) { return sample == 0.0f; }));
+  assert(std::all_of(postRoll.begin(), postRoll.end(), [](float sample) { return sample == 0.0f; }));
+  assert(std::abs(pipeline.status().positionSeconds) < 0.0000001);
+
+  const auto media = renderBackendFrames(backend, 1);
+  assert(bufferHasSampleAbove(media, 0.01f));
+  assert(pipeline.status().positionSeconds > 0.0);
+  pipeline.stop();
+}
+
+void testDsdToPcmTransitionsMuteFloatWithoutAdvancingPosition() {
+  assertDsdToPcmTransitionMutesFloat(DsdMode::Native, "native-to-pcm");
+  assertDsdToPcmTransitionMutesFloat(DsdMode::Dop, "dop-to-pcm");
+}
+
 void testAsioPcmModeDoesNotTryNativeDsd() {
   EngineHarness harness;
   auto& engine = harness.engine();
@@ -2597,6 +2717,74 @@ void testSacdIsoTrackFallsBackToPcmWhenProcessingActive() {
   assertLatestPlaybackContains(engine, "\"perfectReasonCode\":\"dsd_volume_pcm_fallback\"");
   std::error_code ignored;
   std::filesystem::remove(iso, ignored);
+}
+
+void testDsdDownratePolicyNegotiatesRateFirstAndReportsActualRate() {
+  EngineHarness harness("twilight-ap105-downrate-dsd256.dsf", kDsd256Rate);
+  auto& engine = harness.engine();
+  assert(engine.setOutputBackend("asio") == TAE_RESULT_OK);
+  assert(engine.setDspConfig("{\"dsdOutputMode\":\"auto\",\"dsdRatePolicy\":\"downrate\"}") ==
+         TAE_RESULT_OK);
+  g_maxNativeDsdSampleRate = kDsd128Rate;
+  g_maxDopCarrierSampleRate = kDsd128Rate / 16;
+
+  assert(engine.play(harness.dsdPath(), 0.0) == TAE_RESULT_OK);
+  assert(waitForStartedBackendCount(3));
+
+  const auto snapshots = g_backendRegistry.snapshots();
+  assert(snapshots.size() >= 3);
+  assert(snapshots[0].requestedFormat.sampleRate == kDsd256Rate);
+  assert(formatLooksDsdSourceRequest(snapshots[0].requestedFormat));
+  assert(snapshots[1].requestedFormat.sampleRate == kDsd256Rate / 16);
+  assert(formatLooksDopCarrier(snapshots[1].requestedFormat));
+  assert(snapshots[2].requestedFormat.sampleRate == kDsd128Rate);
+  assert(formatLooksDsdSourceRequest(snapshots[2].requestedFormat));
+  assertLatestPlaybackContains(engine, "\"dsdRate\":256");
+  assertLatestPlaybackContains(engine, "\"actualDsdRate\":128");
+  assertLatestPlaybackContains(engine, "\"dsdRatePolicy\":\"downrate\"");
+  assertLatestPlaybackContains(engine, "\"dsdConversion\":\"downrate\"");
+  assertLatestPlaybackContains(engine, "\"dsdConversionReason\":\"dsd_downrated\"");
+  assertLatestPlaybackContains(engine, "\"sourceExact\":false");
+  assertLatestPlaybackContains(engine, "\"resampled\":true");
+  assertLatestPlaybackContains(engine, "\"perfectReasonCode\":\"dsd_downrated\"");
+}
+
+void testDsdDownratePolicyFallsBackToPcmAfterAllDsdRatesAreRejected() {
+  EngineHarness harness("twilight-ap105-downrate-pcm-dsd256.dsf", kDsd256Rate);
+  auto& engine = harness.engine();
+  assert(engine.setOutputBackend("asio") == TAE_RESULT_OK);
+  assert(engine.setDspConfig("{\"dsdOutputMode\":\"auto\",\"dsdRatePolicy\":\"downrate\"}") ==
+         TAE_RESULT_OK);
+  g_maxNativeDsdSampleRate = kDsd64Rate - 1;
+  g_maxDopCarrierSampleRate = (kDsd64Rate / 16) - 1;
+
+  assert(engine.play(harness.dsdPath(), 0.0) == TAE_RESULT_OK);
+  assert(waitForStartedBackendCount(7));
+  const auto snapshots = g_backendRegistry.snapshots();
+  assert(snapshots.size() >= 7);
+  assertFormatLooksDsdPcmFallbackRequest(snapshots.back().requestedFormat, kDsd256Rate / 16);
+  assertLatestPlaybackContains(engine, "\"dsdMode\":\"pcm\"");
+  assertLatestPlaybackContains(engine, "\"dsdRatePolicy\":\"downrate\"");
+  assertLatestPlaybackContains(engine, "\"dsdConversion\":\"pcm-fallback\"");
+  assertLatestPlaybackContains(engine, "\"dsdConversionReason\":\"dsd_converted_to_pcm\"");
+}
+
+void testDsdExactPolicyRejectsUnavailableSourceRateWithoutPcmFallback() {
+  EngineHarness harness("twilight-ap105-exact-dsd256.dsf", kDsd256Rate);
+  auto& engine = harness.engine();
+  assert(engine.setOutputBackend("asio") == TAE_RESULT_OK);
+  assert(engine.setDspConfig("{\"dsdOutputMode\":\"auto\",\"dsdRatePolicy\":\"exact\"}") ==
+         TAE_RESULT_OK);
+  g_maxNativeDsdSampleRate = kDsd128Rate;
+  g_maxDopCarrierSampleRate = kDsd128Rate / 16;
+
+  assert(engine.play(harness.dsdPath(), 0.0) != TAE_RESULT_OK);
+  const auto snapshots = g_backendRegistry.snapshots();
+  assert(snapshots.size() == 2);
+  assert(formatLooksDsdSourceRequest(snapshots[0].requestedFormat));
+  assert(formatLooksDopCarrier(snapshots[1].requestedFormat));
+  assert(!snapshots[0].started);
+  assert(!snapshots[1].started);
 }
 
 void testDopMismatchFallsBackWithStableCode() {
@@ -3377,6 +3565,11 @@ void testCueNativeDsdSegmentUsesBitSampleFrameRate() {
   const auto silence = renderBackendTypedBytes(backend, 1);
   assert(silence.size() == 2);
   assert(silence[0] == 0x69 && silence[1] == 0x69);
+  // The first callback is the guard's transition pre-roll. Continue pumping
+  // callbacks so the bounded pre-roll/post-roll can complete before checking
+  // media position; mute callbacks must not advance it.
+  for (size_t i = 0; i < 8; ++i) renderBackendTypedBytes(backend, 64);
+  renderBackendTypedBytes(backend, 1);
   assert(waitUntil([&] { return pipeline.status().positionSeconds > 0.0; }));
   const double expectedOneByteFrame = 8.0 / static_cast<double>(kDsd64Rate);
   const double position = pipeline.status().positionSeconds;
@@ -3424,22 +3617,33 @@ void testCueDopPregapOutputsCanonicalCarrierAndResetsMarkerAfterSeek() {
   assert(backend->typedStarted);
   assert(formatLooksDopCarrier(backend->openedFormat));
 
-  const auto pregap = renderBackendFrames(backend, 2);
-  assert(pregap.size() == 4);
+  const auto transition = renderBackendFrames(backend, 2);
+  assert(transition.size() == 4);
   // DSD idle is the 0x69 alternating pattern, but a DoP payload carries it
   // MSB-first, so the byte on the wire is its bit reversal 0x96. The source
   // here is DSF (LSB-first), so the packer reverses the 0x69 pregap fill onto
   // 0x96 - unlike the native DSD path above, which passes 0x69 through raw.
   const float marker05Silence = dopCarrierFloat(0x96, 0x96, 0x05);
   const float markerFaSilence = dopCarrierFloat(0x96, 0x96, 0xfa);
-  assert(std::abs(pregap[0] - marker05Silence) < 0.0000001f);
-  assert(std::abs(pregap[1] - marker05Silence) < 0.0000001f);
-  assert(std::abs(pregap[2] - markerFaSilence) < 0.0000001f);
-  assert(std::abs(pregap[3] - markerFaSilence) < 0.0000001f);
+  assert(std::abs(transition[0] - marker05Silence) < 0.0000001f);
+  assert(std::abs(transition[1] - marker05Silence) < 0.0000001f);
+  assert(std::abs(transition[2] - markerFaSilence) < 0.0000001f);
+  assert(std::abs(transition[3] - markerFaSilence) < 0.0000001f);
   const auto renderedPath = g_backendRegistry.snapshots();
   assert(!renderedPath.empty());
   assert(renderedPath.back().typedRenderCalls == 1);
   assert(renderedPath.back().floatRenderCalls == 0);
+
+  renderBackendFrames(backend, 254);
+  renderBackendFrames(backend, 256);
+  assert(std::abs(pipeline.status().positionSeconds) < 0.0000001);
+
+  const auto pregap = renderBackendFrames(backend, 2);
+  assert(pregap.size() == 4);
+  assert(std::abs(pregap[0] - marker05Silence) < 0.0000001f);
+  assert(std::abs(pregap[1] - marker05Silence) < 0.0000001f);
+  assert(std::abs(pregap[2] - markerFaSilence) < 0.0000001f);
+  assert(std::abs(pregap[3] - markerFaSilence) < 0.0000001f);
 
   const auto source = renderBackendFrames(backend, 1);
   // Compare at carrier-LSB resolution, not with a coarse absolute tolerance.
@@ -3646,6 +3850,7 @@ int main() {
   testOutputStartDoesNotWaitForPrerollTimeoutAtEof();
   testBackendRenderErrorIsReportedThroughLastError();
   testStoppedSetOutputDeviceKeepsOutputInfoDeviceNamesConsistent();
+  testOutputRouteTransactionCommitsOnceAfterBackendDeviceConfig();
   testRenderWaitsForTransientDecoderLag();
   testRoutedRenderHandlesCallbacksLargerThanPreparedScratch();
   testPcmVolumeFallsBackToFloatProcessing();
@@ -3655,6 +3860,8 @@ int main() {
   testAsioDopModeDoesNotTryNativeDsd();
   testAsioDopCandidateIsProvenAfterStart();
   testAsioDopCandidateAfterStartFallsBackToPcm();
+  testNativeDsdMuteTimeoutStopsWithoutAdvancingPosition();
+  testDsdToPcmTransitionsMuteFloatWithoutAdvancingPosition();
   testAsioPcmModeDoesNotTryNativeDsd();
   testAsioNativeDsdMismatchFallsBackToDop();
   testDsdRouteOverrideCarriesNativeDsdOffMainBackend();
@@ -3675,6 +3882,9 @@ int main() {
   testDsd512ForcedPcmUsesExplicitFallbackRate();
   testSacdIsoTrackUsesAsioNativeDsd();
   testSacdIsoTrackFallsBackToPcmWhenProcessingActive();
+  testDsdDownratePolicyNegotiatesRateFirstAndReportsActualRate();
+  testDsdDownratePolicyFallsBackToPcmAfterAllDsdRatesAreRejected();
+  testDsdExactPolicyRejectsUnavailableSourceRateWithoutPcmFallback();
   testDopMismatchFallsBackWithStableCode();
   testDopUnprovenFallsBackWithStableCode();
   testInitialNonUnityVolumeUsesPcmFallback();

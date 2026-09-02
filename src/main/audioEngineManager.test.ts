@@ -189,6 +189,10 @@ function makeOutputInfo(overrides: Partial<OutputInfo> = {}): OutputInfo {
     isDsd: false,
     dsdMode: 'pcm',
     dsdRate: 0,
+    actualDsdRate: 0,
+    dsdRatePolicy: 'pcm-fallback',
+    dsdConversion: 'exact',
+    dsdConversionReason: '',
     ...overrides
   }
 }
@@ -257,6 +261,10 @@ function makePlaybackInfo(overrides: Partial<PlaybackInfo> = {}): PlaybackInfo {
     isDsd: outputInfo.isDsd,
     dsdMode: outputInfo.dsdMode,
     dsdRate: outputInfo.dsdRate,
+    actualDsdRate: outputInfo.actualDsdRate,
+    dsdRatePolicy: outputInfo.dsdRatePolicy,
+    dsdConversion: outputInfo.dsdConversion,
+    dsdConversionReason: outputInfo.dsdConversionReason,
     gaplessActive: false,
     preloadReady: false,
     gaplessBlockedReason: '',
@@ -585,6 +593,15 @@ class FakeNativeBinding implements NativeAudioBinding {
   outputDeviceCalls = 0
   outputBackendCalls = 0
   preservePlaybackRouteOnSet = false
+  failNextOutputBackend = ''
+  failNextOutputDevice = ''
+  failNextOutputConfig = ''
+  failRollbackOutputBackend = ''
+  failRollbackOutputDevice = ''
+  failRollbackOutputConfig = ''
+  routeCalls: Array<{ method: string; value: string }> = []
+  failOutputDeviceValues = new Set<string>()
+  inRollback = false
   loadQueueCalls = 0
   stopCalls = 0
   seekCalls = 0
@@ -642,7 +659,8 @@ class FakeNativeBinding implements NativeAudioBinding {
     this.playbackInfo = {
       ...this.playbackInfo,
       state: 'stopped',
-      position: 0
+      position: 0,
+      nativePlaybackActive: false
     }
   }
 
@@ -671,17 +689,30 @@ class FakeNativeBinding implements NativeAudioBinding {
 
   SetOutputDevice = (device: string): void => {
     this.outputDeviceCalls += 1
+    this.routeCalls.push({ method: 'SetOutputDevice', value: device })
+    const failure = this.inRollback ? this.failRollbackOutputDevice : this.failNextOutputDevice
+    if (failure || this.failOutputDeviceValues.has(device)) {
+      if (this.inRollback) this.failRollbackOutputDevice = ''
+      else this.failNextOutputDevice = ''
+      const message = failure || `device ${device} unavailable`
+      this.lastErrorMessage = message
+      throw new Error(message)
+    }
     const currentBackend = this.playbackInfo.outputInfo.actualBackend
     const nextDevice =
       device === 'auto' && currentBackend === 'asio'
         ? (this.devices.find((entry) => entry.pathKind === 'asio') ?? this.devices[0])
         : (this.devices.find((entry) => entry.id === device) ?? this.devices[0])
     const deviceName = nextDevice.name || nextDevice.label
+    const devicePathKind =
+      currentBackend === 'coreaudio' || currentBackend === 'coreaudio-exclusive'
+        ? 'hal'
+        : nextDevice.pathKind || this.playbackInfo.outputInfo.devicePathKind
     const outputInfo = {
       ...this.playbackInfo.outputInfo,
       deviceName: device,
       actualDeviceName: deviceName,
-      devicePathKind: nextDevice.pathKind || this.playbackInfo.outputInfo.devicePathKind
+      devicePathKind
     }
     this.playbackInfo = this.withOutputInfo(outputInfo, {
       outputDevice: device
@@ -690,6 +721,14 @@ class FakeNativeBinding implements NativeAudioBinding {
 
   SetOutputBackend = (backend: string): void => {
     this.outputBackendCalls += 1
+    this.routeCalls.push({ method: 'SetOutputBackend', value: backend })
+    const failure = this.inRollback ? this.failRollbackOutputBackend : this.failNextOutputBackend
+    if (failure) {
+      if (this.inRollback) this.failRollbackOutputBackend = ''
+      else this.failNextOutputBackend = ''
+      this.lastErrorMessage = failure
+      throw new Error(failure)
+    }
     if (this.preservePlaybackRouteOnSet) return
     const exclusive =
       backend === 'asio' || backend === 'wasapi-exclusive' || backend === 'coreaudio-exclusive'
@@ -732,6 +771,14 @@ class FakeNativeBinding implements NativeAudioBinding {
 
   SetOutputConfig = (json: string): void => {
     this.outputConfigCalls += 1
+    this.routeCalls.push({ method: 'SetOutputConfig', value: json })
+    const failure = this.inRollback ? this.failRollbackOutputConfig : this.failNextOutputConfig
+    if (failure) {
+      if (this.inRollback) this.failRollbackOutputConfig = ''
+      else this.failNextOutputConfig = ''
+      this.lastErrorMessage = failure
+      throw new Error(failure)
+    }
     const parsed = JSON.parse(json) as Partial<OutputConfig>
     this.lastOutputConfig = {
       preferredBufferSize:
@@ -1395,6 +1442,19 @@ test('legacy dsdToPcm still maps to PCM when dsdOutputMode is absent', () => {
 
   assert.equal(normalized.dsdOutputMode, 'pcm')
   assert.equal(normalized.dsdToPcm, true)
+})
+
+test('DSD rate policy defaults fail-compatibly and preserves valid strict policies', () => {
+  assert.equal(normalizeAudioProcessingSettings({}).dsdRatePolicy, 'pcm-fallback')
+  assert.equal(
+    normalizeAudioProcessingSettings({ dsdRatePolicy: 'invalid' as 'exact' }).dsdRatePolicy,
+    'pcm-fallback'
+  )
+  assert.equal(normalizeAudioProcessingSettings({ dsdRatePolicy: 'exact' }).dsdRatePolicy, 'exact')
+  assert.equal(
+    normalizeAudioProcessingSettings({ dsdRatePolicy: 'downrate' }).dsdRatePolicy,
+    'downrate'
+  )
 })
 
 test('loudnorm is preserved as a distinct volumeNormalization mode', () => {
@@ -2960,6 +3020,137 @@ test('the output device picker only offers devices the selected backend can open
   )
 })
 
+test('output route switches apply backend device config between mute and unmute', async () => {
+  const nativeBinding = new FakeNativeBinding()
+  const manager = makeManager(
+    {
+      exclusiveMode: false,
+      audioOutput: 'wasapi',
+      audioDevice: 'dac-1'
+    },
+    nativeBinding
+  )
+
+  await manager.setAudioOutput('asio', 'asio:studio')
+
+  assert.deepEqual(
+    nativeBinding.routeCalls.map((call) => call.method),
+    ['SetOutputBackend', 'SetOutputDevice', 'SetOutputConfig']
+  )
+  assert.equal(nativeBinding.routeCalls[0]?.value, 'asio')
+  assert.equal(nativeBinding.routeCalls[1]?.value, 'asio:studio')
+  assert.equal(nativeBinding.volumeCalls, 2)
+})
+
+test('output route switch rejects a target device that disappears after prepare', async () => {
+  const nativeBinding = new FakeNativeBinding()
+  let options = DEVICE_OPTIONS
+  const manager = new AudioEngineManager(
+    {
+      exclusiveMode: false,
+      audioOutput: 'wasapi',
+      audioDevice: 'dac-1'
+    },
+    {
+      nativeBinding,
+      scheduler: TEST_SCHEDULER,
+      deviceOptionsProvider: () => options
+    }
+  )
+
+  options = DEVICE_OPTIONS.filter((device) => device.id !== 'asio:studio')
+  await assert.rejects(() => manager.setAudioOutput('asio', 'asio:studio'), /unavailable/)
+
+  const state = await manager.getAudioOutputState()
+  assert.equal(state.output, 'wasapi')
+  assert.equal(state.device, 'dac-1')
+  assert.equal(nativeBinding.outputBackendCalls, 0)
+})
+
+test('output route switch rolls back after target open failure without auto replay', async () => {
+  const nativeBinding = new FakeNativeBinding()
+  const manager = makeManager(
+    {
+      exclusiveMode: false,
+      audioOutput: 'wasapi',
+      audioDevice: 'dac-1'
+    },
+    nativeBinding
+  )
+  await manager.play('track.flac', 12)
+  nativeBinding.routeCalls = []
+  nativeBinding.playCalls = []
+  nativeBinding.failNextOutputConfig = 'target ready timeout'
+
+  await assert.rejects(() => manager.setAudioOutput('asio', 'asio:studio'), /target ready timeout/)
+
+  const state = await manager.getAudioOutputState()
+  const info = await manager.getPlaybackInfo()
+  assert.equal(state.output, 'wasapi')
+  assert.equal(state.device, 'dac-1')
+  assert.equal(info.state, 'playing')
+  assert.equal(info.source, 'track.flac')
+  assert.equal(info.position, 12)
+  assert.equal(nativeBinding.playCalls.length, 0)
+  assert.deepEqual(
+    nativeBinding.routeCalls.map((call) => call.method),
+    [
+      'SetOutputBackend',
+      'SetOutputDevice',
+      'SetOutputConfig',
+      'SetOutputBackend',
+      'SetOutputDevice',
+      'SetOutputConfig'
+    ]
+  )
+})
+
+test('output route switch safe-stops when rollback device is gone', async () => {
+  const nativeBinding = new FakeNativeBinding()
+  const manager = makeManager(
+    {
+      exclusiveMode: false,
+      audioOutput: 'wasapi',
+      audioDevice: 'dac-1'
+    },
+    nativeBinding
+  )
+  await manager.play('track.flac', 18)
+  nativeBinding.routeCalls = []
+  nativeBinding.playCalls = []
+  nativeBinding.failNextOutputConfig = 'target open failed'
+  nativeBinding.failOutputDeviceValues.add('dac-1')
+
+  await assert.rejects(() => manager.setAudioOutput('asio', 'asio:studio'), /target open failed/)
+
+  const info = await manager.getPlaybackInfo()
+  assert.equal(info.state, 'stopped')
+  assert.equal(info.nativePlaybackActive, false)
+  assert.equal(nativeBinding.stopCalls, 1)
+  assert.equal(nativeBinding.playCalls.length, 0)
+})
+
+test('paused output route switch preserves paused state and queue position', async () => {
+  const nativeBinding = new FakeNativeBinding()
+  const manager = makeManager(
+    {
+      exclusiveMode: false,
+      audioOutput: 'wasapi',
+      audioDevice: 'dac-1'
+    },
+    nativeBinding
+  )
+  await manager.play('track.flac', 33)
+  await manager.pause()
+
+  await manager.setAudioOutput('asio', 'asio:studio')
+  const info = await manager.getPlaybackInfo()
+
+  assert.equal(info.state, 'paused')
+  assert.equal(info.source, 'track.flac')
+  assert.equal(info.position, 33)
+})
+
 test('setAudioOutput skips native calls and playback fanout when output and device are unchanged', async () => {
   const nativeBinding = new FakeNativeBinding()
   const manager = makeManager(
@@ -3328,6 +3519,12 @@ test('failed topology config RPC leaves the last applied config and reports a fa
   service.rejectDeferredCalls(
     new Error('candidate topology failed; rollback restored previous output')
   )
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(
+    service.deferredCalls.map((call) => call.method),
+    ['SetOutputConfig']
+  )
+  service.resolveNextDeferredCall()
   await assert.rejects(update, /candidate topology failed/)
 
   assert.equal(manager.getOutputConfig().preferredBufferSize, 256)

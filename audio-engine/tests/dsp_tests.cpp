@@ -700,6 +700,17 @@ int main() {
   }
 
   {
+    const DspConfig defaults = DspChain::parseConfigJson("{}");
+    const DspConfig exact = DspChain::parseConfigJson("{\"dsdRatePolicy\":\"exact\"}");
+    const DspConfig downrate = DspChain::parseConfigJson("{\"dsdRatePolicy\":\"downrate\"}");
+    const DspConfig invalid = DspChain::parseConfigJson("{\"dsdRatePolicy\":\"invalid\"}");
+    assert(defaults.dsdRatePolicy == DsdRatePolicy::PcmFallback);
+    assert(exact.dsdRatePolicy == DsdRatePolicy::Exact);
+    assert(downrate.dsdRatePolicy == DsdRatePolicy::Downrate);
+    assert(invalid.dsdRatePolicy == DsdRatePolicy::PcmFallback);
+  }
+
+  {
     // loudnorm measured path: gain = target - measured + preamp, with true-peak ceiling.
     DspChain chain;
     DspConfig config;

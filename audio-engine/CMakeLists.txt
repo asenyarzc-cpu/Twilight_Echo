@@ -46,6 +46,7 @@ endif()
 set(TAE_ENGINE_SOURCES
   core/AudioBuffer.cpp
   core/AudioPipeline.cpp
+  core/DsdMuteGuard.cpp
   core/AudioTypes.cpp
   core/DiagnosticLog.cpp
   core/TwilightAudioEngine.cpp
@@ -65,6 +66,7 @@ set(TAE_ENGINE_SOURCES
   dsp/CrossfeedProcessor.cpp
   dsp/DspChain.cpp
   dsp/DspWorkspaceProcessors.cpp
+  dsp/DsdDownrateProcessor.cpp
   dsp/FftSpectrumAnalyzer.cpp
   dsp/KissFftAdapter.cpp
   dsp/ParametricEqProcessor.cpp
@@ -167,15 +169,40 @@ endif()
 if(TAE_ASIO_AVAILABLE)
   target_sources(twilight_audio_engine PRIVATE
     output/asio/AsioBackend.cpp
+    output/asio/AsioQuirkRegistry.cpp
+    output/asio/DeviceCapabilityCache.cpp
+    output/asio/AsioFormatSupport.cpp
+    output/asio/AsioHelperHost.cpp
+    output/asio/AsioHostQueries.cpp
+    output/asio/helper/AsioHelperProcess.cpp
+  )
+  target_compile_definitions(twilight_audio_engine PRIVATE TAE_ENABLE_ASIO=1)
+  target_link_libraries(twilight_audio_engine PRIVATE user32)
+
+  add_executable(twilight_asio_helper
+    output/asio/helper/AsioHelperMain.cpp
+    output/asio/helper/AsioHelperServer.cpp
+    output/asio/AsioFormatSupport.cpp
     output/asio/DeviceCapabilityCache.cpp
     output/asio/RealAsioHost.cpp
     output/asio/windows/AsioCallbackRouter.cpp
     output/asio/windows/AsioControlThread.cpp
     output/asio/windows/AsioDriverCatalog.cpp
     output/asio/windows/AsioDriverSession.cpp
+    core/AudioTypes.cpp
   )
-  target_compile_definitions(twilight_audio_engine PRIVATE TAE_ENABLE_ASIO=1)
-  target_link_libraries(twilight_audio_engine PRIVATE ole32 uuid advapi32 user32)
+  target_include_directories(twilight_asio_helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_definitions(
+    twilight_asio_helper
+    PRIVATE
+      TAE_ENABLE_ASIO=1
+      TAE_ASIO_HELPER_PROCESS=1
+  )
+  target_link_libraries(twilight_asio_helper PRIVATE ole32 uuid advapi32 user32)
+  if(MINGW)
+    target_link_options(twilight_asio_helper PRIVATE -municode)
+  endif()
+  set_target_properties(twilight_asio_helper PROPERTIES OUTPUT_NAME "twilight-asio-helper")
 endif()
 
 if(TAE_COREAUDIO_AVAILABLE)
@@ -410,6 +437,20 @@ if(TAE_BUILD_TESTS)
   target_include_directories(twilight_dsd_dop_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   add_test(NAME twilight_dsd_dop_unit COMMAND twilight_dsd_dop_tests)
 
+  add_executable(twilight_dsd_mute_guard_tests
+    tests/dsd_mute_guard_tests.cpp
+    core/DsdMuteGuard.cpp
+  )
+  target_include_directories(twilight_dsd_mute_guard_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_test(NAME twilight_dsd_mute_guard_unit COMMAND twilight_dsd_mute_guard_tests)
+
+  add_executable(twilight_dsd_downrate_tests
+    tests/dsd_downrate_tests.cpp
+    dsp/DsdDownrateProcessor.cpp
+  )
+  target_include_directories(twilight_dsd_downrate_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_test(NAME twilight_dsd_downrate_unit COMMAND twilight_dsd_downrate_tests)
+
   add_executable(twilight_pcm_to_dsd_tests
     tests/pcm_to_dsd_tests.cpp
     dsp/PcmToDsdModulator.cpp
@@ -483,21 +524,84 @@ if(TAE_BUILD_TESTS)
     add_executable(twilight_asio_backend_tests
       tests/asio_backend_tests.cpp
       output/asio/AsioBackend.cpp
+      output/asio/AsioQuirkRegistry.cpp
       output/asio/DeviceCapabilityCache.cpp
+      output/asio/AsioFormatSupport.cpp
+      output/asio/AsioHelperHost.cpp
+      output/asio/AsioHostQueries.cpp
       output/asio/MockAsioHost.cpp
-      output/asio/RealAsioHost.cpp
+      output/asio/helper/AsioHelperProcess.cpp
       core/AudioTypes.cpp
     )
     target_include_directories(twilight_asio_backend_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(twilight_asio_backend_tests PRIVATE TAE_ENABLE_ASIO=1)
-    target_sources(twilight_asio_backend_tests PRIVATE
-      output/asio/windows/AsioCallbackRouter.cpp
-      output/asio/windows/AsioControlThread.cpp
-      output/asio/windows/AsioDriverCatalog.cpp
-      output/asio/windows/AsioDriverSession.cpp
-    )
-    target_link_libraries(twilight_asio_backend_tests PRIVATE ole32 uuid advapi32 user32)
+    target_link_libraries(twilight_asio_backend_tests PRIVATE user32)
+    add_dependencies(twilight_asio_backend_tests twilight_asio_helper)
     add_test(NAME twilight_asio_backend_unit COMMAND twilight_asio_backend_tests)
+    add_test(NAME twilight_asio_helper_selftest COMMAND twilight_asio_helper --self-test)
+
+    add_executable(twilight_asio_helper_fixture
+      output/asio/helper/AsioHelperFixture.cpp
+      output/asio/helper/AsioHelperServer.cpp
+      core/AudioTypes.cpp
+    )
+    target_include_directories(twilight_asio_helper_fixture PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(twilight_asio_helper_fixture PRIVATE TAE_ENABLE_ASIO=1)
+    target_link_libraries(twilight_asio_helper_fixture PRIVATE user32)
+    set_target_properties(
+      twilight_asio_helper_fixture
+      PROPERTIES OUTPUT_NAME "twilight-asio-helper-fixture"
+    )
+
+    add_executable(twilight_asio_helper_parent_fixture
+      output/asio/helper/AsioHelperParentFixture.cpp
+      output/asio/helper/AsioHelperProcess.cpp
+      core/AudioTypes.cpp
+    )
+    target_include_directories(
+      twilight_asio_helper_parent_fixture
+      PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    target_compile_definitions(twilight_asio_helper_parent_fixture PRIVATE TAE_ENABLE_ASIO=1)
+    target_link_libraries(twilight_asio_helper_parent_fixture PRIVATE user32)
+    set_target_properties(
+      twilight_asio_helper_parent_fixture
+      PROPERTIES OUTPUT_NAME "twilight-asio-helper-parent-fixture"
+    )
+
+    add_executable(twilight_asio_helper_process_tests
+      output/asio/helper/AsioHelperProcess.test.cpp
+      output/asio/AsioHelperHost.cpp
+      output/asio/helper/AsioHelperProcess.cpp
+      core/AudioTypes.cpp
+    )
+    target_include_directories(
+      twilight_asio_helper_process_tests
+      PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    target_compile_definitions(twilight_asio_helper_process_tests PRIVATE TAE_ENABLE_ASIO=1)
+    target_link_libraries(twilight_asio_helper_process_tests PRIVATE user32)
+    add_dependencies(
+      twilight_asio_helper_process_tests
+      twilight_asio_helper_fixture
+      twilight_asio_helper_parent_fixture
+    )
+    if(MINGW)
+      foreach(_tae_unicode_target IN ITEMS
+          twilight_asio_helper_fixture
+          twilight_asio_helper_parent_fixture
+          twilight_asio_helper_process_tests)
+        target_link_options(${_tae_unicode_target} PRIVATE -municode)
+      endforeach()
+    endif()
+    add_test(
+      NAME twilight_asio_helper_process_unit
+      COMMAND
+        twilight_asio_helper_process_tests
+        $<TARGET_FILE:twilight_asio_helper_fixture>
+        $<TARGET_FILE:twilight_asio_helper_parent_fixture>
+    )
+    set_tests_properties(twilight_asio_helper_process_unit PROPERTIES TIMEOUT 30)
   endif()
 
   if(TAE_ASIO_AVAILABLE)
@@ -531,21 +635,20 @@ if(TAE_BUILD_TESTS)
   add_executable(twilight_output_backend_tests
     tests/output_backend_tests.cpp
     output/asio/AsioBackend.cpp
+    output/asio/AsioQuirkRegistry.cpp
     output/asio/DeviceCapabilityCache.cpp
+    output/asio/AsioFormatSupport.cpp
+    output/asio/AsioHelperHost.cpp
+    output/asio/AsioHostQueries.cpp
     output/asio/MockAsioHost.cpp
-    output/asio/RealAsioHost.cpp
+    output/asio/helper/AsioHelperProcess.cpp
     core/AudioTypes.cpp
   )
   target_include_directories(twilight_output_backend_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   if(TAE_ASIO_AVAILABLE)
     target_compile_definitions(twilight_output_backend_tests PRIVATE TAE_ENABLE_ASIO=1)
-    target_sources(twilight_output_backend_tests PRIVATE
-      output/asio/windows/AsioCallbackRouter.cpp
-      output/asio/windows/AsioControlThread.cpp
-      output/asio/windows/AsioDriverCatalog.cpp
-      output/asio/windows/AsioDriverSession.cpp
-    )
-    target_link_libraries(twilight_output_backend_tests PRIVATE ole32 uuid advapi32 user32)
+    target_link_libraries(twilight_output_backend_tests PRIVATE user32)
+    add_dependencies(twilight_output_backend_tests twilight_asio_helper)
   endif()
   add_test(NAME twilight_output_backend_unit COMMAND twilight_output_backend_tests)
 
@@ -553,6 +656,7 @@ if(TAE_BUILD_TESTS)
     tests/runtime_queue_reroute_tests.cpp
     core/AudioBuffer.cpp
     core/AudioPipeline.cpp
+    core/DsdMuteGuard.cpp
     core/AudioTypes.cpp
     core/DiagnosticLog.cpp
     core/TwilightAudioEngine.cpp
@@ -569,6 +673,7 @@ if(TAE_BUILD_TESTS)
     dsp/ConvolverProcessor.cpp
     dsp/CrossfeedProcessor.cpp
     dsp/DspChain.cpp
+    dsp/DsdDownrateProcessor.cpp
     dsp/DspWorkspaceProcessors.cpp
     dsp/FftSpectrumAnalyzer.cpp
     dsp/KissFftAdapter.cpp
@@ -622,6 +727,7 @@ if(TAE_BUILD_TESTS)
     tests/audio_performance_gate.cpp
     core/AudioBuffer.cpp
     core/AudioPipeline.cpp
+    core/DsdMuteGuard.cpp
     core/AudioTypes.cpp
     core/DiagnosticLog.cpp
     analysis/BpmAnalyzer.cpp
@@ -638,6 +744,7 @@ if(TAE_BUILD_TESTS)
     dsp/ConvolverProcessor.cpp
     dsp/CrossfeedProcessor.cpp
     dsp/DspChain.cpp
+    dsp/DsdDownrateProcessor.cpp
     dsp/DspWorkspaceProcessors.cpp
     dsp/FftSpectrumAnalyzer.cpp
     dsp/KissFftAdapter.cpp
@@ -739,12 +846,16 @@ if(TAE_BUILD_TESTS)
     twilight_bitperfect_tests
     twilight_ffmpeg_decoder_tests
     twilight_dsd_dop_tests
+    twilight_dsd_mute_guard_tests
+    twilight_dsd_downrate_tests
     twilight_pcm_to_dsd_tests
     twilight_queue_tests
     twilight_backend_factory_tests
     twilight_platform_backend_smoke
     twilight_wasapi_format_negotiator_tests
     twilight_asio_backend_tests
+    twilight_asio_helper
+    twilight_asio_helper_process_tests
     twilight_asio_abi_checks
     twilight_asio_abi_manifest
     twilight_asio_abi_cross_dll_tests

@@ -55,6 +55,7 @@ class MockAsioHost final : public IAsioHost {
   int failStartCount = 0;
   int probeCalls = 0;
   int failProbeCount = 0;
+  std::string lastHostError;
   /**
    * Refuse a raw DSD open whose semantic rate is absent from the target
    * device's declared nativeDsdSampleRates, as a real driver does.
@@ -86,6 +87,7 @@ class MockAsioHost final : public IAsioHost {
   AsioChannelFormat outputChannelFormat(long channel) const override;
   bool outputReady() override;
   long activeBufferSize() const override;
+  std::string lastCloseError() const override;
 
   void triggerBufferSwitch(long bufferIndex);
   void triggerEvent(AsioHostEvent event, const std::string& message);

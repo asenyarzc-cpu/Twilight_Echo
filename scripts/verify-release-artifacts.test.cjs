@@ -82,6 +82,10 @@ test('release verification requires every imported runtime dependency beside the
       path.join(dir, 'twilight_audio_node.node'),
       createMinimalPe({ imports: ['twilight-audio-engine.dll', 'libstdc++-6.dll'] })
     )
+    fs.writeFileSync(
+      path.join(dir, 'twilight-asio-helper.exe'),
+      createMinimalPe({ imports: ['libstdc++-6.dll'] })
+    )
     const entries = listNativeBinaries(dir)
     assert.throws(
       () => listRuntimeDependencies(dir, entries),

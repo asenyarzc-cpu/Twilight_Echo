@@ -6,7 +6,7 @@ import {
 } from '../../shared/localLibraryScan.ts'
 import {
   loadJsonFileWithBackup,
-  writeJsonFileAtomic,
+  writeJsonValueAtomic,
   type JsonFileLoadResult,
   type JsonFileOptions
 } from '../persistence/jsonFile.ts'
@@ -67,11 +67,10 @@ export function persistLocalLibraryFileIndex(
   document: LocalLibraryFileIndexDocument
 ): void {
   const normalized = normalizeLocalLibraryFileIndex(document)
-  writeJsonFileAtomic(
+  writeJsonValueAtomic(
     getLocalLibraryFileIndexPath(libraryFilePath),
-    JSON.stringify(normalized),
-    LOCAL_LIBRARY_FILE_INDEX_OPTIONS,
-    normalized
+    normalized,
+    LOCAL_LIBRARY_FILE_INDEX_OPTIONS
   )
 }
 

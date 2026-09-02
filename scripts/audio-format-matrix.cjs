@@ -27,7 +27,7 @@ function usage() {
     '  --manifest <path>           Fixture manifest JSON. Defaults to TAE_AUDIO_FIXTURE_MANIFEST.',
     '  --fixture-dir <dir>         Directory scan fallback. Defaults to TAE_AUDIO_FIXTURES_DIR.',
     '  --playback                  Run native playback probes in addition to metadata checks.',
-    '  --backend <id>              Playback backend: wasapi, wasapi-exclusive, asio, coreaudio, alsa. Default: wasapi-exclusive.',
+    '  --backend <id>              Playback backend: wasapi, wasapi-exclusive, asio, coreaudio, coreaudio-exclusive, alsa. Default: wasapi-exclusive.',
     '  --device <name-or-id>       Device selector. Required for playback unless backend can use auto intentionally.',
     '  --buffer <frames>           Preferred backend buffer size. Default: 256.',
     '  --duration-ms <ms>          Playback duration per fixture. Default: 1200.',

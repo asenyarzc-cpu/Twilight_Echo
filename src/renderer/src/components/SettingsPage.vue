@@ -463,6 +463,7 @@ function resetSettingsGroup(group: 'appearance' | 'playback' | 'desktopLyrics'):
       highResolution: true,
       dsdToPcm: false,
       dsdOutputMode: 'auto',
+      dsdRatePolicy: 'pcm-fallback',
       sacdProgramMode: 'auto',
       eqEnabled: false,
       volumeNormalization: 'off',
