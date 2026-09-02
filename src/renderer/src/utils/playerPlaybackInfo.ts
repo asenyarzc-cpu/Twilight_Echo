@@ -1,4 +1,9 @@
-import type { OutputInfo, PlaybackInfo } from '../../../preload/types'
+import type {
+  OutputConversionInfo,
+  OutputInfo,
+  OutputProviderImplementation,
+  PlaybackInfo
+} from '../../../preload/types'
 
 export function normalizeDsdState(
   canonicalOutput?: Partial<OutputInfo> | null,
@@ -23,8 +28,37 @@ export function normalizeDsdState(
   return { isDsd, dsdMode, dsdRate }
 }
 
+function normalizeOutputProviderImplementation(value: unknown): OutputProviderImplementation {
+  return value === 'miniaudio' ? 'miniaudio' : 'legacy-native'
+}
+
+function normalizeOutputConversionInfo(value: unknown, resampled: boolean): OutputConversionInfo {
+  const record =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+  const source =
+    record.source === 'backend-runtime' ||
+    record.source === 'engine-inferred' ||
+    record.source === 'unavailable'
+      ? record.source
+      : 'unavailable'
+  const factsAvailable = source !== 'unavailable'
+  return {
+    sampleFormatConverted: factsAvailable && record.sampleFormatConverted === true,
+    sampleRateConverted: resampled,
+    channelLayoutConverted: factsAvailable && record.channelLayoutConverted === true,
+    source
+  }
+}
+
 export function normalizeNativePlaybackInfo<T extends PlaybackInfo>(info: T): T {
   const canonicalOutput = info.outputInfo
+  const resampled = canonicalOutput?.resampled === true
+  const providerImplementation = normalizeOutputProviderImplementation(
+    canonicalOutput?.providerImplementation
+  )
+  const conversionInfo = normalizeOutputConversionInfo(canonicalOutput?.conversionInfo, resampled)
   const sourceExact = canonicalOutput?.sourceExact === true
   const outputPerfect = canonicalOutput?.outputPerfect === true
   const pcmPassthrough = canonicalOutput
@@ -38,6 +72,9 @@ export function normalizeNativePlaybackInfo<T extends PlaybackInfo>(info: T): T 
     ...info,
     outputInfo: {
       ...canonicalOutput,
+      resampled,
+      providerImplementation,
+      conversionInfo,
       actualBackend: canonicalOutput?.actualBackend || info.actualBackend || '',
       accessMode: canonicalOutput?.accessMode || info.accessMode || '',
       devicePathKind: canonicalOutput?.devicePathKind || info.devicePathKind || '',

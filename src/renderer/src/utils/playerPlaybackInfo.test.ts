@@ -246,3 +246,42 @@ test('normalizeNativePlaybackInfo falls back to mirror pcmPassthrough when outpu
   assert.equal(normalized.pcmPassthrough, true)
   assert.equal(normalized.outputInfo.channelRoutingMode, 'auto')
 })
+
+test('normalizeNativePlaybackInfo adds legacy conversion facts to an old payload', () => {
+  const normalized = normalizeNativePlaybackInfo(
+    makeInfo({ outputInfo: { resampled: true } })
+  ) as Record<string, any>
+
+  assert.equal(normalized.outputInfo.providerImplementation, 'legacy-native')
+  assert.deepEqual(normalized.outputInfo.conversionInfo, {
+    sampleFormatConverted: false,
+    sampleRateConverted: true,
+    channelLayoutConverted: false,
+    source: 'unavailable'
+  })
+})
+
+test('normalizeNativePlaybackInfo keeps provider facts while resampled remains authoritative', () => {
+  const normalized = normalizeNativePlaybackInfo(
+    makeInfo({
+      outputInfo: {
+        resampled: false,
+        providerImplementation: 'miniaudio',
+        conversionInfo: {
+          sampleFormatConverted: true,
+          sampleRateConverted: true,
+          channelLayoutConverted: true,
+          source: 'backend-runtime'
+        }
+      }
+    })
+  ) as Record<string, any>
+
+  assert.equal(normalized.outputInfo.providerImplementation, 'miniaudio')
+  assert.deepEqual(normalized.outputInfo.conversionInfo, {
+    sampleFormatConverted: true,
+    sampleRateConverted: false,
+    channelLayoutConverted: true,
+    source: 'backend-runtime'
+  })
+})

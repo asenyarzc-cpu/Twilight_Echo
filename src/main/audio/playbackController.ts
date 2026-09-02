@@ -27,6 +27,8 @@ import {
   inferCodec,
   nativePlayMode,
   normalizeDsdState,
+  normalizeOutputConversionInfo,
+  normalizeOutputProviderImplementation,
   normalizeVisualizationData,
   normalizeVisualizationOptions,
   parseNativeJson,
@@ -1136,6 +1138,18 @@ export class PlaybackController {
       ...this.playbackInfo.outputInfo,
       ...(canonicalOutput ?? {})
     }
+    const resampled =
+      typeof canonicalOutput?.resampled === 'boolean'
+        ? canonicalOutput.resampled
+        : outputInfo.resampled === true
+    outputInfo.resampled = resampled
+    outputInfo.providerImplementation = normalizeOutputProviderImplementation(
+      canonicalOutput?.providerImplementation ?? outputInfo.providerImplementation
+    )
+    outputInfo.conversionInfo = normalizeOutputConversionInfo(
+      canonicalOutput?.conversionInfo ?? outputInfo.conversionInfo,
+      resampled
+    )
     const sourceExact = canonicalOutput?.sourceExact ?? info.sourceExact ?? false
     const outputPerfect = canonicalOutput?.outputPerfect ?? info.outputPerfect ?? false
     const perfectReason = canonicalOutput?.perfectReason ?? info.perfectReason ?? ''

@@ -1199,6 +1199,7 @@ OutputInfo WasapiExclusiveBackend::outputInfo() const {
     }
   }
 #endif
+  synchronizeOutputConversionInfo(info);
   return info;
 }
 

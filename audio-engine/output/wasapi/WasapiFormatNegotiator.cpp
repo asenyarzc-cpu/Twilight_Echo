@@ -272,6 +272,7 @@ bool WasapiFormatNegotiator::negotiate(const AudioFormat& sourceFormat, std::str
     outputInfo_.outputPerfect = false;
     outputInfo_.pcmPassthrough = false;
     outputInfo_.resampled = !sameSourceFormat(sourceFormat, outputFormat_);
+    synchronizeOutputConversionInfo(outputInfo_);
     if (candidate.dopCarrier) {
       outputInfo_.perfectReasonCode = "dsd_dop";
       outputInfo_.perfectReason = "WASAPI 独占输出格式已协商为 DoP carrier（未启用 Native DSD）";

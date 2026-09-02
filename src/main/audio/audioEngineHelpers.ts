@@ -13,8 +13,11 @@ import type {
   EqMode,
   LatencyInfo,
   OutputConfig,
+  OutputConversionInfo,
+  OutputConversionInfoSource,
   OutputDiagnostics,
   OutputInfo,
+  OutputProviderImplementation,
   PlaybackInfo,
   PlayMode,
   VisualizationData,
@@ -183,6 +186,35 @@ export function fanoutValue(value: unknown): string {
     .replaceAll(PLAYBACK_FANOUT_RECORD_SEPARATOR, ' ')
 }
 
+export function normalizeOutputProviderImplementation(
+  value: unknown
+): OutputProviderImplementation {
+  return value === 'miniaudio' ? 'miniaudio' : 'legacy-native'
+}
+
+export function normalizeOutputConversionInfo(
+  value: unknown,
+  resampled: boolean
+): OutputConversionInfo {
+  const record =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+  const source =
+    record.source === 'backend-runtime' ||
+    record.source === 'engine-inferred' ||
+    record.source === 'unavailable'
+      ? (record.source as OutputConversionInfoSource)
+      : 'unavailable'
+  const factsAvailable = source !== 'unavailable'
+  return {
+    sampleFormatConverted: factsAvailable && record.sampleFormatConverted === true,
+    sampleRateConverted: resampled,
+    channelLayoutConverted: factsAvailable && record.channelLayoutConverted === true,
+    source
+  }
+}
+
 export function fanoutArray(values: unknown[] | undefined): string {
   if (!Array.isArray(values) || values.length === 0) return ''
   return values.map(fanoutValue).join(',')
@@ -315,6 +347,11 @@ export function createPlaybackInfoFanoutSignature(
     outputInfo.outputPerfect,
     outputInfo.pcmPassthrough,
     outputInfo.resampled,
+    outputInfo.providerImplementation,
+    outputInfo.conversionInfo?.sampleFormatConverted,
+    outputInfo.conversionInfo?.sampleRateConverted,
+    outputInfo.conversionInfo?.channelLayoutConverted,
+    outputInfo.conversionInfo?.source,
     outputInfo.perfectReason,
     outputInfo.outputSampleRate,
     outputInfo.outputBitDepth,
@@ -1247,6 +1284,13 @@ export function createDefaultPlaybackInfo(
     outputPerfect: false,
     pcmPassthrough: false,
     resampled: false,
+    providerImplementation: 'legacy-native',
+    conversionInfo: {
+      sampleFormatConverted: false,
+      sampleRateConverted: false,
+      channelLayoutConverted: false,
+      source: 'unavailable'
+    },
     accessMode,
     devicePathKind,
     perfectReasonCode,

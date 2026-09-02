@@ -200,6 +200,12 @@ or `TAE_MINGW_RUNTIME_DIR` to point it elsewhere. Staging fails rather than ship
 Take the DLLs from the toolchain that actually built the artifacts — an unrelated MinGW earlier on
 `PATH` ships a different libstdc++ and produces `The specified procedure could not be found`.
 
+The miniaudio `0.11.25` implementation is an opt-in, default-off Windows Shared/default PCM build
+capability. Its `outputInfo.providerImplementation` and `outputInfo.conversionInfo` fields are
+diagnostic facts only; they do not add a public backend, prove runtime/device support, or change
+Shared `outputPerfect=false` semantics. A capability manifest showing miniaudio compiled is not a
+real-device or A/B validation result.
+
 ## Unsigned Release Artifact Gate
 
 In-app updates on Windows download the latest GitHub Release installer (`*-setup.exe` preferred),

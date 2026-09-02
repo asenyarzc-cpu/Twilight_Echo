@@ -23,7 +23,9 @@
 - `outputInfo.sourceExact`：源文件级精确状态。只有无损/整数 PCM 源格式与输出格式可证明完全保持时才为 `true`；MP3/AAC/OGG 等有损格式默认 `false`。
 - `outputInfo.outputPerfect`：解码后 PCM 到后端实际输出之间没有额外处理、重采样、音量、DSP、破坏性 routing 或 sample format 损伤时为 `true`。
 - `outputInfo.pcmPassthrough`：本次播放 decoded PCM 与后端实际 PCM 格式完全一致且没有后端 resample 时为 `true`；由 `AudioPipeline` 比较 decoded PCM 与 backend actual output 后写入，不由后端自行声明。
-- `outputInfo.resampled`：后端或统一评估发现采样率、位深、声道数或 sample format 发生转换。
+- `outputInfo.resampled`：后端或统一评估发现采样率、位深、声道数或 sample format 发生转换；它仍是现有 evaluator 使用的兼容事实。
+- `outputInfo.providerImplementation`：实际实现诊断，取 `legacy-native` 或 `miniaudio`；这不是用户可选择的新 backend，公开 backend id 仍保持不变。
+- `outputInfo.conversionInfo`：增量转换事实，包括 `sampleFormatConverted`、`sampleRateConverted`、`channelLayoutConverted` 和来源 `source`（`backend-runtime`、`engine-inferred` 或 `unavailable`）。`sampleRateConverted` 与既有 `resampled` 保持一致；当 legacy backend 无法证明某项转换时必须报告 `source="unavailable"`，不能把占位的 `false` 当作未转换证据。
 - `outputInfo.perfectReason`：`sourceExact` 或 `outputPerfect` 未达成时的 canonical 原因。
 - `outputInfo.isDsd` / `dsdMode` / `dsdRate`：DSD 状态 canonical 字段。顶层 `PlaybackInfo.isDsd`、`dsdMode`、`dsdRate` 只做镜像；Renderer 应优先读取 `outputInfo` 表示当前 runtime 传输状态。若 DoP 在运行时回退到 PCM，canonical 状态必须同步为 `isDsd=false`、`dsdMode='pcm'`、`dsdRate=0`，UI 可另外基于源文件元数据保留 `DSF/DFF DSD64 -> PCM fallback ...` 的源侧说明。
 - `crossfadeActive` / `crossfadeSeconds`：播放连续性处理状态。当前 native 会对预加载下一首做 overlap mixing，并参与 bit-perfect 判定；启用 crossfade 时必须报告 `outputPerfect=false`。

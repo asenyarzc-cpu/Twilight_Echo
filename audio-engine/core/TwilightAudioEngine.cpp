@@ -295,6 +295,7 @@ std::string backendCapabilitiesJson() {
 
 void normalizeOutputInfoMirror(PlaybackInfo& info) {
   OutputInfo& out = info.outputInfo;
+  synchronizeOutputConversionInfo(out);
   if (out.backend.empty()) out.backend = info.outputBackend;
   if (out.actualBackend.empty()) out.actualBackend = out.backend;
   if (out.accessMode.empty()) out.accessMode = out.exclusive ? "exclusive" : "shared";
@@ -370,7 +371,8 @@ DsdMode parseDsdMode(const std::string& mode) {
 }
 
 std::string playbackInfoToJson(const PlaybackInfo& info) {
-  const OutputInfo& out = info.outputInfo;
+  OutputInfo out = info.outputInfo;
+  synchronizeOutputConversionInfo(out);
   std::ostringstream json;
   json << "{"
        << "\"state\":\"" << stateToString(info.state) << "\","
@@ -401,6 +403,12 @@ std::string playbackInfoToJson(const PlaybackInfo& info) {
        << "\"outputPerfect\":" << (out.outputPerfect ? "true" : "false") << ","
        << "\"pcmPassthrough\":" << (out.pcmPassthrough ? "true" : "false") << ","
        << "\"resampled\":" << (out.resampled ? "true" : "false") << ","
+       << "\"providerImplementation\":\"" << json_utils::escape(out.providerImplementation) << "\","
+       << "\"conversionInfo\":{"
+       << "\"sampleFormatConverted\":" << (out.conversionInfo.sampleFormatConverted ? "true" : "false") << ","
+       << "\"sampleRateConverted\":" << (out.conversionInfo.sampleRateConverted ? "true" : "false") << ","
+       << "\"channelLayoutConverted\":" << (out.conversionInfo.channelLayoutConverted ? "true" : "false") << ","
+       << "\"source\":\"" << json_utils::escape(out.conversionInfo.source) << "\"},"
        << "\"isDsd\":" << (out.isDsd ? "true" : "false") << ","
        << "\"dsdMode\":\"" << json_utils::escape(out.dsdMode) << "\","
        << "\"dsdRate\":" << out.dsdRate << ","

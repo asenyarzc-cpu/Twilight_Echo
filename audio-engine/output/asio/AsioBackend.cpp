@@ -954,6 +954,7 @@ OutputInfo AsioBackend::outputInfo() const {
     // and only the report gains the adaptation note.
     info.nativeDsdRuntimeReason = dsdBufferUnitAdaptedReason();
   }
+  synchronizeOutputConversionInfo(info);
   return info;
 }
 

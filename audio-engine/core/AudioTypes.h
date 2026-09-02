@@ -136,6 +136,13 @@ struct QueueItem {
   double cueSourcePregapSeconds = 0.0;
 };
 
+struct OutputConversionInfo {
+  bool sampleFormatConverted = false;
+  bool sampleRateConverted = false;
+  bool channelLayoutConverted = false;
+  std::string source = "unavailable";
+};
+
 struct OutputInfo {
   // Render-thread timing, sampled with lock-free counters. This describes the
   // callback's deadline load, not process or system CPU utilization.
@@ -215,6 +222,8 @@ struct OutputInfo {
   bool outputPerfect = false;
   bool pcmPassthrough = false;
   bool resampled = false;
+  std::string providerImplementation = "legacy-native";
+  OutputConversionInfo conversionInfo;
   bool isDsd = false;
   std::string dsdMode = "pcm";
   int dsdRate = 0;
@@ -336,6 +345,8 @@ bool sampleFormatsSameIntegerPayload(AudioSampleFormat left, AudioSampleFormat r
  * are not interchangeable even though their payloads are.
  */
 bool pcmFormatsSemanticallyMatch(const AudioFormat& left, const AudioFormat& right);
+/** Keep the legacy resampled flag and the additive conversion fact in sync. */
+void synchronizeOutputConversionInfo(OutputInfo& info);
 bool isDsdSampleFormat(AudioSampleFormat format);
 bool dsdFormatsExactMatch(const AudioFormat& left, const AudioFormat& right);
 std::optional<AudioFormat> dopCarrierFormatForDsd(int dsdRate, int sourceSampleRate, int channelCount);

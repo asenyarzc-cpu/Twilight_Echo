@@ -23,6 +23,7 @@ pnpm run build
 - C ABI 是稳定边界；新增查询继续使用 buffer/required-size 模式。
 - Node-API 是薄桥接，只转发 C ABI、抛出 native 错误、返回 JSON。
 - `outputInfo` 是 canonical playback 状态；顶层 `PlaybackInfo` 字段只做兼容镜像，包括 `isDsd`、`dsdMode`、`dsdRate`。
+- `outputInfo.providerImplementation` 只用于实现诊断（`legacy-native`/`miniaudio`），不创建新的公共 backend；`conversionInfo` 增量记录转换事实，未知时 source 必须是 `unavailable`，且 `sampleRateConverted` 与兼容字段 `resampled` 一致。
 - Native queue 负责 EOF auto-next、gapless preload 和 crossfade overlap mixing；Electron 只同步 `PlaybackInfo` 并发送用户操作。`crossfadeSeconds` 由 native 状态上报并使 `outputPerfect=false`，Renderer 不再在 native 播放时用自己的 crossfade 定时器驱动下一首。
 - Electron 默认走 native engine；HTMLAudio 只允许通过 `TWILIGHT_ENABLE_HTMLAUDIO_FALLBACK=1` 显式开启。
 - WASAPI Shared 使用系统默认设备时，如果 endpoint 在枚举与 `IAudioClient` 激活之间失效，会重新枚举并激活一次；显式设备选择失败仍直接上报，不静默改路由。
@@ -47,7 +48,7 @@ FFT tap 已扩展为只读 visualization tap，监听最终 PCM 渲染缓冲，�
 
 Phase 6B 的后端判定边界：
 
-- WASAPI Shared 是系统混音路径，始终以明确 reason 报告 `outputPerfect=false`；即使后续由 miniaudio PoC 承接 Shared/default device I/O，也不得因 provider 初始化成功推断 bit-perfect。
+- WASAPI Shared 是系统混音路径，始终以明确 reason 报告 `outputPerfect=false`；即使后续由 miniaudio PoC 承接 Shared/default device I/O，也不得因 provider 初始化成功推断 bit-perfect。`providerImplementation` 只说明实现，不改变 Shared 的 perfect 结论。
 - WASAPI Exclusive 和 ASIO 必须先真实上报 actual sample rate、bit depth、channel、sample format，再由 evaluator 判定；format negotiation 或 exclusive/driver open 失败要给具体 reason。
 - CoreAudio 默认路径继续 `outputPerfect=false`；Hog/Exclusive 未实现并验证前不进入 true 判定。
 - ALSA `default` / `plughw:` 默认可能经过插件转换，继续 `outputPerfect=false`；只有显式 `hw:` 且 actual format 完全匹配时才允许进入 true 判定。

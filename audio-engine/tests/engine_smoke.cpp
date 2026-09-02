@@ -52,6 +52,12 @@ int main() {
   assert(std::strstr(json.data(), "\"state\":\"playing\"") != nullptr ||
          std::strstr(json.data(), "\"state\":\"stopped\"") != nullptr);
   assert(std::strstr(json.data(), "\"outputInfo\":{") != nullptr);
+  assert(std::strstr(json.data(), "\"providerImplementation\":\"legacy-native\"") != nullptr);
+  assert(std::strstr(json.data(), "\"conversionInfo\":{") != nullptr);
+  assert(std::strstr(json.data(), "\"sampleFormatConverted\"") != nullptr);
+  assert(std::strstr(json.data(), "\"sampleRateConverted\"") != nullptr);
+  assert(std::strstr(json.data(), "\"channelLayoutConverted\"") != nullptr);
+  assert(std::strstr(json.data(), "\"source\":\"unavailable\"") != nullptr);
   assert(std::strstr(json.data(), "\"actualBackend\"") != nullptr);
   assert(std::strstr(json.data(), "\"actualOutputFormat\"") != nullptr);
   assert(std::strstr(json.data(), "\"actualSampleRate\"") != nullptr);

@@ -506,6 +506,17 @@ export interface PlaybackInfo extends PlaybackOutputInfoMirror {
   streamTitle?: string
 }
 
+export type OutputProviderImplementation = 'legacy-native' | 'miniaudio'
+
+export type OutputConversionInfoSource = 'backend-runtime' | 'engine-inferred' | 'unavailable'
+
+export interface OutputConversionInfo {
+  sampleFormatConverted: boolean
+  sampleRateConverted: boolean
+  channelLayoutConverted: boolean
+  source: OutputConversionInfoSource
+}
+
 export interface OutputInfo {
   exclusive: boolean
   supportsOutputPerfect: boolean
@@ -513,6 +524,8 @@ export interface OutputInfo {
   outputPerfect: boolean
   pcmPassthrough: boolean
   resampled: boolean
+  providerImplementation: OutputProviderImplementation
+  conversionInfo: OutputConversionInfo
   perfectReason: string
   outputSampleRate: number
   outputBitDepth: number

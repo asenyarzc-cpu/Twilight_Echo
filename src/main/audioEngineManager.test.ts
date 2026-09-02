@@ -147,6 +147,13 @@ function makeOutputInfo(overrides: Partial<OutputInfo> = {}): OutputInfo {
     outputPerfect: false,
     pcmPassthrough: false,
     resampled: false,
+    providerImplementation: 'legacy-native',
+    conversionInfo: {
+      sampleFormatConverted: false,
+      sampleRateConverted: false,
+      channelLayoutConverted: false,
+      source: 'unavailable'
+    },
     perfectReason: '共享输出经过系统混音',
     outputSampleRate: 48000,
     outputBitDepth: 32,
@@ -298,6 +305,7 @@ function assertPlaybackMirrorsOutputInfo(info: PlaybackInfo): void {
   assert.equal(info.outputPerfect, info.outputInfo.outputPerfect)
   assert.equal(info.pcmPassthrough, info.outputInfo.pcmPassthrough)
   assert.equal(info.perfectReason, info.outputInfo.perfectReason)
+  assert.equal(info.outputInfo.conversionInfo.sampleRateConverted, info.outputInfo.resampled)
   assert.equal(info.perfectReasonCode, info.outputInfo.perfectReasonCode)
   assert.equal(info.isDsd, info.outputInfo.isDsd)
   assert.equal(info.dsdMode, info.outputInfo.dsdMode)
@@ -479,6 +487,23 @@ test('playback fanout signature changes for non-position playback facts', () => 
                 lastError: 'process exceeded realtime budget'
               }
             ]
+          }
+        }
+      },
+      true
+    ],
+    [
+      'providerConversionFacts',
+      {
+        ...info,
+        outputInfo: {
+          ...info.outputInfo,
+          providerImplementation: 'miniaudio',
+          conversionInfo: {
+            sampleFormatConverted: true,
+            sampleRateConverted: false,
+            channelLayoutConverted: false,
+            source: 'backend-runtime'
           }
         }
       },

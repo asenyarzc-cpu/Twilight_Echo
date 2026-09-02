@@ -186,6 +186,23 @@ int integerPayloadBits(AudioSampleFormat format) {
 
 }  // namespace
 
+void synchronizeOutputConversionInfo(OutputInfo& info) {
+  if (info.providerImplementation != "legacy-native" && info.providerImplementation != "miniaudio") {
+    info.providerImplementation = "legacy-native";
+  }
+  if (info.conversionInfo.source != "backend-runtime" &&
+      info.conversionInfo.source != "engine-inferred" &&
+      info.conversionInfo.source != "unavailable") {
+    info.conversionInfo.source = "unavailable";
+  }
+  const bool factsAvailable = info.conversionInfo.source != "unavailable";
+  if (!factsAvailable) {
+    info.conversionInfo.sampleFormatConverted = false;
+    info.conversionInfo.channelLayoutConverted = false;
+  }
+  info.conversionInfo.sampleRateConverted = info.resampled;
+}
+
 std::string channelRoutingModeToString(ChannelRoutingMode mode) {
   switch (mode) {
     case ChannelRoutingMode::Stereo:

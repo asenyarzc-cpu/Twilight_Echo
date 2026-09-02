@@ -662,6 +662,7 @@ OutputInfo WasapiSharedBackend::outputInfo() const {
     info.capabilityReason = reason;
     info.perfectReason = reason;
   }
+  synchronizeOutputConversionInfo(info);
   return info;
 }
 

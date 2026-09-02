@@ -580,6 +580,7 @@ OutputInfo CoreAudioExclusiveBackend::outputInfo() const {
   if (info.diagnostics.lastError.empty() && info.diagnostics.sessionUnderrunCount > 0) {
     info.diagnostics.lastError = "CoreAudio IOProc underrun";
   }
+  synchronizeOutputConversionInfo(info);
   return info;
 }
 
