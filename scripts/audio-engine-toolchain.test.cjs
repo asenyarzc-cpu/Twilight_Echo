@@ -5,11 +5,13 @@ const {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync
 } = require('node:fs')
 const { tmpdir } = require('node:os')
 const { join } = require('node:path')
+const crypto = require('node:crypto')
 const { spawnSync } = require('node:child_process')
 const test = require('node:test')
 
@@ -1060,3 +1062,84 @@ test('caps MinGW compile parallelism by available memory rather than core count'
     7
   )
 })
+
+test('miniaudio vendoring stays pinned, private, and single-TU', () => {
+  const root = join(__dirname, '..')
+  const miniaudioRoot = join(root, 'audio-engine', 'third_party', 'miniaudio')
+  const expectedHashes = new Map([
+    ['miniaudio.h', 'ac7af4de748b7e26b777f37e01cee313a308a7296a3eb080e2906b320cc55c89'],
+    ['miniaudio.c', 'ab1984bb9804ffd7b0303813595d0b345a8a86c34da1daffc353a14b34102a65'],
+    ['LICENSE', '542a5d4b0947d7d9083f75c454409edbac531527dd41cccaa918ce9d33a1d05c']
+  ])
+
+  for (const [file, expectedHash] of expectedHashes) {
+    const data = readFileSync(join(miniaudioRoot, file))
+    assert.equal(crypto.createHash('sha256').update(data).digest('hex'), expectedHash)
+  }
+
+  const header = readFileSync(join(miniaudioRoot, 'miniaudio.h'), 'utf8')
+  assert.match(header, /miniaudio - v0\.11\.25/)
+  assert.match(header, /#define MA_VERSION_MAJOR\s+0/)
+  assert.match(header, /#define MA_VERSION_MINOR\s+11/)
+  assert.match(header, /#define MA_VERSION_REVISION\s+25/)
+
+  const license = readFileSync(join(miniaudioRoot, 'LICENSE'), 'utf8')
+  const provenance = readFileSync(join(miniaudioRoot, 'PROVENANCE.md'), 'utf8')
+  assert.match(license, /ALTERNATIVE 2 - MIT No Attribution/)
+  assert.match(provenance, /MIT No Attribution \(MIT-0\)/)
+  assert.match(provenance, /9634bedb5b5a2ca38c1ee7108a9358a4e233f14d/)
+
+  const cmake = readFileSync(join(root, 'audio-engine', 'CMakeLists.txt'), 'utf8')
+  const stagingScript = readFileSync(join(root, 'scripts', 'stage-audio-engine.cjs'), 'utf8')
+  assert.match(cmake, /option\(TAE_ENABLE_MINIAUDIO .* OFF\)/)
+  assert.match(
+    cmake,
+    /target_sources\(twilight_audio_engine PRIVATE output\/miniaudio\/MiniaudioImplementation\.cpp\)/
+  )
+  assert.match(
+    cmake,
+    /target_include_directories\(twilight_audio_engine PRIVATE \$\{CMAKE_CURRENT_SOURCE_DIR\}\/third_party\/miniaudio\)/
+  )
+  assert.doesNotMatch(cmake, /PUBLIC[^\n]*third_party\/miniaudio/)
+  assert.doesNotMatch(
+    stagingScript,
+    /third_party[\\/]+miniaudio|MiniaudioImplementation|miniaudio\.(?:h|c)/
+  )
+
+  const implementation = readFileSync(
+    join(root, 'audio-engine', 'output', 'miniaudio', 'MiniaudioImplementation.cpp'),
+    'utf8'
+  )
+  assert.match(implementation, /#define MA_ENABLE_ONLY_SPECIFIC_BACKENDS/)
+  assert.match(implementation, /#define MA_ENABLE_WASAPI/)
+  assert.match(implementation, /#define MA_NO_DECODING/)
+  assert.match(implementation, /#define MA_NO_ENCODING/)
+  assert.match(implementation, /#define MA_NO_RESOURCE_MANAGER/)
+  assert.match(implementation, /#define MA_NO_NODE_GRAPH/)
+  assert.match(implementation, /#define MA_NO_ENGINE/)
+  assert.match(implementation, /#define MA_NO_GENERATION/)
+  assert.match(implementation, /#include "\.\.\/\.\.\/third_party\/miniaudio\/miniaudio\.c"/)
+
+  const implementationIncludes = listRepositoryFiles(join(root, 'audio-engine'))
+    .filter((file) => !file.replaceAll('\\', '/').includes('/third_party/miniaudio/'))
+    .filter((file) => /\.(?:c|cc|cpp|cxx|h|hpp)$/.test(file))
+    .filter((file) => readFileSync(file, 'utf8').includes('third_party/miniaudio/miniaudio.c'))
+  assert.deepEqual(
+    implementationIncludes.map((file) => file.replaceAll('\\', '/')),
+    [
+      join(root, 'audio-engine', 'output', 'miniaudio', 'MiniaudioImplementation.cpp').replaceAll(
+        '\\',
+        '/'
+      )
+    ]
+  )
+})
+
+function listRepositoryFiles(directory) {
+  const entries = readdirSync(directory, { withFileTypes: true })
+  return entries.flatMap((entry) => {
+    const entryPath = join(directory, entry.name)
+    if (entry.isDirectory()) return listRepositoryFiles(entryPath)
+    return [entryPath]
+  })
+}

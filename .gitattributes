@@ -4,3 +4,4 @@
 * text=auto eol=lf
 D:/Project/Twilight_Echo/Twilight_Echo/resources/mpv/mpv.exe filter=lfs diff=lfs merge=lfs -text
 src/main/audioEngineManager.test.ts whitespace=cr-at-eol
+audio-engine/third_party/miniaudio/* whitespace=-trailing-space

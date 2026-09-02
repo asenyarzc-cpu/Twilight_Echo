@@ -134,13 +134,15 @@ main 进程（`engineIpc.ts`）在播放状态变化、引擎错误与诊断导�
 
 ### 原生音频能力清单
 
-`resources/audio-engine/audio-capabilities.json` 由 `pnpm run stage:audio-engine` 生成；开发环境可单独运行 `pnpm run generate:audio-capability-manifest`。`artifactDirectory` 固定为逻辑根 `.`，全部 artifact 路径相对此根，绝不写入构建机绝对路径。清单只检查实际暂存的原生二进制与其导入表，记录 SWR、CPU PCM→DSD、CUDA 和其它 GPU backend 的编译事实；CUDA 与其它 GPU 导入检查覆盖每个成功解析的 native artifact，主引擎专属的 PCM/SWR 判断仍只读取引擎二进制。
+`resources/audio-engine/audio-capabilities.json` 由 `pnpm run stage:audio-engine` 生成；开发环境可单独运行 `pnpm run generate:audio-capability-manifest`。`artifactDirectory` 固定为逻辑根 `.`，全部 artifact 路径相对此根，绝不写入构建机绝对路径。清单只检查实际暂存的原生二进制与其导入表，记录 SWR、CPU PCM→DSD、miniaudio PoC、CUDA 和其它 GPU backend 的编译事实；CUDA 与其它 GPU 导入检查覆盖每个成功解析的 native artifact，主引擎专属的 PCM/SWR 判断仍只读取引擎二进制。
 
 每项 native artifact 都包含 `importInspection`。解析失败时状态是 `unavailable`（例如非 PE），而非空导入表等同于“不存在 GPU”；此时 `cuda.compiled` 为 `null`，相关 `importInspectionComplete=false`，必须先修复检查或取得可解析产物才能声明未编译。完整检查中没有对应产物证据时，能力才为 `false` 或空数组，不能由设置项、UI 文案或二进制中的一般性字符串推断。
 
 `release-capability-status.json` 是与 manifest 配套的发行声明，受控项为 ASIO、VST3、SoXR、ebur128、CUDA 与 Native DSD provider。每项同时保留 `buildStatus`、`runtimeStatus` 和 `deviceVerification`，以及每个维度的 `evidence.state`、`reason`、`provenance`；值只能是 `available`、`experimental`、`unverified`、`not-built` 或 `unsupported`。运行观察仅接受 `audio-engine-runtime-observation` 且其 artifact hash 必须逐一匹配 manifest。没有真实设备证据必须是 `unverified`，而不是把缺设备变成构建错误或由设备名猜测为可用。
 
 SoXR 不是独立链接的宿主 backend，而是 FFmpeg 的构建可选 resampler engine。清单把它标记为 `ffmpeg-runtime-probe`：只有播放期 `DspOutputStageStatus.resamplerEngine` 与 `resamplerFallback` 才能报告实际 engine 和回退。没有 runtime observation 只表示“未观察”，不表示 SoXR 已可用，也不把它伪装为编译保证。
+
+miniaudio 目前仅是 `TAE_ENABLE_MINIAUDIO=OFF` 默认关闭的 Windows Shared/default PCM provider PoC 编译依赖。Manifest 中的 `capabilities.miniaudio.compiled=true` 只说明 staged 主引擎包含该 PoC 代码与 WASAPI backend 编译标记；`runtimeStatus` 和 `deviceStatus` 在真实运行与设备 A/B 证据前保持 `unverified`，也不改变公开 backend id 或默认输出选择。
 
 当前批准的产品术语是“PCM SRC”和“实验性 PCM→DSD64/128/256（CPU）”。CUDA SDM 与完整高品质 SDM 在 AP-409 完成并拥有数值、性能及真机证据前不得作为支持能力发布。
 

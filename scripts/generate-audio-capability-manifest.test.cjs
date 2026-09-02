@@ -29,6 +29,13 @@ test('missing staged native artifacts report no compiled playback capabilities',
       detected: [],
       importInspectionComplete: true
     })
+    assert.deepEqual(manifest.capabilities.miniaudio, {
+      compiled: false,
+      version: null,
+      enabledBackends: [],
+      runtimeStatus: 'unverified',
+      deviceStatus: 'unverified'
+    })
   } finally {
     fs.rmSync(directory, { recursive: true, force: true })
   }
@@ -42,7 +49,8 @@ test('native artifact facts inspect every staged native binary for GPU imports',
       engine,
       createMinimalPe({
         imports: ['swresample-5.dll'],
-        trailer: 'PCM to DSD modulator supports DSD64 SWResample'
+        trailer:
+          'PCM to DSD modulator supports DSD64 SWResample twilight-miniaudio-provider:miniaudio-0.11.25:backend-wasapi:runtime-unverified'
       })
     )
     fs.writeFileSync(
@@ -72,6 +80,13 @@ test('native artifact facts inspect every staged native binary for GPU imports',
     assert.deepEqual(manifest.capabilities.otherGpuBackends, {
       detected: ['opencl'],
       importInspectionComplete: true
+    })
+    assert.deepEqual(manifest.capabilities.miniaudio, {
+      compiled: true,
+      version: '0.11.25',
+      enabledBackends: ['wasapi'],
+      runtimeStatus: 'unverified',
+      deviceStatus: 'unverified'
     })
     const helper = manifest.nativeArtifacts.find(
       (artifact) => artifact.path === 'twilight-vst3-host.exe'

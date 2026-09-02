@@ -59,6 +59,9 @@ function artifactFacts(filePath, artifactDir) {
     hasPcmToDsdModulator:
       binary.includes(Buffer.from('PCM to DSD modulator supports DSD64')) ||
       binary.includes(Buffer.from('PcmToDsdModulator')),
+    hasMiniaudioProvider: binary.includes(
+      Buffer.from('twilight-miniaudio-provider:miniaudio-0.11.25')
+    ),
     hasSwr: binary.includes(Buffer.from('swresample')) || binary.includes(Buffer.from('SWResample'))
   }
 }
@@ -120,6 +123,7 @@ function createAudioCapabilityManifest({ artifactDir, runtimeStatus = null }) {
     imports.some((name) => matcher.test(name))
   ).map(([name]) => name)
   const pcmToDsdCompiled = engineArtifacts.some((artifact) => artifact.hasPcmToDsdModulator)
+  const miniaudioCompiled = engineArtifacts.some((artifact) => artifact.hasMiniaudioProvider)
   const swrCompiled = engineArtifacts.some((artifact) => artifact.hasSwr)
   const resamplerRuntime = runtimeResamplerStatus(runtimeStatus)
 
@@ -158,6 +162,13 @@ function createAudioCapabilityManifest({ artifactDir, runtimeStatus = null }) {
       otherGpuBackends: {
         detected: detectedOtherGpuBackends,
         importInspectionComplete
+      },
+      miniaudio: {
+        compiled: miniaudioCompiled,
+        version: miniaudioCompiled ? '0.11.25' : null,
+        enabledBackends: miniaudioCompiled ? ['wasapi'] : [],
+        runtimeStatus: 'unverified',
+        deviceStatus: 'unverified'
       }
     }
   }
