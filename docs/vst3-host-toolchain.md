@@ -1,7 +1,7 @@
 # Windows VST3 Helper Toolchain
 
-Twilight Echo builds its VST3 scanner and future isolated VST3 host separately from the
-MinGW audio engine. This is required because Windows VST3 modules use the MSVC C++ ABI.
+Twilight Echo builds its VST3 scanner and isolated VST3 host separately from the MinGW audio
+engine. This is required because Windows VST3 modules use the MSVC C++ ABI.
 
 The helper build needs these user environment variables:
 
@@ -21,6 +21,14 @@ pnpm run build:vst3-msvc
 pnpm run test:vst3-msvc
 pnpm run smoke:vst3-msvc
 pnpm run stage:vst3-msvc
+```
+
+For a Windows package, use the single preparation command instead. It configures, builds, and
+self-tests the helpers when needed, stages the helpers and VC runtime DLLs, and refreshes the
+release capability manifests:
+
+```powershell
+pnpm run prepare:vst3-msvc
 ```
 
 `stage:vst3-msvc` copies `twilight-vst3-scanner.exe`, `twilight-vst3-host.exe`, and the

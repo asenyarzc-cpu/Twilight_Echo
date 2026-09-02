@@ -17,6 +17,7 @@ afterPack: scripts/after-pack.cjs
 files:
   - out/**
   - package.json
+  - THIRD-PARTY-NOTICES.txt
   - '!out/renderer/audio-engine/**'
   - '!out/renderer/plugins/**'
   - '!out/renderer/plugin-index/**'

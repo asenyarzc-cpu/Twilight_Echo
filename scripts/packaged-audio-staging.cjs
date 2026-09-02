@@ -14,6 +14,7 @@ const { join } = require('node:path')
 const { NATIVE_RUNTIME_FILES, stripNativeFile } = require('./release-artifact-strip.cjs')
 const { createAudioCapabilityManifest } = require('./generate-audio-capability-manifest.cjs')
 const { createReleaseCapabilityStatus } = require('./verify-release-capability-consistency.cjs')
+const { stagedVst3Files } = require('./prepare-vst3-msvc.cjs')
 const { readStagedAudioRuntimeObservation } = require('./staged-audio-runtime-observation.cjs')
 
 function refreshAudioCapabilityArtifacts(nativeDir, runtimeStatus) {
@@ -29,9 +30,19 @@ function refreshAudioCapabilityArtifacts(nativeDir, runtimeStatus) {
 }
 
 function preparePackagedAudioStaging(root) {
+  const sourceDir = join(root, 'resources', 'audio-engine')
+  const vst3 = stagedVst3Files(root)
+  if (!vst3.complete) {
+    const invalid = [
+      ...vst3.missing,
+      ...vst3.wrongArchitecture.map((file) => `${file} is not a Windows x64 PE`)
+    ]
+    throw new Error(
+      `Windows packaging requires complete x64 VST3 helpers and VC runtime files; missing or invalid ${invalid.join(', ')}. Run pnpm run prepare:vst3-msvc first.`
+    )
+  }
   const temporaryDir = mkdtempSync(join(tmpdir(), 'twilight-packaged-audio-'))
   const nativeDir = join(temporaryDir, 'audio-engine')
-  const sourceDir = join(root, 'resources', 'audio-engine')
   mkdirSync(nativeDir)
   for (const name of readdirSync(sourceDir)) {
     if (!NATIVE_RUNTIME_FILES.includes(name)) {

@@ -1,11 +1,16 @@
 const { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } = require('node:fs')
 const { join, resolve } = require('node:path')
+const { assertX64Pe } = require('./verify-release-artifacts.cjs')
 const {
   resolveVst3MsvcBuildDirectory,
   resolveVst3MsvcEnvironment
 } = require('./vst3-msvc-toolchain.cjs')
 
 const root = resolve(__dirname, '..')
+if (process.platform !== 'win32' || process.arch !== 'x64') {
+  console.error('VST3 helpers can only be staged on Windows x64.')
+  process.exit(1)
+}
 const environment = resolveVst3MsvcEnvironment()
 const outputDir = join(root, 'resources', 'audio-engine')
 const argumentIndex = process.argv.indexOf('--build-dir')
@@ -27,6 +32,7 @@ if (!sourceDir) {
 mkdirSync(outputDir, { recursive: true })
 for (const file of files) {
   const source = join(sourceDir, file)
+  assertX64Pe(source)
   const destination = join(outputDir, file)
   copyFileSync(source, destination)
   console.log(`Staged ${file} (${(statSync(destination).size / 1024 / 1024).toFixed(1)} MiB)`)
@@ -53,6 +59,7 @@ if (!runtimeDir) {
 
 for (const file of runtimeFiles) {
   const source = join(runtimeDir, file)
+  assertX64Pe(source)
   const destination = join(outputDir, file)
   copyFileSync(source, destination)
   console.log(`Staged ${file} (${(statSync(destination).size / 1024 / 1024).toFixed(1)} MiB)`)

@@ -29,7 +29,7 @@ function makeCandidate(options = {}) {
       'nodeLinker: hoisted',
       'overrides:',
       '  form-data: 4.0.6',
-      '  qs: 6.15.2',
+      '  qs: 6.16.0',
       'patchedDependencies:',
       "  '@neteasecloudmusicapienhanced/api@4.35.1': patches/@neteasecloudmusicapienhanced__api@4.35.1.patch"
     ].join('\n')

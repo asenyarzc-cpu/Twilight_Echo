@@ -7,7 +7,7 @@
 | Capability          | Product status | Build presence | Runtime observation | Real-device verification |
 | ------------------- | -------------- | -------------- | ------------------- | ------------------------ |
 | ASIO                | `experimental` | `available`    | `available`         | `unverified`             |
-| VST3                | `not-built`    | `not-built`    | `not-built`         | `unverified`             |
+| VST3                | `available`    | `available`    | `unverified`        | `unverified`             |
 | SoXR                | `unverified`   | `unverified`   | `unverified`        | `unverified`             |
 | ebur128             | `available`    | `available`    | `available`         | `unverified`             |
 | CUDA                | `not-built`    | `not-built`    | `not-built`         | `unverified`             |

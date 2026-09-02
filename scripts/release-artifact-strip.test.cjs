@@ -6,7 +6,6 @@ const test = require('node:test')
 
 const {
   NATIVE_RUNTIME_FILES,
-  REQUIRED_NATIVE_RUNTIME_FILES,
   clearPeDebugDirectory,
   clearPeSymbolTablePointer,
   executableCandidates,
@@ -87,29 +86,23 @@ test('release strip only processes the packaged runtime copy and fails closed', 
   )
 })
 
-test('release strip skips optional VST3 helpers when a release did not stage them', () => {
-  const calls = []
+test('release strip rejects a package without the VST3 helper pair', () => {
   const packagedDir = path.resolve('C:/release/no-vst3/resources/audio-engine')
   const exists = (filePath) =>
-    REQUIRED_NATIVE_RUNTIME_FILES.some((name) => filePath === path.join(packagedDir, name))
-  const result = stripNativeArtifacts(packagedDir, {
-    stripCommand: 'C:/tools/strip.exe',
-    exists,
-    run: (command, args) => {
-      calls.push({ command, args })
-      return { status: 0 }
-    },
-    copy: () => {},
-    remove: () => {},
-    clearDebugDirectory: () => {},
-    clearSymbolTablePointer: () => {}
-  })
-  assert.equal(result.stripped.length, REQUIRED_NATIVE_RUNTIME_FILES.length)
-  assert.equal(
-    result.missing.length,
-    NATIVE_RUNTIME_FILES.length - REQUIRED_NATIVE_RUNTIME_FILES.length
+    NATIVE_RUNTIME_FILES.slice(0, 3).some((name) => filePath === path.join(packagedDir, name))
+  assert.throws(
+    () =>
+      stripNativeArtifacts(packagedDir, {
+        stripCommand: 'C:/tools/strip.exe',
+        exists,
+        run: () => ({ status: 0 }),
+        copy: () => {},
+        remove: () => {},
+        clearDebugDirectory: () => {},
+        clearPeDebugDirectory: () => {}
+      }),
+    /Missing packaged native runtime binary.*twilight-vst3-host\.exe/
   )
-  assert.equal(calls.length, REQUIRED_NATIVE_RUNTIME_FILES.length)
 })
 
 test('release strip clears PE debug directory records and referenced data', () => {

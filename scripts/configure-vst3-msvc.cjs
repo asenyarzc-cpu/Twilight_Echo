@@ -17,7 +17,9 @@ function fail(message) {
   process.exit(1)
 }
 
-if (process.platform !== 'win32') fail('VST3 helpers can only be configured on Windows.')
+if (process.platform !== 'win32' || process.arch !== 'x64') {
+  fail('VST3 helpers can only be configured on Windows x64.')
+}
 const toolchain = validateVst3MsvcToolchain({ env: environment })
 if (!toolchain.ok) fail(toolchain.message)
 const { sdkRoot, installRoot } = toolchain

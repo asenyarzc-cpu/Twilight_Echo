@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/asenyarzc-cpu/Twilight_Echo/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/asenyarzc-cpu/Twilight_Echo?display_name=tag&style=flat-square" /></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%2F%2011-2563eb?style=flat-square&logo=windows11&logoColor=white" />
-  <img alt="Version" src="https://img.shields.io/badge/version-1.1.0-0f766e?style=flat-square" />
+  <img alt="Version" src="https://img.shields.io/badge/version-1.1.2-0f766e?style=flat-square" />
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-64748b?style=flat-square" /></a>
 </p>
 
@@ -151,7 +151,7 @@ PCM SRC 支持 SWR；SoXR 是随 FFmpeg 构建可选的运行时引擎，在没�
 - 本地曲目 BPM 与响度后台分析和缓存，不阻塞实时播放链路。
 - 独立音频可视化页面显示频谱、波形、播放位置、BPM、动态范围、响度与文件参数。
 - DSD 与 passthrough 路径会自动绕过不安全的 PCM DSP，避免错误处理原始数据流。
-- VST3 宿主只有在 Windows x64 包实际暂存 host 与 scanner helpers 时才可用，实际兼容性仍取决于第三方插件和运行状态。
+- Windows x64 打包流程会自动构建并暂存 VST3 host 与 scanner helpers；实际兼容性仍取决于第三方插件和运行状态。
 
 ### 外观、主题与桌面体验
 
@@ -188,7 +188,7 @@ PCM SRC 支持 SWR；SoXR 是随 FFmpeg 构建可选的运行时引擎，在没�
 
 当前 Windows 安装包由个人开发者发布，**没有商业代码签名证书**，因此 Windows SmartScreen 可能显示“未知发布者”。请只从本项目的 GitHub Releases 下载，并核对发布页提供的 SHA-256。可在 PowerShell 中运行：
 
-<pre><code>Get-FileHash ./TwilightEcho-1.1.0-setup.exe -Algorithm SHA256</code></pre>
+<pre><code>Get-FileHash ./TwilightEcho-1.1.2-setup.exe -Algorithm SHA256</code></pre>
 
 项目发布检查仍会验证安装包品牌信息、依赖闭包、原生二进制剥离、体积预算和 SHA-256 生成；代码签名不属于个人项目的发布门槛。
 

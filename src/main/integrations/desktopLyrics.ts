@@ -150,8 +150,7 @@ function refreshDesktopLyricsHoverIntent(): void {
     win.isDestroyed() ||
     !win.isVisible() ||
     desktopLyricsPausedHidden ||
-    !runtime.appSettings.desktopLyrics.locked ||
-    desktopLyricsInteractionActive
+    !runtime.appSettings.desktopLyrics.locked
   ) {
     clearDesktopLyricsHoverTracking()
     return
@@ -175,17 +174,9 @@ function syncDesktopLyricsHoverTracking(): void {
     !win.isDestroyed() &&
     win.isVisible() &&
     !desktopLyricsPausedHidden &&
-    runtime.appSettings.desktopLyrics.locked &&
-    !desktopLyricsInteractionActive
+    runtime.appSettings.desktopLyrics.locked
   )
   if (!shouldTrack) {
-    if (desktopLyricsInteractionActive) {
-      if (desktopLyricsHoverCheckTimer != null) {
-        clearInterval(desktopLyricsHoverCheckTimer)
-        desktopLyricsHoverCheckTimer = null
-      }
-      return
-    }
     clearDesktopLyricsHoverTracking()
     return
   }
@@ -204,13 +195,15 @@ export function syncDesktopLyricsSettings(): void {
 function updateDesktopLyricsSettings(
   patch: Partial<DesktopLyricsSettingsV3>
 ): DesktopLyricsSettingsV3 {
-  if ('locked' in patch) desktopLyricsInteractionActive = false
+  const lockChanged = 'locked' in patch
+  if (lockChanged) desktopLyricsInteractionActive = false
   runtime.appSettings.desktopLyrics = normalizeDesktopLyricsSettings(
     { ...runtime.appSettings.desktopLyrics, ...patch, version: 3 },
     { resetLegacy: false }
   )
   writeAppSettings(runtime.appSettings)
   notifySettingsChanged()
+  if (lockChanged) publishDesktopLyricsHoverIntent(desktopLyricsPointerInside)
   return getEffectiveDesktopLyricsSettings()
 }
 

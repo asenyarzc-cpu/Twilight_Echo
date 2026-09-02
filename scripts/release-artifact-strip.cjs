@@ -11,15 +11,10 @@ const NATIVE_RUNTIME_FILES = Object.freeze([
   'twilight-vst3-scanner.exe'
 ])
 
-// The audio DLL and Node addon are the core playback runtime and must always
-// ship. The VST3 helper executables are optional: the app disables the VST3
-// host at runtime when they are absent, so packaging strips and verifies them
-// only when a release staged them.
-const REQUIRED_NATIVE_RUNTIME_FILES = Object.freeze([
-  'twilight-audio-engine.dll',
-  'twilight_audio_node.node',
-  'twilight-asio-helper.exe'
-])
+// The core playback runtime and isolated VST3 helper pair are required in a
+// Windows package. Packaging prepares the pair before electron-builder runs and
+// strips every shipped product binary from the copied package payload.
+const REQUIRED_NATIVE_RUNTIME_FILES = Object.freeze([...NATIVE_RUNTIME_FILES])
 
 function executableCandidates(environment = process.env) {
   const candidates = []

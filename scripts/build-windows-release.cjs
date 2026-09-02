@@ -7,6 +7,7 @@ const { findInstaller } = require('./verify-release-artifacts.cjs')
 const { verifyPackagedDependencyClosure } = require('./verify-packaged-dependency-closure.cjs')
 const { verifyWindowsAppBranding } = require('./verify-windows-app-branding.cjs')
 const { preparePackagedAudioStaging } = require('./packaged-audio-staging.cjs')
+const { prepareVst3Msvc } = require('./prepare-vst3-msvc.cjs')
 const {
   verifyReleaseCapabilityConsistency
 } = require('./verify-release-capability-consistency.cjs')
@@ -50,6 +51,7 @@ async function main() {
   console.warn(
     'Windows release is intentionally unsigned; publish the generated SHA-256 and expect SmartScreen warnings.'
   )
+  prepareVst3Msvc({ root, environment: releaseEnvironment })
   const staging = preparePackagedAudioStaging(root)
   let build
   try {

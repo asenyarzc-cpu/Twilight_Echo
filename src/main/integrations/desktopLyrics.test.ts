@@ -66,6 +66,16 @@ test('desktop lyrics uses constrained dragging and locked hover unlock forwardin
   assert.match(main, /screen\.getCursorScreenPoint\(\)/)
   assert.match(main, /desktopLyrics:hoverIntent/)
   assert.match(main, /desktopLyrics:setInteractionActive/)
+  assert.match(main, /const lockChanged = 'locked' in patch/)
+  assert.match(
+    main,
+    /if \(lockChanged\) publishDesktopLyricsHoverIntent\(desktopLyricsPointerInside\)/
+  )
+  const hoverTracking = main.slice(
+    main.indexOf('function refreshDesktopLyricsHoverIntent'),
+    main.indexOf('export function syncDesktopLyricsSettings')
+  )
+  assert.doesNotMatch(hoverTracking, /desktopLyricsInteractionActive/)
   assert.match(app, /setPointerCapture/)
   assert.match(app, /api\.moveTo/)
   assert.match(app, /api\.moveEnd/)
