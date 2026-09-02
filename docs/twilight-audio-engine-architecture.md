@@ -31,7 +31,7 @@ pnpm run build
 - `ApplyDspState` 先在 control thread 上编译隔离的 active/preload 候选，全部成功且 retired-generation 容量可用后才提交配置、graph JSON、gapless/preload 状态和 RT graph 所有权。render callback 通过 epoch ACK 切换 graph，control thread 只回收已 ACK 且不再被 current/preload 引用的代际，最多保留 8 代。`GetDspGraphStatus.revision` 是 UI pending/applied/failed 的外部 revision ACK；generic playback config revision 只作为其它控制共享的单调计数。
 - BPM/loudness 完整文件解码运行在独立 `audioAnalysisService` utility-process pool，绝不进入播放 `audioEngineService` 的 RPC 队列。主进程 analysis client 负责有界优先级队列、aging、等待 deadline、高优先级 admission、并发上限、独立 watchdog 与取消；取消或超时只替换对应 analysis worker，不重启或阻塞播放 service。cache commit 与取消并发时使用 generation 屏障和精确值条件删除，避免取消结果落缓存或删除后继写入。
 - ASIO 兼容层不携带 SDK，只在 Windows x64 构建中编译并默认枚举已安装驱动；排障或紧急回退可通过 `TWILIGHT_DISABLE_ASIO=1` 显式禁用。
-- miniaudio 0.11.25 已作为默认关闭的 Windows Shared/default PCM provider PoC 编译依赖接入；它不改变当前公开 backend id、默认路由或 WASAPI Exclusive/ASIO/DSD 特殊路径。
+- miniaudio 0.11.25 已作为默认关闭的 Windows Shared/default PCM provider PoC 编译依赖接入；MA-101 固定 Float32 callback 并关闭 WASAPI `AUTOCONVERTPCM`，从 miniaudio converter/device state 区分实际转换事实，通知通过 control event path 延迟派发；它不改变当前公开 backend id、默认路由或 WASAPI Exclusive/ASIO/DSD 特殊路径。
 - 真实设备 smoke 是 opt-in：没有目标平台工具链或真实设备时跳过，不阻塞默认 CI。
 
 ## sourceExact / outputPerfect 策略

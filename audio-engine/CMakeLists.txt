@@ -175,6 +175,7 @@ endif()
 
 if(TAE_MINIAUDIO_AVAILABLE)
   target_sources(twilight_audio_engine PRIVATE output/miniaudio/MiniaudioImplementation.cpp)
+  target_sources(twilight_audio_engine PRIVATE output/miniaudio/MiniaudioPcmBackend.cpp)
   target_include_directories(twilight_audio_engine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio)
   target_compile_definitions(twilight_audio_engine PRIVATE TAE_ENABLE_MINIAUDIO=1)
   target_link_libraries(twilight_audio_engine PRIVATE ole32 uuid avrt)
@@ -527,6 +528,20 @@ if(TAE_BUILD_TESTS)
   endif()
   add_test(NAME twilight_platform_backend_smoke COMMAND twilight_platform_backend_smoke)
 
+  add_executable(twilight_miniaudio_backend_tests
+    tests/miniaudio_backend_tests.cpp
+    output/miniaudio/MiniaudioPcmBackend.cpp
+    core/AudioTypes.cpp
+  )
+  target_include_directories(twilight_miniaudio_backend_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  if(TAE_MINIAUDIO_AVAILABLE)
+    target_sources(twilight_miniaudio_backend_tests PRIVATE output/miniaudio/MiniaudioImplementation.cpp)
+    target_include_directories(twilight_miniaudio_backend_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio)
+    target_compile_definitions(twilight_miniaudio_backend_tests PRIVATE TAE_ENABLE_MINIAUDIO=1)
+    target_link_libraries(twilight_miniaudio_backend_tests PRIVATE ole32 uuid avrt)
+  endif()
+  add_test(NAME twilight_miniaudio_backend_unit COMMAND twilight_miniaudio_backend_tests)
+
   if(TAE_WASAPI_AVAILABLE)
     add_executable(twilight_wasapi_format_negotiator_tests
       tests/wasapi_format_negotiator_tests.cpp
@@ -870,6 +885,7 @@ if(TAE_BUILD_TESTS)
     twilight_pcm_to_dsd_tests
     twilight_queue_tests
     twilight_backend_factory_tests
+    twilight_miniaudio_backend_tests
     twilight_platform_backend_smoke
     twilight_wasapi_format_negotiator_tests
     twilight_asio_backend_tests

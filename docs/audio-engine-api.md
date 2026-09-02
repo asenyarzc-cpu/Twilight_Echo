@@ -144,7 +144,7 @@ main 进程（`engineIpc.ts`）在播放状态变化、引擎错误与诊断导�
 
 SoXR 不是独立链接的宿主 backend，而是 FFmpeg 的构建可选 resampler engine。清单把它标记为 `ffmpeg-runtime-probe`：只有播放期 `DspOutputStageStatus.resamplerEngine` 与 `resamplerFallback` 才能报告实际 engine 和回退。没有 runtime observation 只表示“未观察”，不表示 SoXR 已可用，也不把它伪装为编译保证。
 
-miniaudio 目前仅是 `TAE_ENABLE_MINIAUDIO=OFF` 默认关闭的 Windows Shared/default PCM provider PoC 编译依赖。Manifest 中的 `capabilities.miniaudio.compiled=true` 只说明 staged 主引擎包含该 PoC 代码与 WASAPI backend 编译标记；`runtimeStatus` 和 `deviceStatus` 在真实运行与设备 A/B 证据前保持 `unverified`，也不改变公开 backend id 或默认输出选择。
+miniaudio 目前仅是 `TAE_ENABLE_MINIAUDIO=OFF` 默认关闭的 Windows Shared/default PCM provider PoC 编译依赖。MA-101 的 callback 固定为 Float32 interleaved，并关闭 WASAPI `AUTOCONVERTPCM`，使 miniaudio 自己的 converter 与公开的 internal device facts 保持可区分；设备通知在 control event path 延迟派发。Manifest 中的 `capabilities.miniaudio.compiled=true` 只说明 staged 主引擎包含该 PoC 代码与 WASAPI backend 编译标记；`runtimeStatus` 和 `deviceStatus` 在真实运行与设备 A/B 证据前保持 `unverified`，也不改变公开 backend id 或默认输出选择。
 
 当前批准的产品术语是“PCM SRC”和“实验性 PCM→DSD64/128/256（CPU）”。CUDA SDM 与完整高品质 SDM 在 AP-409 完成并拥有数值、性能及真机证据前不得作为支持能力发布。
 

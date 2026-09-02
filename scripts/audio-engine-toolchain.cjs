@@ -42,6 +42,7 @@ const MINGW_EXPECTED_CTESTS = Object.freeze([
   'twilight_pcm_to_dsd_unit',
   'twilight_queue_unit',
   'twilight_backend_factory_unit',
+  'twilight_miniaudio_backend_unit',
   'twilight_wasapi_format_negotiator_unit',
   'twilight_asio_backend_unit',
   'twilight_asio_helper_selftest',

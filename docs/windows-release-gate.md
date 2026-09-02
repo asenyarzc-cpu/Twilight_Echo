@@ -201,7 +201,10 @@ Take the DLLs from the toolchain that actually built the artifacts — an unrela
 `PATH` ships a different libstdc++ and produces `The specified procedure could not be found`.
 
 The miniaudio `0.11.25` implementation is an opt-in, default-off Windows Shared/default PCM build
-capability. Its `outputInfo.providerImplementation` and `outputInfo.conversionInfo` fields are
+capability. MA-101 fixes the callback at Float32 and disables WASAPI `AUTOCONVERTPCM` so the
+miniaudio converter and internal device state can report conversion facts without treating the
+requested format as actual device state; device notifications are dispatched through a deferred
+control event path. Its `outputInfo.providerImplementation` and `outputInfo.conversionInfo` fields are
 diagnostic facts only; they do not add a public backend, prove runtime/device support, or change
 Shared `outputPerfect=false` semantics. A capability manifest showing miniaudio compiled is not a
 real-device or A/B validation result.
