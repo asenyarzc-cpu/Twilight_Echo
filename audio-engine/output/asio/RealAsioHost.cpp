@@ -10,7 +10,6 @@
 
 #include <cstdlib>
 #include <memory>
-#include <sstream>
 #include <utility>
 
 namespace twilight::audio {
@@ -19,34 +18,6 @@ namespace {
 bool asioEnabled() {
   const char* value = std::getenv("TWILIGHT_DISABLE_ASIO");
   return !value || std::string_view(value) != "1";
-}
-
-std::string jsonEscape(const std::string& value) {
-  std::string escaped;
-  escaped.reserve(value.size());
-  for (unsigned char character : value) {
-    switch (character) {
-      case '\\':
-        escaped += "\\\\";
-        break;
-      case '"':
-        escaped += "\\\"";
-        break;
-      case '\n':
-        escaped += "\\n";
-        break;
-      case '\r':
-        escaped += "\\r";
-        break;
-      case '\t':
-        escaped += "\\t";
-        break;
-      default:
-        if (character >= 0x20) escaped += static_cast<char>(character);
-        break;
-    }
-  }
-  return escaped;
 }
 
 #if defined(_WIN32) && defined(_WIN64) && defined(TAE_ENABLE_ASIO)
@@ -66,6 +37,7 @@ struct RealAsioHost::Impl {
   std::shared_ptr<asio_windows::AsioControlThread> controlThread;
   std::unique_ptr<asio_windows::AsioDriverSession> session;
 #endif
+  std::string lastCloseError;
 };
 
 RealAsioHost::RealAsioHost() : impl_(std::make_unique<Impl>()) {}
@@ -123,7 +95,12 @@ bool RealAsioHost::probeDevice(const std::string& deviceId, AsioDeviceInfo* info
   asio_windows::AsioDriverSession session(*entry, controlThread);
   const bool ok = session.probe(&probed, error);
   session.close();
+  const std::string closeError = session.lastCloseError();
   controlThread->stop();
+  if (!closeError.empty()) {
+    if (error) *error = closeError;
+    return false;
+  }
   if (!ok) return false;
 
   DeviceCapabilityCache::instance().put(probed);
@@ -154,6 +131,10 @@ AsioHostDiagnostics RealAsioHost::diagnostics() const {
 bool RealAsioHost::open(const AsioOpenConfig& config, AsioOpenResult* result, std::string* error) {
 #if defined(_WIN32) && defined(_WIN64) && defined(TAE_ENABLE_ASIO)
   close();
+  if (!impl_->lastCloseError.empty()) {
+    if (error) *error = impl_->lastCloseError;
+    return false;
+  }
   if (!asioEnabled()) {
     if (error) *error = "ASIO backend is disabled by TWILIGHT_DISABLE_ASIO=1";
     return false;
@@ -166,7 +147,12 @@ bool RealAsioHost::open(const AsioOpenConfig& config, AsioOpenResult* result, st
   impl_->controlThread = std::make_shared<asio_windows::AsioControlThread>();
   impl_->session = std::make_unique<asio_windows::AsioDriverSession>(*entry, impl_->controlThread);
   if (impl_->session->open(config, result, error)) return true;
+  const std::string closeError = impl_->session->lastCloseError();
   close();
+  if (!closeError.empty()) {
+    impl_->lastCloseError = closeError;
+    if (error) *error = closeError;
+  }
   return false;
 #else
   if (error) *error = "ASIO is available only in a Windows x64 build";
@@ -211,11 +197,19 @@ void RealAsioHost::stop() {
 
 void RealAsioHost::close() {
 #if defined(_WIN32) && defined(_WIN64) && defined(TAE_ENABLE_ASIO)
-  if (impl_->session) impl_->session->close();
+  if (impl_->session) {
+    impl_->lastCloseError.clear();
+    impl_->session->close();
+    impl_->lastCloseError = impl_->session->lastCloseError();
+  }
   impl_->session.reset();
   if (impl_->controlThread) impl_->controlThread->stop();
   impl_->controlThread.reset();
 #endif
+}
+
+std::string RealAsioHost::lastCloseError() const {
+  return impl_->lastCloseError;
 }
 
 void* RealAsioHost::outputBuffer(long channel, long bufferIndex) {
@@ -256,99 +250,6 @@ long RealAsioHost::activeBufferSize() const {
 
 std::unique_ptr<IAsioHost> createRealAsioHost() {
   return std::make_unique<RealAsioHost>();
-}
-
-std::vector<int> asioDefaultSampleRateProbeSet() {
-  return {
-      44100,
-      48000,
-      88200,
-      96000,
-      176400,
-      192000,
-      352800,
-      384000,
-      705600,
-      768000,
-      1411200,
-      1536000};
-}
-
-std::vector<int> asioDsdSemanticRateProbeSet() {
-  return {
-      2822400,   // DSD64
-      3072000,   // DSD64  (48k family)
-      5644800,   // DSD128
-      6144000,   // DSD128 (48k family)
-      11289600,  // DSD256
-      12288000,  // DSD256 (48k family)
-      22579200,  // DSD512
-      24576000};  // DSD512 (48k family)
-}
-
-std::string asioSampleFormatName(AudioSampleFormat format) {
-  return sampleFormatToString(format);
-}
-
-std::string enumerateAsioDevicesJson() {
-  std::ostringstream json;
-  json << '[';
-  bool first = true;
-  for (const auto& device : createRealAsioHost()->enumerateDevices()) {
-    if (!first) json << ',';
-    first = false;
-    json << "{\"id\":\"" << jsonEscape(device.id) << "\",\"label\":\"" << jsonEscape(device.name)
-         << "\",\"name\":\"" << jsonEscape(device.name)
-         << "\",\"backend\":\"asio\",\"isDefault\":" << (device.isDefault ? "true" : "false")
-         << ",\"capabilityProbed\":" << (device.capabilityProbed ? "true" : "false");
-    // Enumeration reads the registry, which knows identity only. Emitting the
-    // false defaults of an unprobed record made every ASIO driver advertise
-    // "no DSD, no DoP"; leaving the fields out lets the UI say "not probed yet"
-    // instead of contradicting a DAC that has never been asked.
-    if (device.capabilityProbed) {
-      json << ",\"supportsNativeDsd\":" << (device.nativeDsdCapable ? "true" : "false")
-           << ",\"supportsDop\":" << (device.dopCapable ? "true" : "false");
-      if (!device.nativeDsdSampleRates.empty()) {
-        json << ",\"nativeDsdSampleRates\":[";
-        for (size_t i = 0; i < device.nativeDsdSampleRates.size(); ++i) {
-          if (i > 0) json << ',';
-          json << device.nativeDsdSampleRates[i];
-        }
-        json << ']';
-      }
-      if (!device.dopCarrierSampleRates.empty()) {
-        json << ",\"dopCarrierSampleRates\":[";
-        for (size_t i = 0; i < device.dopCarrierSampleRates.size(); ++i) {
-          if (i > 0) json << ',';
-          json << device.dopCarrierSampleRates[i];
-        }
-        json << ']';
-      }
-    }
-    json << '}';
-  }
-  json << ']';
-  return json.str();
-}
-
-std::vector<std::string> asioNativeDsdCapableDeviceIds() {
-#if defined(_WIN32) && defined(_WIN64) && defined(TAE_ENABLE_ASIO)
-  auto host = createRealAsioHost();
-  std::vector<std::string> capable;
-  for (const auto& device : host->enumerateDevices()) {
-    AsioDeviceInfo probed = device;
-    // Probe results are cached, so repeated auto-discovery costs one driver
-    // interrogation per device per process, not one per track.
-    if (!device.nativeDsdCapable) {
-      std::string probeError;
-      if (!host->probeDevice(device.id, &probed, &probeError)) continue;
-    }
-    if (probed.nativeDsdCapable) capable.push_back(probed.id);
-  }
-  return capable;
-#else
-  return {};
-#endif
 }
 
 }  // namespace twilight::audio

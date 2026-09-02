@@ -4323,6 +4323,15 @@ html[data-theme='dark']
   right: 0;
 }
 
+.player-bar-shell[data-te-playbar-mode='compact'].compact-visualizer-active {
+  --te-compact-visualizer-height: 138px;
+}
+
+.player-bar-shell[data-te-playbar-mode='compact'].compact-visualizer-active .playlist-panel {
+  margin-bottom: calc(12px - var(--te-compact-visualizer-height));
+  z-index: 3;
+}
+
 .player-bar-shell[data-te-playbar-mode='compact']
   .player-bar.player-bar-compact.player-bar-compact.player-bar-compact {
   --te-compact-visualizer-height: 138px;
@@ -4681,6 +4690,10 @@ html[data-theme='dark']
 }
 
 @media (max-width: 760px) {
+  .player-bar-shell[data-te-playbar-mode='compact'].compact-visualizer-active {
+    --te-compact-visualizer-height: 96px;
+  }
+
   .player-bar-shell[data-te-playbar-mode='compact']
     .player-bar.player-bar-compact.player-bar-compact.player-bar-compact {
     --te-compact-visualizer-height: 96px;

@@ -681,7 +681,7 @@ export function useMusicStore(): {
     }
   }
 
-  function applyLibraryScanUpdate(update: LocalLibraryScanUpdate): void {
+  async function applyLibraryScanUpdate(update: LocalLibraryScanUpdate): Promise<void> {
     excludedTracks.value = update.exclusions
     libraryRevision = update.libraryRevision
     libraryScanStatus.value = {
@@ -694,6 +694,10 @@ export function useMusicStore(): {
       error: ''
     }
     if (update.state === 'cancelled') return
+    if (update.reloadRequired) {
+      await loadLibrary()
+      return
+    }
 
     const excludedPaths = new Set(
       update.exclusions.map((entry) => normalizePortableLibraryPath(entry.filePath))
@@ -742,13 +746,13 @@ export function useMusicStore(): {
 
   async function startStartupLibraryScan(): Promise<LocalLibraryScanUpdate> {
     const update = await window.api.library.scanStartup()
-    applyLibraryScanUpdate(update)
+    await applyLibraryScanUpdate(update)
     return update
   }
 
   async function startFullLibraryScan(): Promise<LocalLibraryScanUpdate> {
     const update = await window.api.library.scanFull()
-    applyLibraryScanUpdate(update)
+    await applyLibraryScanUpdate(update)
     return update
   }
 
@@ -788,7 +792,7 @@ export function useMusicStore(): {
 
   async function handleLibraryChange(change: LibraryChange | undefined): Promise<void> {
     if (change?.kind === 'scan') {
-      applyLibraryScanUpdate(change.update)
+      await applyLibraryScanUpdate(change.update)
       return
     }
     try {

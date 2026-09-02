@@ -6,6 +6,11 @@ const path = require('node:path')
 const { findInstaller } = require('./verify-release-artifacts.cjs')
 const { verifyPackagedDependencyClosure } = require('./verify-packaged-dependency-closure.cjs')
 const { verifyWindowsAppBranding } = require('./verify-windows-app-branding.cjs')
+const { preparePackagedAudioStaging } = require('./packaged-audio-staging.cjs')
+const { prepareVst3Msvc } = require('./prepare-vst3-msvc.cjs')
+const {
+  verifyReleaseCapabilityConsistency
+} = require('./verify-release-capability-consistency.cjs')
 const packageMetadata = require('../package.json')
 
 const root = path.resolve(__dirname, '..')
@@ -35,7 +40,8 @@ async function main() {
   const releaseEnvironment = {
     ...process.env,
     CSC_IDENTITY_AUTO_DISCOVERY: 'false',
-    TWILIGHT_RELEASE_BUILD: '1'
+    TWILIGHT_RELEASE_BUILD: '1',
+    TWILIGHT_PACKAGED_AUDIO_PRESTRIPPED: '1'
   }
   delete releaseEnvironment.CSC_LINK
   delete releaseEnvironment.WIN_CSC_LINK
@@ -45,11 +51,18 @@ async function main() {
   console.warn(
     'Windows release is intentionally unsigned; publish the generated SHA-256 and expect SmartScreen warnings.'
   )
-  const build = run(
-    process.execPath,
-    [electronBuilder, '--win', '--config', 'electron-builder.yml'],
-    releaseEnvironment
-  )
+  prepareVst3Msvc({ root, environment: releaseEnvironment })
+  const staging = preparePackagedAudioStaging(root)
+  let build
+  try {
+    build = run(
+      process.execPath,
+      [electronBuilder, '--win', '--config', staging.configPath],
+      releaseEnvironment
+    )
+  } finally {
+    staging.dispose()
+  }
   if (build.error) throw build.error
   if ((build.status ?? 1) !== 0) process.exit(build.status ?? 1)
   const branding = verifyWindowsAppBranding(path.join(root, 'dist', 'win-unpacked'))
@@ -66,6 +79,10 @@ async function main() {
   ])
   if (verify.error) throw verify.error
   if ((verify.status ?? 1) !== 0) process.exit(verify.status ?? 1)
+  verifyReleaseCapabilityConsistency({
+    nativeDir: path.join(root, 'dist', 'win-unpacked', 'resources', 'audio-engine'),
+    declaration: path.join(root, 'docs', 'release-capability-status.md')
+  })
   await writeInstallerChecksum(expectedInstaller)
 }
 

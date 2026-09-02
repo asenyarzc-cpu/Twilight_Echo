@@ -227,6 +227,11 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   'audio.reason.dsd_high_rate_pcm_fallback.fix':
     '换用支持该速率的设备，或播放较低速率的 DSD 文件（如 DSD64、DSD128）。',
 
+  'audio.reason.dsd_downrated.label': 'DSD 已降倍率以适配输出设备',
+  'audio.reason.dsd_downrated.explain':
+    '源信号保持在单比特 DSD 域内，但已低通滤波、抽取并重新调制为设备支持的较低 DSD 倍率；这不是 source-exact。',
+  'audio.reason.dsd_downrated.fix': '换用支持源 DSD 倍率的设备，或选择「Exact rate」拒绝转换。',
+
   'audio.reason.dsd_converted_to_pcm.label': 'DSD 当前已转换为 PCM 输出',
   'audio.reason.dsd_converted_to_pcm.explain': 'DSD 位流已被解调成 PCM 后输出。',
   'audio.reason.dsd_converted_to_pcm.fix':
@@ -325,6 +330,51 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
     'ASIO 驱动报告的采样格式引擎无法处理，这块设备的这个格式暂时用不了。',
   'audio.reason.unsupported_asio_sample_type.fix':
     '在 ASIO 控制面板里换一个采样格式，或更新驱动后重试。',
+
+  'audio.reason.dsd_mute_lock_timeout.label': 'DSD 传输锁定超时',
+  'audio.reason.dsd_mute_lock_timeout.explain':
+    '设备未能在有界静音窗口内确认稳定的 DoP 或 Native DSD 传输，因此引擎保持静音并停止输出，没有放行未知音频。',
+  'audio.reason.dsd_mute_lock_timeout.fix':
+    '适当增大 DSD 过渡超时，改用 DoP 或 PCM 回退，或重新选择输出设备。',
+
+  'audio.reason.asio_helper_launch_failed.label': 'ASIO helper 无法启动',
+  'audio.reason.asio_helper_launch_failed.explain':
+    '承载 ASIO 驱动的隔离进程未能启动，因此没有开始 ASIO 播放。',
+  'audio.reason.asio_helper_launch_failed.fix': '重启音频服务，或改选 WASAPI 输出设备。',
+
+  'audio.reason.asio_helper_protocol_error.label': 'ASIO helper 协议错误',
+  'audio.reason.asio_helper_protocol_error.explain':
+    '音频服务收到了来自 ASIO 隔离进程的无效控制响应，因此已停止当前输出路由。',
+  'audio.reason.asio_helper_protocol_error.fix': '重启音频服务，或改选 WASAPI 输出设备。',
+
+  'audio.reason.asio_helper_control_timeout.label': 'ASIO helper 响应超时',
+  'audio.reason.asio_helper_control_timeout.explain':
+    'ASIO 控制操作超过了截止时间。播放已停止，不会自动重开或续播。',
+  'audio.reason.asio_helper_control_timeout.fix': '重启音频服务，或改选 WASAPI 输出设备。',
+
+  'audio.reason.asio_helper_process_exited.label': 'ASIO helper 意外退出',
+  'audio.reason.asio_helper_process_exited.explain':
+    '承载 ASIO 驱动的隔离进程在使用过程中退出。播放已停止，不会自动续播。',
+  'audio.reason.asio_helper_process_exited.fix': '重启音频服务，或改选 WASAPI 输出设备。',
+
+  'audio.reason.asio_helper_callback_stalled.label': 'ASIO 驱动回调已停滞',
+  'audio.reason.asio_helper_callback_stalled.explain':
+    'ASIO helper 不再收到驱动的渲染回调。为避免继续输出未知音频，当前路由已停止。',
+  'audio.reason.asio_helper_callback_stalled.fix': '重启音频服务，或改选 WASAPI 输出设备。',
+
+  'audio.reason.asio_helper_device_rejected.label': 'ASIO 驱动拒绝了设备或格式',
+  'audio.reason.asio_helper_device_rejected.explain': '所选 ASIO 驱动未接受请求的设备配置。',
+  'audio.reason.asio_helper_device_rejected.fix': '改选其他 ASIO 格式，或切换到 WASAPI 输出设备。',
+
+  'audio.reason.asio_helper_format_restore_failed.label': 'ASIO 驱动格式恢复失败',
+  'audio.reason.asio_helper_format_restore_failed.explain':
+    'ASIO 操作失败后，helper 未能把驱动恢复到原来的采样率和声道格式。',
+  'audio.reason.asio_helper_format_restore_failed.fix': '重启音频服务和 ASIO 驱动后再试。',
+
+  'audio.reason.asio_helper_command_failed.label': 'ASIO helper 命令执行失败',
+  'audio.reason.asio_helper_command_failed.explain':
+    '承载 ASIO 驱动的隔离进程拒绝了控制命令，或未能完成该命令。',
+  'audio.reason.asio_helper_command_failed.fix': '重启音频服务，或改选 WASAPI 输出设备。',
 
   'audio.reason.topology_rollback_failed.label': '输出链回滚失败',
   'audio.reason.topology_rollback_failed.explain':

@@ -1,0 +1,21 @@
+{
+  "entries": [
+    {
+      "surface": "WASAPI Exclusive",
+      "id": "mock-wasapi-exclusive",
+      "label": "Mock WASAPI Exclusive logic fixture",
+      "status": "pass",
+      "evidenceKind": "mock",
+      "command": "node --test scripts/audio-smoke-evidence.test.cjs",
+      "notes": "Fixture only: validates report parsing and must not count as hardware coverage."
+    }
+  ],
+  "operationalResults": [
+    {
+      "scenario": "track-switch-loop-30m",
+      "status": "not-run",
+      "evidenceKind": "mock",
+      "notes": "No real output device is exercised by this repository fixture."
+    }
+  ]
+}

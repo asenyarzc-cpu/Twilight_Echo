@@ -4,6 +4,7 @@
 #include "AudioTypes.h"
 #include "FixedSpscQueue.h"
 #include "../decoder/DopPacker.h"
+#include "DsdMuteGuard.h"
 #include "../decoder/DsdReader.h"
 #include "../decoder/FFmpegDecoder.h"
 #include "../dsp/DspChain.h"
@@ -463,6 +464,9 @@ class AudioPipeline {
   bool typedPassthroughActive_ = false;
   PcmToDsdModulator pcmToDsdModulator_;
   DopPacker pcmToDsdDopPacker_;
+  DsdMuteGuard dsdMuteGuard_;
+  DsdMuteTransport lastDsdMuteTransport_ = DsdMuteTransport::Pcm;
+  int lastDsdMuteRate_ = 0;
   std::vector<float> pcmToDsdFloatScratch_;
   std::vector<uint8_t> pcmToDsdPlanarBytes_;
   std::vector<uint8_t> pcmToDsdInterleavedBytes_;

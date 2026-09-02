@@ -5,6 +5,7 @@
 
 export type VolumeNormalizationMode = 'off' | 'track' | 'album' | 'loudnorm'
 export type DsdOutputMode = 'auto' | 'pcm' | 'dop' | 'native'
+export type DsdRatePolicy = 'exact' | 'downrate' | 'pcm-fallback'
 export type LoudnormStatus = 'idle' | 'measuring' | 'cached' | 'fallback' | 'unavailable'
 
 export interface LabeledOption<T extends string> {
@@ -92,6 +93,16 @@ export const DSD_OUTPUT_MODE_OPTIONS: readonly LabeledOption<DsdOutputMode>[] = 
   { value: 'pcm', label: 'PCM', description: '强制 DSD 解码为 PCM' },
   { value: 'dop', label: 'DoP', description: 'DoP 载波传输' },
   { value: 'native', label: 'Native', description: 'Native DSD（平台/设备支持时）' }
+] as const
+
+export const DSD_RATE_POLICY_OPTIONS: readonly LabeledOption<DsdRatePolicy>[] = [
+  { value: 'pcm-fallback', label: 'PCM fallback', description: '保持现有 Native → DoP → PCM 行为' },
+  { value: 'exact', label: 'Exact rate', description: '只允许源倍率 Native / DoP；不可用时报错' },
+  {
+    value: 'downrate',
+    label: 'DSD downrate',
+    description: '源倍率不可用时在 DSD 域滤波降至较低倍率'
+  }
 ] as const
 
 /**
@@ -237,6 +248,10 @@ export function isDsdOutputMode(value: unknown): value is DsdOutputMode {
   return value === 'auto' || value === 'pcm' || value === 'dop' || value === 'native'
 }
 
+export function isDsdRatePolicy(value: unknown): value is DsdRatePolicy {
+  return value === 'exact' || value === 'downrate' || value === 'pcm-fallback'
+}
+
 export function labelForVolumeNormalization(mode: VolumeNormalizationMode): string {
   return VOLUME_NORMALIZATION_OPTIONS.find((option) => option.value === mode)?.label ?? mode
 }
@@ -272,6 +287,10 @@ export function volumeNormalizationValues(): VolumeNormalizationMode[] {
 
 export function dsdOutputModeValues(): DsdOutputMode[] {
   return DSD_OUTPUT_MODE_OPTIONS.map((option) => option.value)
+}
+
+export function dsdRatePolicyValues(): DsdRatePolicy[] {
+  return DSD_RATE_POLICY_OPTIONS.map((option) => option.value)
 }
 
 export function isGaplessBlockedReason(value: unknown): value is GaplessBlockedReason {

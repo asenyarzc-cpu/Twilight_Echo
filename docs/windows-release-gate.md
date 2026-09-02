@@ -35,7 +35,7 @@ The current explicit floors are enforced through root `pnpm-workspace.yaml` `ove
 second npm lockfile:
 
 - `form-data@4.0.6` fixes `GHSA-hmw2-7cc7-3qxx` / `CVE-2026-12143` (multipart CRLF injection).
-- `qs@6.15.2` fixes `GHSA-q8mj-m7cp-5q26` / `CVE-2026-8723` (comma-array stringify DoS).
+- `qs@6.16.0` fixes the tracked `qs` moderate advisories, including `GHSA-q8mj-m7cp-5q26` / `CVE-2026-8723` (comma-array stringify DoS).
 - Root `undici@^6.28.0` fixes `GHSA-p88m-4jfj-68fv` / `GHSA-vxpw-j846-p89q` (header injection and WebSocket DoS) plus `GHSA-8xcm-r25x-g524` / `GHSA-m8rv-5g2x-5cg5` / `GHSA-v3r7-h72x-cjcm` (retry desynchronization, blob body CRLF injection, cookie attribute injection).
 - `postcss@8.5.26` fixes `GHSA-fxqj-rqcc-2cmp` (sourceMappingURL arbitrary `.map` read).
 - `nanoid@3.3.18` fixes `GHSA-28wg-ghj8-5hjv` / `GHSA-2v37-7h3g-55p8` (infinite loop in generators, via vue → postcss).
@@ -200,6 +200,15 @@ or `TAE_MINGW_RUNTIME_DIR` to point it elsewhere. Staging fails rather than ship
 Take the DLLs from the toolchain that actually built the artifacts — an unrelated MinGW earlier on
 `PATH` ships a different libstdc++ and produces `The specified procedure could not be found`.
 
+The miniaudio `0.11.25` implementation is an opt-in, default-off Windows Shared/default PCM build
+capability. MA-101 fixes the callback at Float32 and disables WASAPI `AUTOCONVERTPCM` so the
+miniaudio converter and internal device state can report conversion facts without treating the
+requested format as actual device state; device notifications are dispatched through a deferred
+control event path. Its `outputInfo.providerImplementation` and `outputInfo.conversionInfo` fields are
+diagnostic facts only; they do not add a public backend, prove runtime/device support, or change
+Shared `outputPerfect=false` semantics. A capability manifest showing miniaudio compiled is not a
+real-device or A/B validation result.
+
 ## Unsigned Release Artifact Gate
 
 In-app updates on Windows download the latest GitHub Release installer (`*-setup.exe` preferred),
@@ -235,10 +244,10 @@ binary for stripped PE debug/COFF metadata, and walks the import tables of those
 every non-system dependency they need is present in the same directory (transitively — a DLL's own
 imports are followed). Runtime dependencies supplied by the toolchain are verified for presence and
 size only: they are not our build output, so they are neither stripped nor given a named budget.
-The audio DLL and Node addon are always required; the
-VST3 helper executables are optional and are stripped and checked only when a release staged them
-(the app disables the VST3 host at runtime when they are absent). Windows development and release packaging invoke GNU/LLVM
-`strip --strip-all` only on the copied package payload at
+The audio DLL and Node addon are always required. Windows packaging prepares the MSVC VST3 helper
+pair before electron-builder runs; a package without both helpers is rejected and cannot advertise
+VST3. Windows development and release packaging invoke GNU/LLVM `strip --strip-all` only on the
+copied package payload at
 `win-unpacked/resources/audio-engine`; they never alter `resources/audio-engine` in the source tree.
 Set `W64DEVKIT_ROOT` or `TWILIGHT_RELEASE_STRIP` so the packaging wrapper can locate `strip.exe`.
 The release gate deliberately fails when the strip tool is absent. GNU binutils >= 2.46
@@ -247,12 +256,21 @@ image, so afterPack normalizes that header field to zero once the symbol table i
 gone; the artifact verifier still requires both fields to read zero and fails on any
 surviving symbol table. It does not create or simulate a
 signature, and release notes must disclose that Windows may show SmartScreen warnings.
-Current budgets are 192 MiB for the audio DLL, 16 MiB for the Node addon, 32 MiB for each VST3 host
-executable when staged, 64 MiB for any other shipped native DLL/EXE/NODE, and 384 MiB for the installer.
+Current budgets are 192 MiB for the audio DLL, 16 MiB for the Node addon, 32 MiB for each VST3
+helper executable, 64 MiB for any other shipped native DLL/EXE/NODE, and 384 MiB for the installer.
 Microsoft VC runtimes are size-checked but are not stripped.
 
 `pnpm run test:release-artifacts` validates this policy and its failure paths without needing a
 packaged installer. A passing test is release-integrity evidence, not a platform trust endorsement.
+
+`pnpm run prepare:vst3-msvc` is part of `gate:release:preflight`; it configures, builds, and
+self-tests the Windows x64 MSVC helpers when they are not already staged, copies their VC runtime
+dependencies, and refreshes the capability manifests. `pnpm run generate:release-capability-status` and
+`pnpm run verify:release-capabilities` then reconcile `audio-capabilities.json`, the staged
+DLL/node/helper hashes and PE imports, and the controlled product declaration in
+`docs/release-capability-status.md`. The packaged release repeats that check. Missing core binaries,
+an incomplete VST3 helper pair, missing dynamic imports, manifest/status drift, or a declaration that
+overstates staged facts fails the gate; absent real devices remain `unverified` / `not-run`.
 
 macOS CoreAudio and Linux ALSA package targets remain unverified. Their buildability is not a
 release-readiness claim; keep their real-device smoke evidence separate from the Windows gate.
@@ -315,10 +333,10 @@ This command never runs in CI and must not be represented by the controlled-pump
 
 Product honesty surfaces (`Loudnorm`, `Gapless Album`, `Unity Volume`) are always listed by
 `pnpm run smoke:audio-evidence` and default to `not-run` until a maintainer records evidence.
-They do **not** gate `coverage.complete` (still 5/5 hardware surfaces). See
+They do **not** gate `coverage.complete` (still 7/7 hardware surfaces). See
 `docs/audio-smoke-evidence.md`.
 
 Release candidates that only run `test:no-real-device` (or equivalent software gates) must keep
 real-device smoke and product honesty surfaces as **`not-run`**. Controlled-pump CTest is not
 hardware smoke and must not be substituted for WASAPI Exclusive / ASIO / DoP / Native DSD /
-SACD ISO evidence.
+SACD ISO / CoreAudio Hog / ALSA `hw:` evidence.

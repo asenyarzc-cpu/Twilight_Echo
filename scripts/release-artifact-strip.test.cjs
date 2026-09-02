@@ -6,7 +6,6 @@ const test = require('node:test')
 
 const {
   NATIVE_RUNTIME_FILES,
-  REQUIRED_NATIVE_RUNTIME_FILES,
   clearPeDebugDirectory,
   clearPeSymbolTablePointer,
   executableCandidates,
@@ -64,6 +63,8 @@ test('release strip only processes the packaged runtime copy and fails closed', 
       calls.push({ command, args })
       return { status: 0 }
     },
+    copy: () => {},
+    remove: () => {},
     clearDebugDirectory: (filePath) => cleared.push(filePath),
     clearSymbolTablePointer: (filePath) => symbolCleared.push(filePath)
   })
@@ -85,27 +86,23 @@ test('release strip only processes the packaged runtime copy and fails closed', 
   )
 })
 
-test('release strip skips optional VST3 helpers when a release did not stage them', () => {
-  const calls = []
+test('release strip rejects a package without the VST3 helper pair', () => {
   const packagedDir = path.resolve('C:/release/no-vst3/resources/audio-engine')
   const exists = (filePath) =>
-    REQUIRED_NATIVE_RUNTIME_FILES.some((name) => filePath === path.join(packagedDir, name))
-  const result = stripNativeArtifacts(packagedDir, {
-    stripCommand: 'C:/tools/strip.exe',
-    exists,
-    run: (command, args) => {
-      calls.push({ command, args })
-      return { status: 0 }
-    },
-    clearDebugDirectory: () => {},
-    clearSymbolTablePointer: () => {}
-  })
-  assert.equal(result.stripped.length, REQUIRED_NATIVE_RUNTIME_FILES.length)
-  assert.equal(
-    result.missing.length,
-    NATIVE_RUNTIME_FILES.length - REQUIRED_NATIVE_RUNTIME_FILES.length
+    NATIVE_RUNTIME_FILES.slice(0, 3).some((name) => filePath === path.join(packagedDir, name))
+  assert.throws(
+    () =>
+      stripNativeArtifacts(packagedDir, {
+        stripCommand: 'C:/tools/strip.exe',
+        exists,
+        run: () => ({ status: 0 }),
+        copy: () => {},
+        remove: () => {},
+        clearDebugDirectory: () => {},
+        clearPeDebugDirectory: () => {}
+      }),
+    /Missing packaged native runtime binary.*twilight-vst3-host\.exe/
   )
-  assert.equal(calls.length, REQUIRED_NATIVE_RUNTIME_FILES.length)
 })
 
 test('release strip clears PE debug directory records and referenced data', () => {
@@ -161,14 +158,40 @@ test('release strip normalizes the COFF symbol pointer only when the table is go
   }
 })
 
-test('release strip propagates a strip failure instead of shipping debug binaries', () => {
+test('release strip retries transient file locks and still fails closed', () => {
+  const attemptsByFile = new Map()
+  stripNativeArtifacts('C:/release', {
+    stripCommand: 'strip',
+    exists: () => true,
+    wait: () => {},
+    copy: () => {},
+    remove: () => {},
+    run: (_, [, filePath]) => {
+      const attempts = (attemptsByFile.get(filePath) || 0) + 1
+      attemptsByFile.set(filePath, attempts)
+      return { status: attempts < 3 ? 1 : 0 }
+    },
+    clearDebugDirectory: () => {},
+    clearSymbolTablePointer: () => {}
+  })
+  assert.ok(attemptsByFile.size >= 3)
+  assert.deepEqual(new Set(attemptsByFile.values()), new Set([3]))
+
+  let attempts = 0
   assert.throws(
     () =>
       stripNativeArtifacts('C:/release', {
         stripCommand: 'strip',
         exists: () => true,
-        run: () => ({ status: 1, stderr: 'bad binary' })
+        wait: () => {},
+        copy: () => {},
+        remove: () => {},
+        run: () => {
+          attempts += 1
+          return { status: 1, stderr: 'bad binary' }
+        }
       }),
     /Failed to strip/
   )
+  assert.equal(attempts, 3)
 })

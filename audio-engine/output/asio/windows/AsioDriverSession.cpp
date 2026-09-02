@@ -58,7 +58,9 @@ int bitDepthForFormat(AudioSampleFormat format) {
   }
 }
 
-std::optional<AsioChannelFormat> channelFormatFor(asio_abi::AsioSampleType sampleType) {
+std::optional<AsioChannelFormat> channelFormatFor(
+    asio_abi::AsioSampleType sampleType,
+    const std::optional<AsioSampleFormatMapping>& mapping = std::nullopt) {
   AsioChannelFormat format;
   switch (sampleType) {
     case asio_abi::kAsioSampleInt16Lsb:
@@ -103,6 +105,25 @@ std::optional<AsioChannelFormat> channelFormatFor(asio_abi::AsioSampleType sampl
       break;
     default:
       return std::nullopt;
+  }
+  if (mapping && format.logicalFormat == mapping->reported) {
+    format.logicalFormat = mapping->interpreted;
+    switch (mapping->interpreted) {
+      case AudioSampleFormat::DsdInt8Lsb1:
+        format.validBits = 1;
+        format.dsdPacking = AsioDsdPacking::Lsb1;
+        break;
+      case AudioSampleFormat::DsdInt8Msb1:
+        format.validBits = 1;
+        format.dsdPacking = AsioDsdPacking::Msb1;
+        break;
+      case AudioSampleFormat::DsdInt8Ner8:
+        format.validBits = 8;
+        format.dsdPacking = AsioDsdPacking::Ner8;
+        break;
+      default:
+        break;
+    }
   }
   return format;
 }
@@ -199,6 +220,8 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
   bool originalIoFormatKnown = false;
   bool sampleRateRestoreRequired = false;
   bool nativeDsdCanDoReported = false;
+  std::optional<AsioSampleFormatMapping> sampleFormatMapping;
+  AsioNativeDsdControlOrder nativeDsdControlOrder = AsioNativeDsdControlOrder::Default;
 
   bool selectNativeDsdSemanticRate(int driverRate, const char* order, std::string* error) {
     const double requestedRate = static_cast<double>(driverRate);
@@ -291,28 +314,42 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
     }
 
     std::string formatFirstError;
-    if (selectNativeDsdIoFormat("format-first", &formatFirstError) &&
+    if ((nativeDsdControlOrder == AsioNativeDsdControlOrder::Default ||
+         nativeDsdControlOrder == AsioNativeDsdControlOrder::FormatFirst) &&
+        selectNativeDsdIoFormat("format-first", &formatFirstError) &&
         selectNativeDsdSemanticRate(driverRate, "format-first", &formatFirstError) &&
         verifyNativeDsdIoFormat("format-first", &formatFirstError)) {
       nativeDsdNegotiation = originalIoFormatKnown ? "format-first-confirmed" : "format-first-runtime-confirmed";
       return true;
     }
 
-    restoreNativeDsdConfiguration();
+    std::string restoreError;
+    if (!restoreNativeDsdConfiguration(&restoreError)) {
+      nativeDsdNegotiation = "restore-failed";
+      if (error) *error = restoreError;
+      return false;
+    }
 
     // A few drivers expose the DSD format only after the semantic rate has
     // been primed. Keep that compatibility path as a fallback, but do not
     // probe it first: a failed rate-first SetSampleRate can leave otherwise
     // capable drivers in a state where buffer creation fails.
     std::string rateFirstError;
-    if (selectNativeDsdSemanticRate(driverRate, "rate-first", &rateFirstError) &&
+    if ((nativeDsdControlOrder == AsioNativeDsdControlOrder::Default ||
+         nativeDsdControlOrder == AsioNativeDsdControlOrder::RateFirst) &&
+        selectNativeDsdSemanticRate(driverRate, "rate-first", &rateFirstError) &&
         selectNativeDsdIoFormat("rate-first", &rateFirstError) &&
         verifyNativeDsdIoFormat("rate-first", &rateFirstError)) {
       nativeDsdNegotiation = originalIoFormatKnown ? "rate-first-confirmed" : "rate-first-runtime-confirmed";
       return true;
     }
 
-    restoreNativeDsdConfiguration();
+    restoreError.clear();
+    if (!restoreNativeDsdConfiguration(&restoreError)) {
+      nativeDsdNegotiation = "restore-failed";
+      if (error) *error = restoreError;
+      return false;
+    }
 
     // A third driver family never implemented the IoFormat futures at all and
     // switches its channel sample type to raw DSD purely from the semantic DSD
@@ -321,12 +358,19 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
     // a driver that ignored the rate fails there instead of emitting PCM into
     // a DSD stream.
     std::string rateOnlyError;
-    if (selectNativeDsdSemanticRate(driverRate, "rate-only", &rateOnlyError)) {
+    if ((nativeDsdControlOrder == AsioNativeDsdControlOrder::Default ||
+         nativeDsdControlOrder == AsioNativeDsdControlOrder::RateOnly) &&
+        selectNativeDsdSemanticRate(driverRate, "rate-only", &rateOnlyError)) {
       nativeDsdNegotiation = "rate-only";
       return true;
     }
 
-    restoreNativeDsdConfiguration();
+    restoreError.clear();
+    if (!restoreNativeDsdConfiguration(&restoreError)) {
+      nativeDsdNegotiation = "restore-failed";
+      if (error) *error = restoreError;
+      return false;
+    }
     nativeDsdNegotiation = "all-orders-failed";
     if (error) {
       *error = "ASIO Native DSD negotiation failed (format-first: " + formatFirstError +
@@ -343,20 +387,33 @@ struct AsioDriverSession::State final : AsioCallbackTarget {
     return false;
   }
 
-  void restoreNativeDsdConfiguration() {
-    if (!driver) return;
+  bool restoreNativeDsdConfiguration(std::string* error) {
+    if (!driver) return true;
+    bool restored = true;
+    std::string detail;
     if (ioFormatRestoreRequired) {
       asio_abi::AsioIoFormat restoreIoFormat = originalIoFormat;
       if (!originalIoFormatKnown) restoreIoFormat.formatType = asio_abi::kAsioIoFormatPcm;
       const auto restoreFormatResult = driver->future(asio_abi::kFutureSetIoFormat, &restoreIoFormat);
       traceNativeDsdResult(driver, "restore-io-format", restoreFormatResult, std::nullopt, &restoreIoFormat);
+      if (!asio_abi::asioErrorIsSuccess(restoreFormatResult)) {
+        restored = false;
+        detail = "ASIO driver failed to restore the retained PCM I/O format";
+      }
       ioFormatRestoreRequired = false;
     }
     if (sampleRateRestoreRequired && originalSampleRate > 0) {
       const auto restoreRateResult = driver->setSampleRate(originalSampleRate);
       traceNativeDsdResult(driver, "restore-sample-rate", restoreRateResult, originalSampleRate);
+      if (!asio_abi::asioErrorIsSuccess(restoreRateResult)) {
+        restored = false;
+        if (!detail.empty()) detail += "; ";
+        detail += "ASIO driver failed to restore the retained PCM sample rate";
+      }
       sampleRateRestoreRequired = false;
     }
+    if (!restored && error) *error = detail;
+    return restored;
   }
 
   void onAsioBufferSwitch(int32_t bufferIndex) noexcept override {
@@ -439,6 +496,8 @@ bool AsioDriverSession::open(const AsioOpenConfig& config, AsioOpenResult* resul
         // Default to a driver-wide fault; each format-specific refusal below
         // downgrades this so the caller knows another candidate is worth trying.
         outcome.result.failureKind = AsioOpenFailureKind::Driver;
+        state->sampleFormatMapping = config.sampleFormatMapping;
+        state->nativeDsdControlOrder = config.nativeDsdControlOrder;
 
         CLSID clsid{};
         const std::wstring wideClsid(clsidText.begin(), clsidText.end());
@@ -496,12 +555,16 @@ bool AsioDriverSession::open(const AsioOpenConfig& config, AsioOpenResult* resul
             "minimum=" + std::to_string(minimum) + " maximum=" + std::to_string(maximum) +
                 " preferred=" + std::to_string(preferred) + " granularity=" + std::to_string(granularity));
         traceAsioDriverCall("after getBufferSize");
-        state->bufferSize = chooseBufferSize(config.bufferSizeFrames, minimum, maximum, preferred, granularity);
+        const bool nativeDsdRequested = isDsdSampleFormat(config.format.sampleFormat);
+        int32_t requestedBufferSize = static_cast<int32_t>(config.bufferSizeFrames);
+        if (nativeDsdRequested && config.dsdMinimumBufferFrames > 0) {
+          requestedBufferSize = std::max(requestedBufferSize, static_cast<int32_t>(config.dsdMinimumBufferFrames));
+        }
+        state->bufferSize = chooseBufferSize(requestedBufferSize, minimum, maximum, preferred, granularity);
         if (state->bufferSize <= 0) {
           outcome.error = "ASIO driver reported an invalid buffer size range";
           return outcome;
         }
-        const bool nativeDsdRequested = isDsdSampleFormat(config.format.sampleFormat);
         if (nativeDsdRequested && !state->configureNativeDsd(config.format, &outcome.error)) {
           // DSD negotiation is about this stream's format, not the driver.
           outcome.result.failureKind = AsioOpenFailureKind::Format;
@@ -524,7 +587,14 @@ bool AsioDriverSession::open(const AsioOpenConfig& config, AsioOpenResult* resul
                     " preferred=" + std::to_string(preferred) + " granularity=" +
                     std::to_string(granularity));
             const int32_t dsdBufferSize =
-                chooseBufferSize(config.bufferSizeFrames, minimum, maximum, preferred, granularity);
+                chooseBufferSize(
+                    nativeDsdRequested && config.dsdMinimumBufferFrames > 0
+                        ? std::max(config.bufferSizeFrames, config.dsdMinimumBufferFrames)
+                        : config.bufferSizeFrames,
+                    minimum,
+                    maximum,
+                    preferred,
+                    granularity);
             if (dsdBufferSize > 0) state->bufferSize = dsdBufferSize;
           }
           traceAsioDriverCall("after getBufferSize (native DSD)");
@@ -595,7 +665,7 @@ bool AsioDriverSession::open(const AsioOpenConfig& config, AsioOpenResult* resul
             outcome.error = driverError(state->driver, "ASIO output channel format query failed");
             return outcome;
           }
-          auto format = channelFormatFor(info.type);
+          auto format = channelFormatFor(info.type, state->sampleFormatMapping);
           traceNativeDsdText(
               "channel-info",
               "channel=" + std::to_string(channel) + " sampleType=" + std::to_string(info.type));
@@ -1037,18 +1107,32 @@ void AsioDriverSession::close() {
   std::string cleanupError;
   const auto operation = controlThread_->call(
       [state] {
+        struct CloseState {
+          bool ok = true;
+          std::string error;
+        } outcome;
         state->running = false;
-        if (!state->driver) return true;
+        if (!state->driver) return outcome;
         traceAsioDriverCall("before close");
         if (state->started) state->driver->stop();
         state->started = false;
         if (state->buffersCreated) {
           std::string uninstallError;
-          if (!AsioCallbackRouter::uninstall(state.get(), &uninstallError)) return false;
+          if (!AsioCallbackRouter::uninstall(state.get(), &uninstallError)) {
+            outcome.ok = false;
+            outcome.error = uninstallError.empty()
+                ? "ASIO callback router could not be released"
+                : uninstallError;
+            return outcome;
+          }
           state->driver->disposeBuffers();
           state->buffersCreated = false;
         }
-        state->restoreNativeDsdConfiguration();
+        std::string restoreError;
+        if (!state->restoreNativeDsdConfiguration(&restoreError)) {
+          outcome.ok = false;
+          outcome.error = restoreError;
+        }
         state->buffers.clear();
         state->channelFormats.clear();
         state->bufferSwitch = nullptr;
@@ -1058,11 +1142,14 @@ void AsioDriverSession::close() {
         traceAsioDriverCall("after Release");
         state->driver = nullptr;
         state->initialized = false;
-        return true;
+        return outcome;
       },
       &cleanupError);
   controlThread_->setMaintenance(nullptr);
-  if (!operation || !*operation) {
+  if (!operation || !operation->ok) {
+    lastCloseError_ = operation && !operation->error.empty()
+        ? operation->error
+        : (cleanupError.empty() ? "ASIO driver close did not complete" : cleanupError);
     traceAsioDriverCall(("close cleanup incomplete: " + cleanupError).c_str());
     // The worker is wedged inside a driver call and this session is being
     // abandoned; the cleanup lambda above will never run. The process-wide
@@ -1078,6 +1165,11 @@ void AsioDriverSession::close() {
     traceAsioDriverCall(("forced callback router release: " + forceError).c_str());
     return;
   }
+  lastCloseError_.clear();
+}
+
+std::string AsioDriverSession::lastCloseError() const {
+  return lastCloseError_;
 }
 
 void* AsioDriverSession::outputBuffer(long channel, long bufferIndex) const {

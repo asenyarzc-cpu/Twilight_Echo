@@ -16,33 +16,36 @@ pnpm run smoke:audio-evidence
 把多台机器或多个设备的 smoke JSON 合并进报告：
 
 ```bash
-pnpm run smoke:audio-evidence -- --input output/audio-smoke-evidence/wasapi-exclusive.json --input output/audio-smoke-evidence/asio-pcm.json
-pnpm run smoke:audio-evidence -- --input-dir output/audio-smoke-evidence
+pnpm run smoke:audio-evidence -- --input evidence/envelopes/wasapi-exclusive.json --input evidence/envelopes/asio-pcm.json
+pnpm run smoke:audio-evidence -- --input-dir evidence/envelopes
 ```
 
 发布前需要强制检查证据完整性时使用：
 
 ```bash
-pnpm run smoke:audio-evidence -- --input-dir output/audio-smoke-evidence --require-complete
+pnpm run smoke:audio-evidence -- --input-dir evidence/envelopes --require-complete
 ```
 
 `--require-complete` 只作为 opt-in gate。没有对应硬件时不要把它加入默认 CI。
 
 ## Required Surfaces
 
-完整证据（`coverage.complete`）需要覆盖 **5 个硬件 surface**：
+完整证据（`coverage.complete`）需要覆盖 **7 个硬件 surface**。每条真实设备 `pass`
+必须是 `evidenceKind=real-device`；仓库 fixture 或 mock 只能验证 runner 逻辑，绝不计入硬件覆盖。
 
-| Surface          | Suggested command                                                                                                                                                                           | Required evidence                                                                                                   |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| WASAPI Exclusive | `pnpm run smoke:wasapi -- --device "<wasapi-endpoint>" --buffer 256 --format-matrix --json > output/audio-smoke-evidence/wasapi-exclusive.json`                                             | `actualBackend=wasapi-exclusive`、exclusive=true、实际输出格式、每个 PCM probe 的 `outputPerfect` / `perfectReason` |
-| ASIO             | `pnpm run smoke:audio-format-matrix -- --fixture-dir "<pcm-fixtures>" --playback --backend asio --device "<asio-driver>" --json > output/audio-smoke-evidence/asio-pcm.json`                | `actualBackend=asio`、驱动/设备名、实际输出格式、明确 pass/fail reason                                              |
-| DoP DAC          | `pnpm run smoke:audio-format-matrix -- --fixture-dir "<dsd-fixtures>" --playback --backend wasapi-exclusive --device "<dop-capable-dac>" --json > output/audio-smoke-evidence/dop-dac.json` | `dsdMode=dop`、carrier sample rate、实际输出格式；DAC 拒绝时必须有 fallback reason                                  |
-| Native DSD       | `pnpm run smoke:asio-native-dsd -- --device "<native-dsd-asio-driver>" --fixture-dir "<dsd-fixtures>" --json > output/audio-smoke-evidence/native-dsd.json`                                 | 至少一个 DSD rate 达到 `nativeDsdRuntimeState=proven`，并记录驱动/设备和不支持 rate 的 fallback reason              |
-| SACD ISO         | `pnpm run smoke:audio-format-matrix -- --manifest "<sacd-iso-matrix.json>" --playback --backend wasapi-exclusive --device "<dac>" --json > output/audio-smoke-evidence/sacd-iso.json`       | SACD ISO metadata、track/area、native/DoP/PCM runtime result；DST/provider 失败时必须有 reason                      |
+| Surface          | Suggested command                                                                                                                                                                 | Required evidence                                                                                                              |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| WASAPI Exclusive | `pnpm run smoke:wasapi -- --device "<wasapi-endpoint>" --buffer 256 --format-matrix --json > artifacts/wasapi-exclusive-raw.json`                                                 | `actualBackend=wasapi-exclusive`、exclusive=true、实际输出格式、每个 PCM probe 的 `outputPerfect` / `perfectReason`            |
+| ASIO PCM         | `pnpm run smoke:audio-format-matrix -- --fixture-dir "<pcm-fixtures>" --playback --backend asio --device "<asio-driver>" --json > artifacts/asio-pcm-raw.json`                    | `actualBackend=asio`、驱动/设备名、实际输出格式、明确 pass/fail reason                                                         |
+| DoP DAC          | `pnpm run smoke:audio-format-matrix -- --fixture-dir "<dsd-fixtures>" --playback --backend wasapi-exclusive --device "<dop-capable-dac>" --json > artifacts/dop-dac-raw.json`     | `dsdMode=dop`、carrier sample rate、实际输出格式；DAC 拒绝时必须有 fallback reason                                             |
+| Native DSD       | `pnpm run smoke:asio-native-dsd -- --device "<native-dsd-asio-driver>" --fixture-dir "<dsd-fixtures>" --json > artifacts/native-dsd-raw.json`                                     | 至少一个 DSD rate 达到 `nativeDsdRuntimeState=proven`，并记录驱动/设备和不支持 rate 的 fallback reason                         |
+| SACD ISO         | `pnpm run smoke:audio-format-matrix -- --manifest "<sacd-iso-matrix.json>" --playback --backend wasapi-exclusive --device "<dac>" --json > artifacts/sacd-iso-raw.json`           | SACD ISO metadata、track/area、native/DoP/PCM runtime result；DST/provider 失败时必须有 reason                                 |
+| CoreAudio Hog    | `pnpm run smoke:audio-format-matrix -- --fixture-dir "<pcm-fixtures>" --playback --backend coreaudio-exclusive --device "<hog-device>" --json > artifacts/coreaudio-hog-raw.json` | `actualBackend=coreaudio-exclusive`、`accessMode=hog`、实际 PCM 输出格式与明确 pass/fail reason；CoreAudio 不可记录 Native DSD |
+| ALSA `hw:`       | `pnpm run smoke:audio-format-matrix -- --fixture-dir "<pcm-or-dsd-fixtures>" --playback --backend alsa --device "hw:<card>,<device>" --json > artifacts/alsa-hw-raw.json`         | `actualBackend=alsa`、`devicePathKind=hw`、实际输出格式；尝试 Native DSD 时记录 runtime facts                                  |
 
 ## Optional Product Honesty Surfaces
 
-以下 surface **始终出现在报告中**，无 artifact 时默认 `not-run`。它们**不参与** `coverage.complete`（仍只要求 5 个硬件 surface），用于 Stage 1–2 产品诚实路径的维护者证据。
+以下 surface **始终出现在报告中**，无 artifact 时默认 `not-run`。它们**不参与** `coverage.complete`（仍只要求 7 个硬件 surface），用于 Stage 1–2 产品诚实路径的维护者证据。
 
 | Surface       | Suggested checklist                                                                                                                                                         | Required evidence                                                                                                            |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -57,15 +60,15 @@ pnpm run smoke:audio-evidence -- --input-dir output/audio-smoke-evidence --requi
 
 ## Evidence Rules
 
-报告中的 `coverage.complete` 只有在每个 required surface 至少有一条 `pass` 记录且带有可追溯 artifact 时才为 `true`。
+报告中的 `coverage.complete` 只有在每个 required surface 至少有一条带完整采集元数据、可校验 artifact 的 `real-device` `pass` 时才为 `true`。
 
 Artifact 规则：
 
-- 本地 artifact 路径必须存在。
-- `http://` 或 `https://` artifact URL 视为远端证据链接。
-- 如果输入 JSON 是 entries 数组或已有 report entries，且单条 entry 没写 artifact，脚本会把输入 JSON 自身作为 fallback artifact。
-- 没有 artifact 的 pass 不计入完整覆盖，会进入 `unbackedPassSurfaces`。
-- 写了本地 artifact 但文件不存在的 pass 不计入完整覆盖，会进入 `missingArtifactSurfaces`。
+- 本地 `artifact` 路径必须存在，且 SHA-256 必须等于 `artifactSha256`；远端 URL 无法在本地校验，不能计入 complete。
+- 每个真实设备 `pass` 固定记录 `surface`、`device`、`driver`、`format`、`bufferFrames`、`playbackDurationSeconds`、`expectedState`、`artifact`、`artifactSha256`、`capturedAt`（ISO 8601）和 `inputCommand`。
+- 先将真实 runner 的 JSON 输出保存为独立 raw artifact，再把其路径和 SHA-256 写入 evidence envelope；不要将 envelope 自身作为需要自校验的 artifact。
+- `evidenceKind=mock` 和未声明 kind 的旧格式都不会计入 hardware coverage，并会在 action plan 中显示为 `not-real-device`。
+- 缺字段、文件不存在、SHA-256 无效或不匹配会显示 `invalid-artifact`，不会计入 complete。
 
 状态含义：
 
@@ -73,6 +76,57 @@ Artifact 规则：
 - `fail`：真实设备运行过，但结果失败；报告会保留失败原因，不能用作 complete。
 - `skip`：因为硬件、驱动或平台条件缺失而跳过；不阻塞默认 CI，但不算 release 证据闭环。
 - `not-run`：还没有记录该 surface 的真实设备证据。
+- `invalid-artifact`：记录宣称通过，但 artifact 或必需采集元数据无效。
+
+## Evidence Envelope Schema
+
+将 raw runner JSON 与 evidence envelope 分开保存。`smoke:audio-evidence --input` 只接收 envelope，不能直接把 raw summary 当作 `real-device` complete 证据；使用对象可同时记录稳态场景。
+
+```json
+{
+  "entries": [
+    {
+      "surface": "WASAPI Exclusive",
+      "status": "pass",
+      "evidenceKind": "real-device",
+      "device": "USB DAC endpoint",
+      "driver": "Vendor USB Audio 3.2.1",
+      "format": "int24-in32/192000Hz/2ch",
+      "bufferFrames": 256,
+      "playbackDurationSeconds": 1800,
+      "expectedState": "actualBackend=wasapi-exclusive; exclusive=true; outputPerfect=true",
+      "artifact": "artifacts/wasapi-exclusive-raw.json",
+      "artifactSha256": "<64 lowercase hex characters>",
+      "capturedAt": "2026-08-31T12:00:00.000Z",
+      "inputCommand": "pnpm run smoke:wasapi -- --device \"USB DAC endpoint\" --buffer 256 --format-matrix --json > artifacts/wasapi-exclusive-raw.json"
+    }
+  ],
+  "operationalResults": []
+}
+```
+
+PowerShell 采集 SHA-256：
+
+```powershell
+(Get-FileHash -Algorithm SHA256 artifacts/wasapi-exclusive-raw.json).Hash.ToLowerInvariant()
+```
+
+下面命令使用仓库 fixture 自测 parser；fixture 是 `mock`，所以报告仍显示 0 个硬件 surface 通过：
+
+```bash
+pnpm run smoke:audio-evidence -- --input-dir scripts/fixtures/audio-smoke-evidence
+```
+
+## Operational Scenario Schema
+
+下面四项始终出现在报告 `operationalScenarioRows` 中，缺记录为 `not-run`，当前不参与 `coverage.complete`。`pass` 仍必须是 `evidenceKind=real-device`，包含 surface、设备、驱动、格式、缓冲、时长、期望/观察状态、artifact/SHA-256、采集时间和输入命令；否则显示 `not-real-device` 或 `invalid-artifact`。少于规定的 30 分钟或 2 小时会显示 `insufficient-duration`。每项还记录 `switchCount`、`underrunCount`、`deviceLostCount`、`recoveryCount`、`notes`。
+
+| `scenario`              | 最短播放时长 | 结果要求                                                             |
+| ----------------------- | ------------ | -------------------------------------------------------------------- |
+| `track-switch-loop-30m` | 1800 秒      | 记录切歌次数；不得有未报告的中断、掉设备、underrun 或静默 fallback。 |
+| `soak-2h`               | 7200 秒      | 记录持续播放、underrun、掉设备与恢复计数；所有恢复或失败必须可观察。 |
+| `sleep-wake`            | 不适用       | 记录睡眠/唤醒时间与恢复或停止的结构化状态；禁止静默换后端/格式。     |
+| `hotplug`               | 不适用       | 记录拔插/设备丢失与恢复或失败；禁止静默换后端/格式。                 |
 
 ## Report Contract
 
@@ -80,10 +134,11 @@ Artifact 规则：
 
 - `requiredSurfaces`：必须覆盖的 surface 列表。
 - `artifactVerification.enabled`：CLI 生成报告时为 `true`，表示本地 artifact 会被校验存在。
-- `coverage.complete`：是否 5 个 required surface 都已有可追溯 pass。
-- `coverage.missingSurfaces` / `failedSurfaces` / `skippedSurfaces` / `unbackedPassSurfaces` / `missingArtifactSurfaces`：未闭环原因。
+- `coverage.complete`：是否 7 个 required surface 都已有可校验的 real-device pass。
+- `coverage.missingSurfaces` / `failedSurfaces` / `skippedSurfaces` / `unbackedPassSurfaces` / `missingArtifactSurfaces` / `nonHardwareEvidenceSurfaces`：未闭环原因。
 - `actionPlan`：针对未闭环 surface 的建议命令、目标 artifact 和所需证据。
 - `surfaceRows`：最终 Markdown 表格的行数据，包括自动补出的 `not-run` surface。
+- `operationalScenarioSchema` / `operationalScenarioRows`：30 分钟切歌、2 小时 soak、休眠唤醒和热插拔的固定结果契约及记录。
 
 维护原则：
 

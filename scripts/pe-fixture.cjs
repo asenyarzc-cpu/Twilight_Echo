@@ -10,6 +10,7 @@ const SECTION_RAW_OFFSET = 0x400
 /**
  * @param {object} options
  * @param {string[]} [options.imports] DLL names to expose in the import directory.
+ * @param {number} [options.machine] COFF machine type; defaults to AMD64.
  * @param {string} [options.trailer] Text appended after the PE payload so a test
  *   can assert which fixture a file was copied from.
  */
@@ -26,7 +27,7 @@ function createMinimalPe(options = {}) {
   buffer.write('PE\0\0', PE_OFFSET)
 
   const coff = PE_OFFSET + 4
-  buffer.writeUInt16LE(0x8664, coff)
+  buffer.writeUInt16LE(options.machine ?? 0x8664, coff)
   buffer.writeUInt16LE(imports.length > 0 ? 1 : 0, coff + 2)
   buffer.writeUInt32LE(options.symbolTableOffset || 0, coff + 8)
   buffer.writeUInt32LE(options.symbolCount || 0, coff + 12)

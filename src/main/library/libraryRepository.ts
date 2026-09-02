@@ -1,7 +1,7 @@
 import { normalize, resolve } from 'path'
 import {
   loadJsonFileWithBackup,
-  writeJsonFileAtomic,
+  writeJsonValueAtomic,
   type JsonFileLoadResult,
   type JsonFileOptions
 } from '../persistence/jsonFile.ts'
@@ -194,7 +194,7 @@ export function persistMusicLibraryDocument(
   document: LocalMusicLibraryDocument
 ): void {
   const normalized = createMusicLibraryDocument(document, document.exclusions)
-  writeJsonFileAtomic(filePath, JSON.stringify(normalized), MUSIC_LIBRARY_JSON_OPTIONS, normalized)
+  writeJsonValueAtomic(filePath, normalized, MUSIC_LIBRARY_JSON_OPTIONS)
   replaceActiveLibraryExclusions(normalized.exclusions)
 }
 

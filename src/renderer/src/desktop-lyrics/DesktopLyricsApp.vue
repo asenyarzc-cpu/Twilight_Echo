@@ -18,7 +18,7 @@ import './desktopLyrics.css'
 type SlotInstance = InstanceType<typeof DesktopLyricSlot>
 
 const DESKTOP_LYRICS_TOOLBAR_HOVER_DELAY_MS = 500
-const DESKTOP_LYRICS_LOCKED_HOVER_DELAY_MS = 2000
+const DESKTOP_LYRICS_LOCKED_HOVER_DELAY_MS = 3000
 const api = window.api.desktopLyrics
 const settings = shallowRef<DesktopLyricsSettingsV3>({ ...DEFAULT_DESKTOP_LYRICS_SETTINGS })
 const session = shallowRef<DesktopLyricsSession | null>(null)
@@ -146,12 +146,20 @@ function setLockedInteractionActive(active: boolean): void {
 
 function revealUnlockAffordance(): void {
   clearUnlockAffordanceTimer()
-  if (settings.value.locked && lockedHovering.value) unlockAffordanceVisible.value = true
+  if (!settings.value.locked || !lockedHovering.value) return
+  setLockedInteractionActive(true)
+  unlockAffordanceVisible.value = true
 }
 
 function scheduleUnlockAffordance(): void {
   clearUnlockAffordanceTimer()
-  if (!settings.value.locked || !lockedHovering.value) return
+  if (
+    !settings.value.locked ||
+    !lockedHovering.value ||
+    lockedInteractionActive ||
+    unlockAffordanceVisible.value
+  )
+    return
   unlockAffordanceTimer = setTimeout(() => {
     unlockAffordanceTimer = null
     revealUnlockAffordance()
@@ -173,13 +181,19 @@ function restoreHoverAfterUnlock(): void {
 
 function schedulePauseHide(): void {
   clearPauseTimer()
-  pausedHidden.value = false
+  setPausedHidden(false)
   if (!settings.value.hideWhenPaused || playing.value || hovering.value) return
   pauseTimer = setTimeout(() => {
     pauseTimer = null
-    pausedHidden.value = true
+    setPausedHidden(true)
     clearActiveLineTimer()
   }, settings.value.pauseHideDelaySeconds * 1000)
+}
+
+function setPausedHidden(hidden: boolean): void {
+  if (pausedHidden.value === hidden) return
+  pausedHidden.value = hidden
+  void api.setPausedHidden(hidden).catch(() => undefined)
 }
 
 function positionNow(): number {
@@ -271,7 +285,6 @@ function onHoverIntent(pointerInside: boolean): void {
     return
   }
   lockedHovering.value = true
-  setLockedInteractionActive(true)
   scheduleUnlockAffordance()
 }
 
@@ -432,6 +445,7 @@ watch(
 
 onBeforeUnmount(() => {
   clearPauseTimer()
+  setPausedHidden(false)
   clearToolbarTimer()
   clearUnlockAffordanceTimer()
   if (lockedInteractionActive) setLockedInteractionActive(false)

@@ -23,13 +23,15 @@ pnpm run build
 - C ABI 是稳定边界；新增查询继续使用 buffer/required-size 模式。
 - Node-API 是薄桥接，只转发 C ABI、抛出 native 错误、返回 JSON。
 - `outputInfo` 是 canonical playback 状态；顶层 `PlaybackInfo` 字段只做兼容镜像，包括 `isDsd`、`dsdMode`、`dsdRate`。
+- `outputInfo.providerImplementation` 只用于实现诊断（`legacy-native`/`miniaudio`），不创建新的公共 backend；`conversionInfo` 增量记录转换事实，未知时 source 必须是 `unavailable`，且 `sampleRateConverted` 与兼容字段 `resampled` 一致。
 - Native queue 负责 EOF auto-next、gapless preload 和 crossfade overlap mixing；Electron 只同步 `PlaybackInfo` 并发送用户操作。`crossfadeSeconds` 由 native 状态上报并使 `outputPerfect=false`，Renderer 不再在 native 播放时用自己的 crossfade 定时器驱动下一首。
 - Electron 默认走 native engine；HTMLAudio 只允许通过 `TWILIGHT_ENABLE_HTMLAUDIO_FALLBACK=1` 显式开启。
 - WASAPI Shared 使用系统默认设备时，如果 endpoint 在枚举与 `IAudioClient` 激活之间失效，会重新枚举并激活一次；显式设备选择失败仍直接上报，不静默改路由。
-- Electron audio service crash 后先把 native playback 标记为 stopped；service ready 后只恢复后端、设备、输出配置、原生 DSP 插件链、统一 DSP state 和队列，不自动续播，避免在崩溃恢复时产生非用户触发的播放。恢复顺序固定为 `SetDspPluginChain -> ApplyDspState(revision, payload) -> LoadQueue`；EQ/ReplayGain/crossfeed/convolver/balance/output stage 不再并行调用 legacy setter 覆盖统一事务。
+- Electron audio service crash 后先把 native playback 标记为 stopped；service ready 后只恢复后端、设备、输出配置、原生 DSP 插件链、统一 DSP state 和队列，不自动续播，避免在崩溃恢复时产生非用户触发的播放。用户触发的输出后端、设备、独占模式和输出配置变更由 `audioEngineManager` 的输出路由事务执行：切换前重新验证目标设备，旧 route 在 commit 前保持为应用层权威 snapshot；事务按 prepare → validate → mute → open target → backend/device/config → verify target ready → commit → unmute 推进；native backend/device setter 只暂存 topology，由 config setter 一次提交并重开 stream，target ACK 必须匹配 backend、catalog 设备身份、state 和 source；失败时按 `output-backend -> output-device -> output-config` 回滚旧 route，旧设备不可恢复时 safe-stop 且不自动重播。恢复顺序固定为 `SetDspPluginChain -> ApplyDspState(revision, payload) -> LoadQueue`；EQ/ReplayGain/crossfeed/convolver/balance/output stage 不再并行调用 legacy setter 覆盖统一事务。
 - `ApplyDspState` 先在 control thread 上编译隔离的 active/preload 候选，全部成功且 retired-generation 容量可用后才提交配置、graph JSON、gapless/preload 状态和 RT graph 所有权。render callback 通过 epoch ACK 切换 graph，control thread 只回收已 ACK 且不再被 current/preload 引用的代际，最多保留 8 代。`GetDspGraphStatus.revision` 是 UI pending/applied/failed 的外部 revision ACK；generic playback config revision 只作为其它控制共享的单调计数。
 - BPM/loudness 完整文件解码运行在独立 `audioAnalysisService` utility-process pool，绝不进入播放 `audioEngineService` 的 RPC 队列。主进程 analysis client 负责有界优先级队列、aging、等待 deadline、高优先级 admission、并发上限、独立 watchdog 与取消；取消或超时只替换对应 analysis worker，不重启或阻塞播放 service。cache commit 与取消并发时使用 generation 屏障和精确值条件删除，避免取消结果落缓存或删除后继写入。
 - ASIO 兼容层不携带 SDK，只在 Windows x64 构建中编译并默认枚举已安装驱动；排障或紧急回退可通过 `TWILIGHT_DISABLE_ASIO=1` 显式禁用。
+- miniaudio 0.11.25 已作为默认关闭的 Windows Shared/default PCM provider PoC 编译依赖接入；MA-101 固定 Float32 callback 并关闭 WASAPI `AUTOCONVERTPCM`，从 miniaudio converter/device state 区分实际转换事实，通知通过 control event path 延迟派发；它不改变当前公开 backend id、默认路由或 WASAPI Exclusive/ASIO/DSD 特殊路径。
 - 真实设备 smoke 是 opt-in：没有目标平台工具链或真实设备时跳过，不阻塞默认 CI。
 
 ## sourceExact / outputPerfect 策略
@@ -46,7 +48,7 @@ FFT tap 已扩展为只读 visualization tap，监听最终 PCM 渲染缓冲，�
 
 Phase 6B 的后端判定边界：
 
-- WASAPI Shared 是系统混音路径，始终以明确 reason 报告 `outputPerfect=false`。
+- WASAPI Shared 是系统混音路径，始终以明确 reason 报告 `outputPerfect=false`；即使后续由 miniaudio PoC 承接 Shared/default device I/O，也不得因 provider 初始化成功推断 bit-perfect。`providerImplementation` 只说明实现，不改变 Shared 的 perfect 结论。
 - WASAPI Exclusive 和 ASIO 必须先真实上报 actual sample rate、bit depth、channel、sample format，再由 evaluator 判定；format negotiation 或 exclusive/driver open 失败要给具体 reason。
 - CoreAudio 默认路径继续 `outputPerfect=false`；Hog/Exclusive 未实现并验证前不进入 true 判定。
 - ALSA `default` / `plughw:` 默认可能经过插件转换，继续 `outputPerfect=false`；只有显式 `hw:` 且 actual format 完全匹配时才允许进入 true 判定。
@@ -93,6 +95,7 @@ Metadata 会识别 DSD 相关字段并报告 DSD64/128/256/512 级别。Renderer
 
 - DoP carrier：允许 DSF/DFF DSD64/128/256/512 在后端、设备、声道数和实际 PCM carrier 格式满足条件时进入 `dsdMode=dop`，遵循 dCS DoP open standard v1.1（24-bit、`0x05`/`0xFA` marker 交替）；carrier 速率 DSD64=176.4k、DSD128=352.8k、DSD256=705.6k（44.1k）/768k（48k）、DSD512=1411.2k（44.1k）/1536k（48k），上限从 DSD128 提升到 DSD512，运行时由设备 carrier-rate 能力门控（ASIO `dopCarrierSampleRates` 或 WASAPI/CoreAudio Exclusive `IsFormatSupported` 探测）。UI 展示 `DoP carrier`，不把它写成 PCM fallback。
 - PCM fallback：DoP 条件不满足（含设备不支持 DSD256/512 carrier 速率），或软件音量、ReplayGain、Loudnorm、EQ、Convolver、Crossfeed、Crossfade 等处理启用时，实际链路回到 DSD 源 -> decoded PCM -> 后端 PCM 输出；UI 需要明确展示 fallback。
+- DSD 域降速：`DsdDownrateProcessor` 在 decode/control 侧以固定 63-tap FIR 做低通，按 x2/x4/x8 抽取，再以有界一阶误差反馈重调制为 1-bit DSD。它支持 DSD512/256/128→256/128/64、44.1/48 kHz 家族、MSB/LSB 输入输出、跨任意 chunk 保持状态，并在 reset/seek 时清空 FIR/抽取/量化状态；process 不分配。`dsdRatePolicy=downrate` 在 source rate 的 Native/DoP 失败后按同 family 的低倍率候选重试，穷尽后 PCM fallback；`exact` 不允许 fallback，默认 `pcm-fallback` 保持兼容。输出报告 `actualDsdRate` 与 `dsdConversion`，降倍率标记 `dsd_downrated`、`sourceExact=false`、`resampled=true` 和 `outputPerfect=false`。真实 DAC 的高倍率与 48 kHz-family 验收仍是 REVIEW。
 - Native DSD：支持 ASIO 与 ALSA `hw:`（`SND_PCM_FORMAT_DSD_U8` / `DSD_U16_LE` / `DSD_U32_LE` 直送，rate = DSD bit-clock / phys_width，静音字节 `0x69`，格式顺序 U8→U32_LE→U16_LE，`backendCanAttemptNativeDsd("alsa")==true`，nativeDsdRuntimeFacts 开打开时 Candidate、首次成功 `writei` 后 Proven）。运行态证明为 `proven` 时可直接输出 DSD bitstream，否则回退 DoP 或 PCM。WASAPI 与 CoreAudio 没有 native DSD 通道（平台限制），走 DoP 或 PCM。
 - SACD ISO：支持未压缩 DSD area 的曲目切片播放；DST 压缩曲目通过 DSD-preserving provider（vendored FFmpeg dstdec 算术核心，LGPL-2.1+，输出原始 DSD 字节）解出 DSD 后进入与未压缩 DSD 相同的 Native DSD / DoP / PCM 决策链。provider 默认可用；不可用时报告 `dst_dsd_provider_unavailable`，失败时报 `dst_dsd_provider_failed`，禁止把 FFmpeg PCM DST decode 包装成 Native DSD/DoP 成功。
 
@@ -107,7 +110,7 @@ Metadata 会识别 DSD 相关字段并报告 DSD64/128/256/512 级别。Renderer
 - HiFi 平衡/相位：`DspStereoImageConfig`（balance/width/mid/side/invert L/R/swap/mono）写入 default graph 的 stereoField + channelStrip polarity；`setStereoImage` 薄封装；`setAudioProcessing` / `createLegacyDspGraph` 保留 `stereoImage`，避免经典设置抹掉 Rack 参数；任一非默认立体声图像 ⇒ `outputPerfect=false`。
 - 库扫描 RG/R128：`scan.extractReplayGainTags` 持久化 `replayGainTrack/AlbumGainDb`、peaks 与 `r128Track/AlbumGainDb`（Q7.8 启发式 `|x|>64 → /256`）；track/album 冷启动可读标签；loudnorm 仍走离线测量缓存，不读库标签冒充测量。
 - Loudnorm 硬化：隔离 analysis pool 默认并发 1、队列有界且 loudnorm 请求使用高优先级；identity 命中跳过重测、`cancel` 会终止对应 worker 且不写缓存、缓存上限 512（按 `analyzedAt` 淘汰）、Settings 可清空 Loudnorm 分析缓存。
-- 产品诚实 smoke surfaces：`Loudnorm` / `Gapless Album` / `Unity Volume` 始终出现在 evidence 报告（默认 `not-run`），**不**计入 5 项硬件 `coverage.complete` 门禁。
+- 产品诚实 smoke surfaces：`Loudnorm` / `Gapless Album` / `Unity Volume` 始终出现在 evidence 报告（默认 `not-run`），**不**计入 7 项硬件 `coverage.complete` 门禁。
 - CoreAudio Hog Mode 加固：预检现有 hog owner、安装 device-lost listener、跟踪 IOProc underrun 诊断；ICoreAudioHost / MockCoreAudioHost seam 使 CoreAudio 后端逻辑可在 Windows 单元测试。
 - ALSA 后端 seam：IAlsaHost / MockAlsaHost 使 ALSA 后端逻辑可在 Windows 单元测试（此前只能靠真实 Linux 硬件验证）。
 
@@ -115,7 +118,7 @@ Metadata 会识别 DSD 相关字段并报告 DSD64/128/256/512 级别。Renderer
 
 - WASAPI native DSD：Windows WASAPI 没有 UAC2 native DSD 通道；DoP 可在 WASAPI Exclusive 工作，native DSD 不行。
 - CoreAudio native DSD：macOS CoreAudio 没有 DSD 通道；DoP 可在 CoreAudio Exclusive（Hog）工作，native DSD 不行。
-- 真实设备 smoke（ASIO / WASAPI Exclusive / CoreAudio Hog / ALSA `hw:` / Native DSD / SACD ISO）通过 `TAE_RUN_REAL_AUDIO_BACKEND_TESTS=1` 开启，opt-in，不进入默认 CI 门禁，不伪造结果；`pnpm run smoke:audio-evidence -- --input <summary-a.json> --input <summary-b.json>` 或 `--input-dir <dir>` 将多台机器/多设备结果沉淀为可读 Markdown/JSON，并把缺失 surfaces 显示为 `not-run`。报告 JSON 带 `coverage.complete` 和未闭环 surface 的 `actionPlan`；CLI 会校验本地 artifact 文件存在，输入 JSON 本身可作为缺省 artifact，只有有可追溯 artifact 的 `pass` 行才计入 complete；产品诚实 surfaces（Loudnorm / Gapless Album / Unity Volume）始终列出且不阻塞硬件 complete；发布前可手动加 `--require-complete` 做 opt-in 证据完整性检查。
+- 真实设备 smoke（WASAPI Exclusive / ASIO PCM / DoP DAC / Native DSD / SACD ISO / CoreAudio Hog / ALSA `hw:`）通过 `TAE_RUN_REAL_AUDIO_BACKEND_TESTS=1` 开启，opt-in，不进入默认 CI 门禁，不伪造结果；`pnpm run smoke:audio-evidence -- --input <evidence-envelope.json>` 或 `--input-dir <dir>` 将多台机器/多设备结果沉淀为可读 Markdown/JSON，并把缺失 surfaces 显示为 `not-run`。每个 `real-device` pass 必须提供固定采集元数据、存在的本地 artifact 和匹配 SHA-256；mock/未知来源不计入 complete。产品诚实 surfaces（Loudnorm / Gapless Album / Unity Volume）始终列出且不阻塞硬件 complete；发布前可手动加 `--require-complete` 做 opt-in 证据完整性检查。
 
 ## 后续顺序
 

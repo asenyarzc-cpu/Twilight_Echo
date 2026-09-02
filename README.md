@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/asenyarzc-cpu/Twilight_Echo/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/asenyarzc-cpu/Twilight_Echo?display_name=tag&style=flat-square" /></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%2F%2011-2563eb?style=flat-square&logo=windows11&logoColor=white" />
-  <img alt="Version" src="https://img.shields.io/badge/version-1.1.0-0f766e?style=flat-square" />
+  <img alt="Version" src="https://img.shields.io/badge/version-1.1.2-0f766e?style=flat-square" />
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-64748b?style=flat-square" /></a>
 </p>
 
@@ -73,6 +73,8 @@ Twilight Echo 希望把散落在硬盘、歌单和不同音乐服务里的收藏
 
 信号链状态、输入/输出格式与处理模块清晰可见。图形均衡器、参数均衡器和 OPRA/AutoEQ 耳机校正既可以直接使用，也能作为 DSP Rack 的一部分组合。
 
+PCM SRC 支持 SWR；SoXR 是随 FFmpeg 构建可选的运行时引擎，在没有输出诊断 `resamplerEngine` / `resamplerFallback` 观察时应视为未验证。当前可用的 1-bit 路径仅可描述为实验性 PCM→DSD64/128/256（CPU）；它不是 CUDA SDM，也不是完整高品质 SDM。每个暂存原生包会生成 `audio-capabilities.json` 与 `release-capability-status.json`；未在这些产物中证实的能力不应由设置项或质量选项推断为已编译或已验证。
+
 <table>
   <tr>
     <td width="50%"><img src="./assets/screenshots/dsp-processor.png" alt="DSP 处理器与信号链" /></td>
@@ -133,7 +135,7 @@ Twilight Echo 希望把散落在硬盘、歌单和不同音乐服务里的收藏
 
 - 自研 C++20 原生音频引擎，使用独立服务进程隔离播放与离线分析任务。
 - Windows 支持 WASAPI Shared 与 WASAPI Exclusive；共享模式经过系统混音，独占模式可在设备允许时进行格式直通。
-- DSD 播放由专用 ASIO 后端/设备承载，与 PCM 输出路径解耦；支持 DoP 以及 SACD ISO、DSF、DFF 等 DSD 内容，具体可用模式由音频设备、驱动和当前后端决定。
+- DSD 播放仅当发行包将 ASIO 标为 experimental/available 且设备协商确认时，才由专用后端/设备承载，与 PCM 输出路径解耦；支持 DoP 以及 SACD ISO、DSF、DFF 等 DSD 内容，具体可用模式由音频设备、驱动和当前后端决定。
 - Windows x64 包含独立的 ASIO 兼容层；当前属于实验性能力，需要兼容设备和显式启用，不作为默认可用承诺。
 - 输出后端、设备、采样格式、缓冲设置与设备能力诊断均可在应用内查看和切换。
 - WASAPI 与 CoreAudio 没有平台级 native DSD 通道，会使用 DoP 或 PCM 回退；Linux 仅在兼容的 ALSA <code>hw:</code> 设备上尝试 native DSD。
@@ -149,7 +151,7 @@ Twilight Echo 希望把散落在硬盘、歌单和不同音乐服务里的收藏
 - 本地曲目 BPM 与响度后台分析和缓存，不阻塞实时播放链路。
 - 独立音频可视化页面显示频谱、波形、播放位置、BPM、动态范围、响度与文件参数。
 - DSD 与 passthrough 路径会自动绕过不安全的 PCM DSP，避免错误处理原始数据流。
-- VST3 宿主仅在完整的 Windows x64 构建中可用，实际兼容性取决于第三方插件。
+- Windows x64 打包流程会自动构建并暂存 VST3 host 与 scanner helpers；实际兼容性仍取决于第三方插件和运行状态。
 
 ### 外观、主题与桌面体验
 
@@ -186,7 +188,7 @@ Twilight Echo 希望把散落在硬盘、歌单和不同音乐服务里的收藏
 
 当前 Windows 安装包由个人开发者发布，**没有商业代码签名证书**，因此 Windows SmartScreen 可能显示“未知发布者”。请只从本项目的 GitHub Releases 下载，并核对发布页提供的 SHA-256。可在 PowerShell 中运行：
 
-<pre><code>Get-FileHash ./TwilightEcho-1.1.0-setup.exe -Algorithm SHA256</code></pre>
+<pre><code>Get-FileHash ./TwilightEcho-1.1.2-setup.exe -Algorithm SHA256</code></pre>
 
 项目发布检查仍会验证安装包品牌信息、依赖闭包、原生二进制剥离、体积预算和 SHA-256 生成；代码签名不属于个人项目的发布门槛。
 

@@ -22,6 +22,7 @@ function createSettings(overrides: Partial<AudioProcessingSettings> = {}): Audio
     highResolution: true,
     dsdToPcm: false,
     dsdOutputMode: 'auto',
+    dsdRatePolicy: 'pcm-fallback',
     dsdRoute: {
       enabled: false,
       backend: '',

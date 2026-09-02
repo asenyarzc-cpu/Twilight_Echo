@@ -43,6 +43,25 @@ export interface LocalLibraryWorkerScanRequest {
   // represents the bytes currently present at its path. Reconcile once.
   forceParse?: boolean
   changes?: LocalLibraryWatchChange[]
+  // Large scans stream parsed records and identities in bounded messages rather
+  // than retaining another full result payload for the final response.
+  streamResults?: boolean
+  // Paths whose metadata parse was terminated by the scan watchdog. They remain
+  // in the committed library when already present, but are retried next scan.
+  skipParsePaths?: string[]
+}
+
+export interface LocalLibraryScanBatch {
+  parsedTracks: unknown[]
+  parsedFilePaths: string[]
+}
+
+export interface LocalLibraryScanIdentityBatch {
+  identities: LocalLibraryFileIdentity[]
+}
+
+export interface LocalLibraryScanActivity {
+  filePaths: string[]
 }
 
 export interface LocalLibraryWorkerScanResult {
@@ -55,6 +74,7 @@ export interface LocalLibraryWorkerScanResult {
   skippedUnchanged: number
   parsedFileCount: number
   cancelled: boolean
+  skippedFilePaths?: string[]
 }
 
 export interface LocalLibraryScanProgress {
@@ -88,6 +108,9 @@ export interface LocalLibraryScanResult {
   removedFilePaths: string[]
   parsedFileCount: number
   skippedUnchanged: number
+  // Renderer should reload the committed document instead of accepting a large
+  // inline track delta.
+  reloadRequired?: boolean
 }
 
 export interface LocalLibraryScanUpdate {
@@ -101,6 +124,7 @@ export interface LocalLibraryScanUpdate {
   removedFilePaths: string[]
   parsedFileCount: number
   skippedUnchanged: number
+  reloadRequired?: boolean
 }
 
 export type LocalLibraryScanWorkerRequest =
@@ -119,6 +143,21 @@ export type LocalLibraryScanWorkerMessage =
       kind: 'progress'
       requestId: string
       progress: Omit<LocalLibraryScanProgress, 'jobId' | 'mode'>
+    }
+  | {
+      kind: 'batch'
+      requestId: string
+      batch: LocalLibraryScanBatch
+    }
+  | {
+      kind: 'identity-batch'
+      requestId: string
+      batch: LocalLibraryScanIdentityBatch
+    }
+  | {
+      kind: 'activity'
+      requestId: string
+      activity: LocalLibraryScanActivity
     }
   | { kind: 'response'; requestId: string; ok: true; value: LocalLibraryWorkerScanResult }
   | { kind: 'response'; requestId: string; ok: false; error: string }

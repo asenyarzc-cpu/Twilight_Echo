@@ -11,6 +11,8 @@ const {
   eqBandsEqual,
   nativePlayMode,
   normalizeAudioProcessingSettings,
+  normalizeOutputConversionInfo,
+  normalizeOutputProviderImplementation,
   parseDspGraphStatusOrThrow,
   parseNativeJson,
   resolveProcessingMasterState,
@@ -38,6 +40,46 @@ test('native audio JSON parsers reject over-nested worker output without changin
     () => parseDspGraphStatusOrThrow(deeplyNestedJson(128)),
     /native audio engine returned invalid DSP graph status JSON/
   )
+})
+
+test('output conversion facts normalize old payloads without claiming unavailable details', () => {
+  assert.equal(normalizeOutputProviderImplementation(undefined), 'legacy-native')
+  assert.equal(normalizeOutputProviderImplementation('invalid'), 'legacy-native')
+  assert.deepEqual(normalizeOutputConversionInfo(undefined, true), {
+    sampleFormatConverted: false,
+    sampleRateConverted: true,
+    channelLayoutConverted: false,
+    source: 'unavailable'
+  })
+  assert.deepEqual(
+    normalizeOutputConversionInfo(
+      {
+        sampleFormatConverted: true,
+        sampleRateConverted: true,
+        channelLayoutConverted: true,
+        source: 'backend-runtime'
+      },
+      false
+    ),
+    {
+      sampleFormatConverted: true,
+      sampleRateConverted: false,
+      channelLayoutConverted: true,
+      source: 'backend-runtime'
+    }
+  )
+})
+
+test('default playback output preserves shared mixer reason with legacy provider facts', () => {
+  const info = createDefaultPlaybackInfo('wasapi', 'auto', false, DEFAULT_OUTPUT_CONFIG)
+  assert.equal(info.outputInfo.providerImplementation, 'legacy-native')
+  assert.deepEqual(info.outputInfo.conversionInfo, {
+    sampleFormatConverted: false,
+    sampleRateConverted: false,
+    channelLayoutConverted: false,
+    source: 'unavailable'
+  })
+  assert.equal(info.outputInfo.perfectReasonCode, 'shared_mixer')
 })
 
 test('resolveProcessingMasterState reconciles modules, master switch, and direct mode', () => {

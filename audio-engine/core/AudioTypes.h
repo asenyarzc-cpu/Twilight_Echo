@@ -64,6 +64,9 @@ struct OutputConfig {
   ChannelRoutingMode routingMode = ChannelRoutingMode::Auto;
   bool wasapiExclusivePushMode = false;
   PcmToDsdMode pcmToDsdMode = PcmToDsdMode::Off;
+  uint32_t dsdMutePreRollFrames = 256;
+  uint32_t dsdMutePostRollFrames = 256;
+  uint32_t dsdMuteTimeoutFrames = 4096;
   // 上混参数（5.1/7.1 声道扩展），默认值对应标准 audiophile 配置
   float upmixCenterGain = 0.7071f;     // -3dB
   float upmixLfeGain = 0.5f;           // -6dB
@@ -133,6 +136,13 @@ struct QueueItem {
   double cueSourcePregapSeconds = 0.0;
 };
 
+struct OutputConversionInfo {
+  bool sampleFormatConverted = false;
+  bool sampleRateConverted = false;
+  bool channelLayoutConverted = false;
+  std::string source = "unavailable";
+};
+
 struct OutputInfo {
   // Render-thread timing, sampled with lock-free counters. This describes the
   // callback's deadline load, not process or system CPU utilization.
@@ -180,6 +190,15 @@ struct OutputInfo {
     bool processingBypassed = false;
     std::string nativeDsdNegotiation;
     std::string dopRuntimeEvidence;
+    std::string quirkRegistryState;
+    std::string quirkFingerprint;
+    std::string quirkApplied;
+    std::string dsdMuteState;
+    std::string dsdMuteTransition;
+    uint32_t dsdMutePreRollFrames = 0;
+    uint32_t dsdMutePostRollFrames = 0;
+    uint32_t dsdMuteTimeoutFrames = 0;
+    std::string dsdMuteFallback;
     std::string firstBufferSummary;
     std::string processArchitecture;
     bool asioBuildEnabled = false;
@@ -203,9 +222,15 @@ struct OutputInfo {
   bool outputPerfect = false;
   bool pcmPassthrough = false;
   bool resampled = false;
+  std::string providerImplementation = "legacy-native";
+  OutputConversionInfo conversionInfo;
   bool isDsd = false;
   std::string dsdMode = "pcm";
   int dsdRate = 0;
+  int actualDsdRate = 0;
+  std::string dsdRatePolicy = "pcm-fallback";
+  std::string dsdConversion = "exact";
+  std::string dsdConversionReason;
   int outputSampleRate = 0;
   int outputBitDepth = 0;
   std::string backend;
@@ -320,6 +345,8 @@ bool sampleFormatsSameIntegerPayload(AudioSampleFormat left, AudioSampleFormat r
  * are not interchangeable even though their payloads are.
  */
 bool pcmFormatsSemanticallyMatch(const AudioFormat& left, const AudioFormat& right);
+/** Keep the legacy resampled flag and the additive conversion fact in sync. */
+void synchronizeOutputConversionInfo(OutputInfo& info);
 bool isDsdSampleFormat(AudioSampleFormat format);
 bool dsdFormatsExactMatch(const AudioFormat& left, const AudioFormat& right);
 std::optional<AudioFormat> dopCarrierFormatForDsd(int dsdRate, int sourceSampleRate, int channelCount);

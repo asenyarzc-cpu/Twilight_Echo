@@ -75,6 +75,26 @@ void assertNotOutputPerfect(PerfectEvaluation evaluation) {
   assert(!result.outputPerfect);
 }
 
+void testOutputConversionFactsKeepTheLegacyResampledFlagInSync() {
+  OutputInfo info;
+  assert(info.providerImplementation == "legacy-native");
+  assert(info.conversionInfo.source == "unavailable");
+  assert(!info.conversionInfo.sampleFormatConverted);
+  assert(!info.conversionInfo.sampleRateConverted);
+  assert(!info.conversionInfo.channelLayoutConverted);
+
+  info.resampled = true;
+  info.conversionInfo.sampleRateConverted = false;
+  synchronizeOutputConversionInfo(info);
+  assert(info.conversionInfo.sampleRateConverted);
+
+  info.providerImplementation = "unexpected";
+  info.conversionInfo.source = "unexpected";
+  synchronizeOutputConversionInfo(info);
+  assert(info.providerImplementation == "legacy-native");
+  assert(info.conversionInfo.source == "unavailable");
+}
+
 void testVolumeAppliesOnlyToRenderedFrames() {
   std::vector<float> samples = {
       2.0f, -2.0f,
@@ -836,6 +856,7 @@ int main() {
   testTypedPcmToFloatZerosOnlyUnconvertedTail();
   testTypedPcmToFloatFloat32AllowsInPlaceFullConversion();
   testFloat32PcmConversionSkipsCopyWhenAlreadyInPlace();
+  testOutputConversionFactsKeepTheLegacyResampledFlagInSync();
   testLosslessSourceExact();
   testLossyOutputPerfect();
   testLosslessIntegerDecodedConversionBlocksOutputPerfect();

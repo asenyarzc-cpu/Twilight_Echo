@@ -7,19 +7,27 @@ const MIB = 1024 * 1024
 const DEFAULT_BUDGETS = Object.freeze({
   'twilight-audio-engine.dll': 192 * MIB,
   'twilight_audio_node.node': 16 * MIB,
+  'twilight-asio-helper.exe': 32 * MIB,
   'twilight-vst3-host.exe': 32 * MIB,
   'twilight-vst3-scanner.exe': 32 * MIB,
   installer: 384 * MIB
 })
 const DEFAULT_SHIPPED_BINARY_BUDGET = 64 * MIB
 
-// Core playback runtime is always required. The VST3 helper executables are
-// optional: the app disables VST3 at runtime when they are absent, and the
-// release gate verifies them only when a release staged them.
+// Core playback files are required while capability-manifest generation may
+// still describe an unbuilt VST3 pair. Windows release verification uses the
+// stricter REQUIRED_RELEASE_NATIVE_BINARIES list below.
 const REQUIRED_NATIVE_BINARIES = Object.freeze([
   'twilight-audio-engine.dll',
-  'twilight_audio_node.node'
+  'twilight_audio_node.node',
+  'twilight-asio-helper.exe'
 ])
+const REQUIRED_RELEASE_NATIVE_BINARIES = Object.freeze([
+  ...REQUIRED_NATIVE_BINARIES,
+  'twilight-vst3-host.exe',
+  'twilight-vst3-scanner.exe'
+])
+const PE_MACHINE_AMD64 = 0x8664
 
 function parseArgs(argv) {
   const options = {
@@ -86,7 +94,24 @@ function readPeHeader(filePath) {
     if (offset + 40 > buffer.length) throw new Error(`${filePath} has a truncated PE section table`)
     sections.push(buffer.toString('ascii', offset, offset + 8).replace(/\0+$/, ''))
   }
-  return { symbolTableOffset, symbolCount, debugDirectoryRva, debugDirectorySize, sections }
+  const machine = buffer.readUInt16LE(coffOffset)
+  return {
+    machine,
+    symbolTableOffset,
+    symbolCount,
+    debugDirectoryRva,
+    debugDirectorySize,
+    sections
+  }
+}
+
+function assertX64Pe(filePath) {
+  const pe = readPeHeader(filePath)
+  assert.equal(
+    pe.machine,
+    PE_MACHINE_AMD64,
+    `${path.basename(filePath)} is not a Windows x64 PE binary`
+  )
 }
 
 function assertStrippedPe(filePath) {
@@ -110,16 +135,20 @@ function assertBudget(filePath, maxBytes, label = path.basename(filePath)) {
 }
 
 function listNativeBinaries(nativeDir) {
-  const optional = Object.keys(DEFAULT_BUDGETS).filter(
-    (name) => name !== 'installer' && !REQUIRED_NATIVE_BINARIES.includes(name)
+  const optional = ['twilight-vst3-host.exe', 'twilight-vst3-scanner.exe'].filter((name) =>
+    fs.existsSync(path.resolve(nativeDir, name))
   )
-  const required = [...REQUIRED_NATIVE_BINARIES]
-  for (const name of optional) {
-    if (fs.existsSync(path.resolve(nativeDir, name))) required.push(name)
-  }
-  return required.map((name) => {
+  return [...REQUIRED_NATIVE_BINARIES, ...optional].map((name) => {
     const filePath = path.resolve(nativeDir, name)
     assert.ok(fs.existsSync(filePath), `Missing required native binary: ${filePath}`)
+    return filePath
+  })
+}
+
+function listReleaseNativeBinaries(nativeDir) {
+  return REQUIRED_RELEASE_NATIVE_BINARIES.map((name) => {
+    const filePath = path.resolve(nativeDir, name)
+    assert.ok(fs.existsSync(filePath), `Missing required release native binary: ${filePath}`)
     return filePath
   })
 }
@@ -180,8 +209,9 @@ function findInstaller(options) {
 }
 
 function verifyReleaseArtifacts(options) {
-  const nativeBinaries = listNativeBinaries(options.nativeDir)
+  const nativeBinaries = listReleaseNativeBinaries(options.nativeDir)
   const shippedBinaries = listShippedBinaries(options.nativeDir)
+  for (const filePath of shippedBinaries) assertX64Pe(filePath)
   const runtimeDependencies = listRuntimeDependencies(options.nativeDir, nativeBinaries)
   const installer = findInstaller(options)
   const sizes = {}
@@ -215,11 +245,15 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_BUDGETS,
   DEFAULT_SHIPPED_BINARY_BUDGET,
+  PE_MACHINE_AMD64,
   REQUIRED_NATIVE_BINARIES,
+  REQUIRED_RELEASE_NATIVE_BINARIES,
   assertBudget,
   assertStrippedPe,
+  assertX64Pe,
   findInstaller,
   listNativeBinaries,
+  listReleaseNativeBinaries,
   listRuntimeDependencies,
   listShippedBinaries,
   parseArgs,

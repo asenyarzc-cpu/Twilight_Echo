@@ -7,6 +7,10 @@ const {
 } = require('./vst3-msvc-toolchain.cjs')
 
 const root = resolve(__dirname, '..')
+if (process.platform !== 'win32' || process.arch !== 'x64') {
+  console.error('VST3 helpers can only run on Windows x64.')
+  process.exit(1)
+}
 const environment = resolveVst3MsvcEnvironment()
 const buildDir = resolveVst3MsvcBuildDirectory(environment, root)
 const action = process.argv[2]

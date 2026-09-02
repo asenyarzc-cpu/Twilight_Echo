@@ -3,6 +3,7 @@
 #include "AudioPipelineRenderUtils.h"
 #include "DiagnosticLog.h"
 #include "../dsp/ChannelRouter.h"
+#include "../dsp/DsdDownrateProcessor.h"
 #include "../decoder/DopPackerUtils.h"
 #include "../decoder/SacdIsoProbe.h"
 #include "../utils/JsonUtils.h"
@@ -687,6 +688,29 @@ bool dsdOutputModeRequestsDop(DsdOutputMode mode) {
   return mode == DsdOutputMode::Auto || mode == DsdOutputMode::Dop || mode == DsdOutputMode::Native;
 }
 
+const char* dsdRatePolicyName(DsdRatePolicy policy) {
+  switch (policy) {
+    case DsdRatePolicy::Exact:
+      return "exact";
+    case DsdRatePolicy::Downrate:
+      return "downrate";
+    case DsdRatePolicy::PcmFallback:
+    default:
+      return "pcm-fallback";
+  }
+}
+
+std::vector<int> dsdRateCandidates(int sourceRate, DsdRatePolicy policy) {
+  std::vector<int> rates;
+  if (sourceRate > 0) rates.push_back(sourceRate);
+  if (policy != DsdRatePolicy::Downrate) return rates;
+  for (int rate = sourceRate / 2; rate >= 64; rate /= 2) {
+    rates.push_back(rate);
+    if (rate == 64) break;
+  }
+  return rates;
+}
+
 AudioFormat pcmFallbackRequestFormat(
     const AudioStreamInfo& stream,
     const std::optional<DsdStreamInfo>& dsdProbe) {
@@ -734,6 +758,10 @@ struct AudioPipeline::DecodeStream {
   // DST-compressed tracks are playable through the DoP / native-DSD pipeline.
   std::unique_ptr<SacdDstDecoderProvider> dstProvider = createDefaultSacdDstDecoderProvider();
   DopPacker dopPacker;
+  DsdDownrateProcessor dsdDownrateProcessor;
+  bool dsdDownrateActive = false;
+  int targetDsdRate = 0;
+  int actualDsdSampleRate = 0;
   AudioBuffer buffer;
   std::vector<uint8_t> floatReadScratch;
   std::atomic<bool> running{false};
@@ -825,6 +853,14 @@ struct AudioPipeline::DecodeStream {
     return true;
   }
 
+  void setTargetDsdRate(int rate) {
+    targetDsdRate = rate;
+  }
+
+  int actualDsdRate() const {
+    return targetDsdRate > 0 ? targetDsdRate : stream.dsdRate;
+  }
+
   bool configure(
       const AudioFormat& outputFormat,
       double startTimeSeconds,
@@ -877,17 +913,32 @@ struct AudioPipeline::DecodeStream {
       return false;
     }
     const DsdStreamInfo& dsd = dsdReader->streamInfo();
-    if (!formatCanCarryDop(outputFormat, dsd.dsdRate, dsd.dsdSampleRate, dsd.channelCount)) {
+    const int wireDsdRate = targetDsdRate > 0 ? targetDsdRate : dsd.dsdRate;
+    const int baseRate = dsd.dsdRate > 0 ? dsd.dsdSampleRate / dsd.dsdRate : 0;
+    const int wireSampleRate = baseRate * wireDsdRate;
+    if (!formatCanCarryDop(outputFormat, wireDsdRate, wireSampleRate, dsd.channelCount)) {
       if (error) *error = "DoP carrier format mismatch";
       return false;
     }
 
+    dsdDownrateActive = wireDsdRate < dsd.dsdRate;
+    if (dsdDownrateActive) {
+      DsdDownrateConfig downrateConfig;
+      downrateConfig.sourceSampleRate = dsd.dsdSampleRate;
+      downrateConfig.targetSampleRate = wireSampleRate;
+      downrateConfig.channelCount = dsd.channelCount;
+      downrateConfig.inputBitOrder = DsdBitOrder::MsbFirst;
+      downrateConfig.outputBitOrder = DsdBitOrder::MsbFirst;
+      if (!dsdDownrateProcessor.configure(downrateConfig, error)) return false;
+    }
+    actualDsdSampleRate = wireSampleRate;
+
     DopPackerConfig config;
     config.channelCount = dsd.channelCount;
-    config.dsdRate = dsd.dsdRate;
-    config.sourceSampleRate = dsd.dsdSampleRate;
-    config.bitOrder = dsdBitOrderFromInfo(dsd);
-    config.packing = dsdPackingFromInfo(dsd);
+    config.dsdRate = wireDsdRate;
+    config.sourceSampleRate = wireSampleRate;
+    config.bitOrder = dsdDownrateActive ? DsdBitOrder::MsbFirst : dsdBitOrderFromInfo(dsd);
+    config.packing = dsdDownrateActive ? DsdPacking::DffInterleaved : dsdPackingFromInfo(dsd);
     config.outputFormat = outputFormat.sampleFormat;
     if (!dopPacker.configure(config, error)) return false;
     const double logicalStart = clampLogicalSegmentPosition(startTimeSeconds);
@@ -918,15 +969,34 @@ struct AudioPipeline::DecodeStream {
       return false;
     }
     const DsdStreamInfo& dsd = dsdReader->streamInfo();
-    if (!isDsdSampleFormat(outputFormat.sampleFormat) || outputFormat.channelCount != dsd.channelCount) {
+    const int wireDsdRate = targetDsdRate > 0 ? targetDsdRate : dsd.dsdRate;
+    const int baseRate = dsd.dsdRate > 0 ? dsd.dsdSampleRate / dsd.dsdRate : 0;
+    const int wireSampleRate = baseRate * wireDsdRate;
+    if (!isDsdSampleFormat(outputFormat.sampleFormat) || outputFormat.channelCount != dsd.channelCount ||
+        (outputFormat.sampleRate != wireSampleRate && outputFormat.sampleRate * 8 != wireSampleRate)) {
       if (error) *error = "Native DSD output format mismatch";
       return false;
     }
+    dsdDownrateActive = wireDsdRate < dsd.dsdRate;
+    if (dsdDownrateActive) {
+      DsdDownrateConfig downrateConfig;
+      downrateConfig.sourceSampleRate = dsd.dsdSampleRate;
+      downrateConfig.targetSampleRate = wireSampleRate;
+      downrateConfig.channelCount = dsd.channelCount;
+      downrateConfig.inputBitOrder = DsdBitOrder::MsbFirst;
+      downrateConfig.outputBitOrder = outputFormat.sampleFormat == AudioSampleFormat::DsdInt8Lsb1 ||
+                                              outputFormat.sampleFormat == AudioSampleFormat::DsdInt8Ner8
+                                          ? DsdBitOrder::LsbFirst
+                                          : DsdBitOrder::MsbFirst;
+      if (!dsdDownrateProcessor.configure(downrateConfig, error)) return false;
+    }
+    actualDsdSampleRate = wireSampleRate;
     const double logicalStart = clampLogicalSegmentPosition(startTimeSeconds);
     const double sourceStart = sourcePositionForLogicalPosition(logicalStart);
     if (sourceStart > 0.0 && !dsdReader->seek(sourceStart, error)) return false;
     decodeFormat = outputFormat;
-    stream.decodedFormat = nativeDsdFormatForStream(dsd);
+    stream.decodedFormat = outputFormat;
+    stream.decodedFormat.sampleRate = wireSampleRate;
     stream.dsdMode = DsdMode::Native;
     typedPassthrough = true;
     if (hasCueRange()) {
@@ -975,6 +1045,7 @@ struct AudioPipeline::DecodeStream {
     // depend on how much happened to be prefetched.  Restart every seek at the
     // canonical marker boundary, just as a freshly configured stream does.
     if (mode == Mode::Dop) dopPacker.reset();
+    if (dsdDownrateActive) dsdDownrateProcessor.reset();
     buffer.clear();
     if (hasCueRange()) {
       remainingSegmentFrames = remainingFramesForSourcePosition(sourceSeconds);
@@ -1211,6 +1282,8 @@ struct AudioPipeline::DecodeStream {
     const int channels = std::max(1, decodeFormat.channelCount);
     const size_t dsdBytesPerChunk = kDecodeChunkFrames * static_cast<size_t>(channels) * 2;
     std::vector<uint8_t> dsdBytes(dsdBytesPerChunk);
+    std::vector<uint8_t> canonicalBytes;
+    std::vector<uint8_t> downratedBytes;
     std::vector<uint8_t> pcmBytes;
 
     while (running.load()) {
@@ -1223,9 +1296,12 @@ struct AudioPipeline::DecodeStream {
         // idle pattern has to be written the way this source would encode it.
         // 0x69 is the LSB-first spelling; MSB-first sources need it reversed so
         // both land on the same 0x96 payload byte after normalization.
-        const uint8_t silenceSourceByte = dsdReader && dsdReader->streamInfo().bitOrder == DsdBitOrder::MsbFirst
-                                              ? dop::kBitReverseTable[0x69]
-                                              : 0x69;
+        const uint8_t silenceSourceByte =
+            dsdDownrateActive
+                ? 0x96
+                : (dsdReader && dsdReader->streamInfo().bitOrder == DsdBitOrder::MsbFirst
+                       ? dop::kBitReverseTable[0x69]
+                       : 0x69);
         std::fill(dsdBytes.begin(), dsdBytes.begin() + silenceBytes, silenceSourceByte);
         const size_t packedFrames = dopPacker.pack(dsdBytes.data(), silenceBytes, &pcmBytes);
         if (packedFrames == 0) {
@@ -1247,7 +1323,21 @@ struct AudioPipeline::DecodeStream {
         markEof();
         break;
       }
-      const size_t packedFrames = dopPacker.pack(dsdBytes.data(), read, &pcmBytes);
+      const uint8_t* packInput = dsdBytes.data();
+      size_t packBytes = read;
+      if (dsdDownrateActive) {
+        const DsdStreamInfo& sourceInfo = dsdReader->streamInfo();
+        const size_t canonicalFrames = render::dsdBytesToInterleavedResizeOnly(
+            dsdBytes.data(), read, sourceInfo, AudioSampleFormat::DsdInt8Msb1, &canonicalBytes);
+        downratedBytes.resize(
+            dsdDownrateProcessor.maximumOutputByteFrames(canonicalFrames) * static_cast<size_t>(channels));
+        const size_t downratedFrames = dsdDownrateProcessor.process(
+            canonicalBytes.data(), canonicalFrames, downratedBytes.data(),
+            downratedBytes.size() / static_cast<size_t>(channels));
+        packInput = downratedBytes.data();
+        packBytes = downratedFrames * static_cast<size_t>(channels);
+      }
+      const size_t packedFrames = dopPacker.pack(packInput, packBytes, &pcmBytes);
       if (packedFrames == 0) continue;
       const size_t boundedFrames = remainingSegmentFrames
                                        ? std::min(packedFrames, static_cast<size_t>(*remainingSegmentFrames))
@@ -1280,6 +1370,7 @@ struct AudioPipeline::DecodeStream {
             ? static_cast<size_t>(info.blockSizePerChannel) * static_cast<size_t>(channels)
             : kDecodeChunkFrames * static_cast<size_t>(channels);
     std::vector<uint8_t> dsdBytes(dsdBytesPerChunk);
+    std::vector<uint8_t> canonicalBytes;
     std::vector<uint8_t> interleaved;
 
     while (running.load()) {
@@ -1304,7 +1395,19 @@ struct AudioPipeline::DecodeStream {
         markEof();
         break;
       }
-      const size_t decodedFrames = dsdBytesToInterleaved(dsdBytes.data(), read, info, decodeFormat.sampleFormat, &interleaved);
+      size_t decodedFrames = 0;
+      if (dsdDownrateActive) {
+        const size_t canonicalFrames = render::dsdBytesToInterleavedResizeOnly(
+            dsdBytes.data(), read, info, AudioSampleFormat::DsdInt8Msb1, &canonicalBytes);
+        interleaved.resize(
+            dsdDownrateProcessor.maximumOutputByteFrames(canonicalFrames) * static_cast<size_t>(channels));
+        decodedFrames = dsdDownrateProcessor.process(
+            canonicalBytes.data(), canonicalFrames, interleaved.data(),
+            interleaved.size() / static_cast<size_t>(channels));
+      } else {
+        decodedFrames = dsdBytesToInterleaved(
+            dsdBytes.data(), read, info, decodeFormat.sampleFormat, &interleaved);
+      }
       const size_t frames = remainingSegmentFrames
                                 ? std::min(decodedFrames, static_cast<size_t>(*remainingSegmentFrames))
                                 : decodedFrames;
@@ -1821,8 +1924,10 @@ TAE_Result AudioPipeline::playInternal(
   std::string dopAttemptError;
   std::optional<NativeDsdRuntimeFacts> attemptedNativeDsdFacts = forcedNativeDsdFallbackFacts;
 
-  const auto tryNativeDsdRoute = [&](const std::string& routeBackendId, const std::string& routeDeviceId) {
+  const auto tryNativeDsdRoute = [&](const std::string& routeBackendId, const std::string& routeDeviceId,
+                                     int targetRate) {
     auto nativeActive = makeDecodeStream();
+    nativeActive->setTargetDsdRate(targetRate);
     if (nativeActive->openNativeDsdSource(item, &nativeAttemptError)) {
       output = backendFactoryOverride() ? backendFactoryOverride()(routeBackendId)
                                         : createOutputBackend(routeBackendId);
@@ -1831,7 +1936,11 @@ TAE_Result AudioPipeline::playInternal(
       } else if (!output->setOutputConfig(outputConfig, &nativeAttemptError)) {
         output.reset();
       } else {
-        AudioFormat requested = nativeDsdFormatForStream(dsdProbe.value());
+        DsdStreamInfo targetInfo = dsdProbe.value();
+        const int baseRate = targetInfo.dsdRate > 0 ? targetInfo.dsdSampleRate / targetInfo.dsdRate : 0;
+        targetInfo.dsdRate = targetRate;
+        targetInfo.dsdSampleRate = baseRate * targetRate;
+        AudioFormat requested = nativeDsdFormatForStream(targetInfo);
         if (output->open(routeDeviceId, requested, &nativeAttemptError)) {
           outputFormat = output->outputFormat();
           const NativeDsdRuntimeFacts nativeFacts = output->nativeDsdRuntimeFacts();
@@ -1863,25 +1972,10 @@ TAE_Result AudioPipeline::playInternal(
   bool dsdRouteOverrideUsed = false;
   std::string dsdRouteOverrideError;
 
-  if (canTryNativeDsd) {
-    tryNativeDsdRoute(dsdBackendId, dsdDeviceId);
-    if (active && dsdRouteActive) dsdRouteOverrideUsed = true;
-    // The override device can be busy or unplugged. Unless the user asked for
-    // strict passthrough, fall back to the main route before degrading to DoP.
-    if (!active && dsdRouteRetriesMainRoute) {
-      dsdRouteOverrideError = nativeAttemptError;
-      nativeAttemptError.clear();
-      if (shouldAttemptNativeDsdForCurrentConfig(
-              requestedDspConfig, outputConfig, dsdProbe, requestedPlaybackVolume, backendId,
-              graphProcessingActive)) {
-        tryNativeDsdRoute(backendId, deviceId);
-      }
-      if (!active && nativeAttemptError.empty()) nativeAttemptError = dsdRouteOverrideError;
-    }
-  }
-
-  const auto tryDopRoute = [&](const std::string& routeBackendId, const std::string& routeDeviceId) {
+  const auto tryDopRoute = [&](const std::string& routeBackendId, const std::string& routeDeviceId,
+                               int targetRate) {
     auto dopActive = makeDecodeStream();
+    dopActive->setTargetDsdRate(targetRate);
     if (dopActive->openDsdSource(item, &dopAttemptError)) {
       output = backendFactoryOverride() ? backendFactoryOverride()(routeBackendId)
                                         : createOutputBackend(routeBackendId);
@@ -1890,17 +1984,19 @@ TAE_Result AudioPipeline::playInternal(
       } else if (!output->setOutputConfig(outputConfig, &dopAttemptError)) {
         output.reset();
       } else {
+        const int baseRate = dsdProbe->dsdRate > 0 ? dsdProbe->dsdSampleRate / dsdProbe->dsdRate : 0;
+        const int targetSampleRate = baseRate * targetRate;
         AudioFormat requested =
-            dopCarrierFormatForDsd(dsdProbe->dsdRate, dsdProbe->dsdSampleRate, dsdProbe->channelCount).value();
+            dopCarrierFormatForDsd(targetRate, targetSampleRate, dsdProbe->channelCount).value();
         requested.sampleFormat = AudioSampleFormat::Int24Interleaved;
         if (output->open(routeDeviceId, requested, &dopAttemptError)) {
           outputFormat = output->outputFormat();
-          if (formatCanCarryDop(outputFormat, dsdProbe->dsdRate, dsdProbe->dsdSampleRate, dsdProbe->channelCount) &&
+          if (formatCanCarryDop(outputFormat, targetRate, targetSampleRate, dsdProbe->channelCount) &&
               dopActive->configure(outputFormat, startTimeSeconds, &dopAttemptError)) {
             active = dopActive;
             dopPath = true;
           } else {
-            if (!formatCanCarryDop(outputFormat, dsdProbe->dsdRate, dsdProbe->dsdSampleRate, dsdProbe->channelCount)) {
+            if (!formatCanCarryDop(outputFormat, targetRate, targetSampleRate, dsdProbe->channelCount)) {
               // The driver answered, but not with a DoP carrier. Record the
               // negotiated format so the fallback report names the concrete
               // blocker instead of a bare "could not prove passthrough".
@@ -1924,30 +2020,55 @@ TAE_Result AudioPipeline::playInternal(
     }
   };
 
-  if (canTryDop && !active) {
-    tryDopRoute(dsdBackendId, dsdDeviceId);
-    if (active && dsdRouteActive) dsdRouteOverrideUsed = true;
-    if (!active && dsdRouteRetriesMainRoute) {
-      const std::string overrideDopError = dopAttemptError;
-      dopAttemptError.clear();
-      if (shouldAttemptDopForCurrentConfig(
-              requestedDspConfig, outputConfig, dsdProbe, requestedPlaybackVolume, backendId,
-              graphProcessingActive)) {
-        tryDopRoute(backendId, deviceId);
+  const std::vector<int> rateCandidates = dsdProbe.has_value()
+                                              ? dsdRateCandidates(
+                                                    dsdProbe->dsdRate, requestedDspConfig.dsdRatePolicy)
+                                              : std::vector<int>{};
+  for (const int targetRate : rateCandidates) {
+    if (canTryNativeDsd && !active) {
+      nativeAttemptError.clear();
+      tryNativeDsdRoute(dsdBackendId, dsdDeviceId, targetRate);
+      if (active && dsdRouteActive) dsdRouteOverrideUsed = true;
+      if (!active && dsdRouteRetriesMainRoute) {
+        dsdRouteOverrideError = nativeAttemptError;
+        nativeAttemptError.clear();
+        if (shouldAttemptNativeDsdForCurrentConfig(
+                requestedDspConfig, outputConfig, dsdProbe, requestedPlaybackVolume, backendId,
+                graphProcessingActive)) {
+          tryNativeDsdRoute(backendId, deviceId, targetRate);
+        }
+        if (!active && nativeAttemptError.empty()) nativeAttemptError = dsdRouteOverrideError;
       }
-      if (!active && dopAttemptError.empty()) dopAttemptError = overrideDopError;
     }
+    if (canTryDop && !active) {
+      dopAttemptError.clear();
+      tryDopRoute(dsdBackendId, dsdDeviceId, targetRate);
+      if (active && dsdRouteActive) dsdRouteOverrideUsed = true;
+      if (!active && dsdRouteRetriesMainRoute) {
+        const std::string overrideDopError = dopAttemptError;
+        dopAttemptError.clear();
+        if (shouldAttemptDopForCurrentConfig(
+                requestedDspConfig, outputConfig, dsdProbe, requestedPlaybackVolume, backendId,
+                graphProcessingActive)) {
+          tryDopRoute(backendId, deviceId, targetRate);
+        }
+        if (!active && dopAttemptError.empty()) dopAttemptError = overrideDopError;
+      }
+    }
+    if (active) break;
   }
 
-  // Strict passthrough: the user explicitly asked never to degrade silently.
+  // Strict passthrough and exact policy never degrade silently to PCM.
   // Report the real reason instead of opening a PCM stream behind their back.
-  if (!active && dsdProbe.has_value() && dsdRoute.enabled && dsdRoute.strictPassthrough &&
+  const bool strictDsdRatePolicy = requestedDspConfig.dsdRatePolicy == DsdRatePolicy::Exact;
+  if (!active && dsdProbe.has_value() &&
+      ((dsdRoute.enabled && dsdRoute.strictPassthrough) || strictDsdRatePolicy) &&
       !dsdOutputModePrefersPcm(requestedDspConfig.dsdOutputMode)) {
     if (error) {
       const std::string detail = !nativeAttemptError.empty()
                                      ? nativeAttemptError
                                      : (!dopAttemptError.empty() ? dopAttemptError : "设备未确认 DSD 直通能力");
-      *error = "DSD 严格直通模式：无法建立 DSD 直通输出（" + detail + "）";
+      *error = "DSD 严格倍率策略：无法建立请求的 DSD 输出（" + detail + "）";
     }
     return TAE_RESULT_BACKEND_UNAVAILABLE;
   }
@@ -2239,6 +2360,58 @@ TAE_Result AudioPipeline::playInternal(
     outputInfo_ = output_->outputInfo();
     outputInfo_.backend = backendId_;
     outputInfo_.deviceName = deviceName_;
+    outputInfo_.dsdRatePolicy = dsdRatePolicyName(requestedDspConfig.dsdRatePolicy);
+    outputInfo_.actualDsdRate =
+        activeStream_->stream.isDsd && activeStream_->stream.dsdMode != DsdMode::Pcm
+            ? activeStream_->actualDsdRate()
+            : 0;
+    const bool dsdDownrated = outputInfo_.actualDsdRate > 0 && activeStream_->stream.dsdRate > 0 &&
+                               outputInfo_.actualDsdRate < activeStream_->stream.dsdRate;
+    outputInfo_.dsdConversion = dsdDownrated
+                                        ? "downrate"
+                                        : (activeStream_->stream.isDsd && activeStream_->stream.dsdMode == DsdMode::Pcm
+                                               ? "pcm-fallback"
+                                               : "exact");
+    outputInfo_.dsdConversionReason = dsdDownrated ? "dsd_downrated" : "";
+    if (dsdDownrated) {
+      outputInfo_.sourceExact = false;
+      outputInfo_.resampled = true;
+      outputInfo_.outputPerfect = false;
+      outputInfo_.perfectReasonCode = "dsd_downrated";
+      outputInfo_.perfectReason = "DSD source was downrated in the one-bit domain";
+    }
+    const DsdMuteTransport targetMuteTransport =
+        dsdMuteTransportForMode(activeStream_->stream.dsdMode, activeStream_->stream.isDsd);
+    const int previousMuteRate = lastDsdMuteRate_;
+    const int targetMuteRate = activeStream_->stream.isDsd
+                                   ? (outputInfo_.actualDsdRate > 0 ? outputInfo_.actualDsdRate
+                                                                   : activeStream_->stream.dsdRate)
+                                   : outputFormat_.sampleRate;
+    dsdMuteGuard_.configure({outputConfig.dsdMutePreRollFrames, outputConfig.dsdMutePostRollFrames,
+                             outputConfig.dsdMuteTimeoutFrames});
+    DsdMuteGuardPlan mutePlan = dsdMuteGuard_.plan();
+    const bool freshDsdSession =
+        targetMuteTransport != DsdMuteTransport::Pcm && dsdMuteGuard_.state() == DsdMuteState::Stopped;
+    if (freshDsdSession || targetMuteTransport != lastDsdMuteTransport_ ||
+        (previousMuteRate > 0 && targetMuteRate > 0 && previousMuteRate != targetMuteRate)) {
+      mutePlan = dsdMuteGuard_.arm(lastDsdMuteTransport_, targetMuteTransport, previousMuteRate, targetMuteRate);
+    } else {
+      dsdMuteGuard_.stop();
+      mutePlan.transition = DsdMuteTransition::None;
+      mutePlan.from = targetMuteTransport;
+      mutePlan.to = targetMuteTransport;
+      mutePlan.preRollFrames = 0;
+      mutePlan.postRollFrames = 0;
+      mutePlan.timeoutFrames = outputConfig.dsdMuteTimeoutFrames;
+    }
+    lastDsdMuteTransport_ = targetMuteTransport;
+    lastDsdMuteRate_ = targetMuteRate;
+    outputInfo_.diagnostics.dsdMuteState = DsdMuteGuard::stateName(dsdMuteGuard_.state());
+    outputInfo_.diagnostics.dsdMuteTransition = DsdMuteGuard::transitionName(mutePlan.transition);
+    outputInfo_.diagnostics.dsdMutePreRollFrames = mutePlan.preRollFrames;
+    outputInfo_.diagnostics.dsdMutePostRollFrames = mutePlan.postRollFrames;
+    outputInfo_.diagnostics.dsdMuteTimeoutFrames = mutePlan.timeoutFrames;
+    outputInfo_.diagnostics.dsdMuteFallback.clear();
     if (activeStream_->stream.isDsd) {
       const DsdStreamInfo sourceDsd = activeStream_->dsdReader
                                           ? activeStream_->dsdReader->streamInfo()
@@ -2452,6 +2625,9 @@ TAE_Result AudioPipeline::playInternal(
         dopFacts = output_->dopRuntimeFacts();
       }
     }
+    if (dopFacts.state == DopRuntimeFactState::Proven) {
+      dsdMuteGuard_.confirmLock();
+    }
     if (dopRuntimeFactsRequirePcmFallback(dopFacts)) {
       const std::string fallbackReason = dopPcmFallbackReason(dopFacts);
       stop();
@@ -2473,7 +2649,18 @@ TAE_Result AudioPipeline::playInternal(
   }
 
   if (nativeDsdPath) {
-    const NativeDsdRuntimeFacts nativeFacts = output_->nativeDsdRuntimeFacts();
+    NativeDsdRuntimeFacts nativeFacts = output_->nativeDsdRuntimeFacts();
+    if (nativeFacts.state == NativeDsdRuntimeFactState::Candidate) {
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+      while (nativeFacts.state == NativeDsdRuntimeFactState::Candidate &&
+             std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        nativeFacts = output_->nativeDsdRuntimeFacts();
+      }
+    }
+    if (nativeFacts.state == NativeDsdRuntimeFactState::Proven) {
+      dsdMuteGuard_.confirmLock();
+    }
     if (nativeDsdRuntimeFactsRequirePcmFallback(nativeFacts)) {
       const std::string fallbackReason = nativeDsdPcmFallbackReason(nativeFacts);
       attemptedNativeDsdFacts = nativeFacts;
@@ -2512,6 +2699,12 @@ TAE_Result AudioPipeline::playInternal(
     outputInfo_.diagnostics.dsdRouteBackend = routeBackend;
     outputInfo_.diagnostics.dsdRouteDevice = routeDevice;
     outputInfo_.diagnostics.dsdRouteFallbackReason = routeFallbackReason;
+    const DsdMuteGuardPlan mutePlan = dsdMuteGuard_.plan();
+    outputInfo_.diagnostics.dsdMuteState = DsdMuteGuard::stateName(dsdMuteGuard_.state());
+    outputInfo_.diagnostics.dsdMuteTransition = DsdMuteGuard::transitionName(mutePlan.transition);
+    outputInfo_.diagnostics.dsdMutePreRollFrames = mutePlan.preRollFrames;
+    outputInfo_.diagnostics.dsdMutePostRollFrames = mutePlan.postRollFrames;
+    outputInfo_.diagnostics.dsdMuteTimeoutFrames = mutePlan.timeoutFrames;
     updatePerfectLocked();
   }
 
@@ -2624,6 +2817,7 @@ TAE_Result AudioPipeline::stopUnlocked() {
   size_t retiredCount = 0;
   {
     std::lock_guard lock(mutex_);
+    dsdMuteGuard_.stop();
     state_ = PipelineState::Stopped;
     renderState_.store(PipelineState::Stopped, std::memory_order_release);
     output = std::move(output_);
@@ -3713,6 +3907,10 @@ PipelineStatus AudioPipeline::buildStatusLocked() {
   backendInfo.isDsd = outputInfo_.isDsd;
   backendInfo.dsdMode = outputInfo_.dsdMode;
   backendInfo.dsdRate = outputInfo_.dsdRate;
+  backendInfo.actualDsdRate = outputInfo_.actualDsdRate;
+  backendInfo.dsdRatePolicy = outputInfo_.dsdRatePolicy;
+  backendInfo.dsdConversion = outputInfo_.dsdConversion;
+  backendInfo.dsdConversionReason = outputInfo_.dsdConversionReason;
   if (stream_.isDsd) {
     backendInfo.diagnostics.dsdSourceBitOrder = outputInfo_.diagnostics.dsdSourceBitOrder;
     backendInfo.diagnostics.dsdSourcePacking = outputInfo_.diagnostics.dsdSourcePacking;
@@ -3734,9 +3932,25 @@ PipelineStatus AudioPipeline::buildStatusLocked() {
   } else if (output_) {
     applyNativeDsdRuntimeFacts(&backendInfo, output_->nativeDsdRuntimeFacts());
   }
+  const DsdMuteGuardPlan mutePlan = dsdMuteGuard_.plan();
+  const DsdMuteState muteState = dsdMuteGuard_.state();
+  backendInfo.diagnostics.dsdMuteState = DsdMuteGuard::stateName(muteState);
+  backendInfo.diagnostics.dsdMuteTransition = DsdMuteGuard::transitionName(mutePlan.transition);
+  backendInfo.diagnostics.dsdMutePreRollFrames = mutePlan.preRollFrames;
+  backendInfo.diagnostics.dsdMutePostRollFrames = mutePlan.postRollFrames;
+  backendInfo.diagnostics.dsdMuteTimeoutFrames = mutePlan.timeoutFrames;
+  backendInfo.diagnostics.dsdMuteFallback =
+      muteState == DsdMuteState::Fallback ? "DSD mute guard lock timeout; output stopped" : "";
   backendInfo.channelRoutingMode = outputInfo_.channelRoutingMode;
-  backendInfo.perfectReasonCode = outputInfo_.perfectReasonCode;
-  backendInfo.perfectReason = outputInfo_.perfectReason;
+  backendInfo.perfectReasonCode =
+      muteState == DsdMuteState::Fallback ? "dsd_mute_lock_timeout" : outputInfo_.perfectReasonCode;
+  backendInfo.perfectReason = muteState == DsdMuteState::Fallback
+                                  ? "DSD transport lock timed out; output stopped"
+                                  : outputInfo_.perfectReason;
+  if (muteState == DsdMuteState::Fallback) {
+    backendInfo.sourceExact = false;
+    backendInfo.outputPerfect = false;
+  }
   backendInfo.renderPerformance = renderPerformanceSnapshot();
   status.outputInfo = backendInfo;
   status.backendId = backendId_;
@@ -3760,8 +3974,8 @@ PipelineStatus AudioPipeline::buildStatusLocked() {
   status.channelMappingMode = dspStatus_.channelMappingMode;
   status.nativeDspJson = dspStatus_.nativeDspJson;
   status.dspGraphJson = appliedDspGraphStatusJsonLocked();
-  status.sourceExact = outputInfo_.sourceExact;
-  status.outputPerfect = outputPerfect_;
+  status.sourceExact = muteState != DsdMuteState::Fallback && outputInfo_.sourceExact;
+  status.outputPerfect = muteState != DsdMuteState::Fallback && outputPerfect_;
   status.gaplessActive =
       gaplessEnabled_ && dspConfig_.crossfadeSeconds <= 0.0001 && preloadStream_ != nullptr && !crossfadeMixActive_;
   status.preloadReady = preloadStream_ && preloadStream_->readyForRender();
@@ -4059,11 +4273,33 @@ bool AudioPipeline::updatePerfectLocked() {
   outputInfo_.isDsd = stream_.isDsd;
   outputInfo_.dsdMode = stream_.isDsd ? dsdModeToString(stream_.dsdMode) : dsdModeToString(DsdMode::Pcm);
   outputInfo_.dsdRate = stream_.isDsd ? stream_.dsdRate : 0;
+  outputInfo_.dsdRatePolicy = dsdRatePolicyName(dspConfig_.dsdRatePolicy);
+  outputInfo_.actualDsdRate =
+      stream_.isDsd && stream_.dsdMode != DsdMode::Pcm && activeStream_
+          ? activeStream_->actualDsdRate()
+          : 0;
+  const bool dsdDownrated = outputInfo_.actualDsdRate > 0 && outputInfo_.dsdRate > 0 &&
+                            outputInfo_.actualDsdRate < outputInfo_.dsdRate;
+  const bool dsdPcmFallback = stream_.isDsd && stream_.dsdMode == DsdMode::Pcm;
+  outputInfo_.dsdConversion = dsdDownrated ? "downrate" : (dsdPcmFallback ? "pcm-fallback" : "exact");
+  outputInfo_.dsdConversionReason =
+      dsdDownrated ? "dsd_downrated" : (dsdPcmFallback ? result.perfectReasonCode : "");
   applyNativeDsdRuntimeFacts(&outputInfo_, nativeDsdFacts);
   outputInfo_.channelRoutingMode = channelRoutingModeToString(outputConfig_.routingMode);
   outputInfo_.perfectReasonCode = result.perfectReasonCode;
   outputInfo_.perfectReason = result.perfectReason;
-  perfectReason_ = result.perfectReason;
+  if (outputInfo_.actualDsdRate > 0 && outputInfo_.dsdRate > 0 &&
+      outputInfo_.actualDsdRate < outputInfo_.dsdRate) {
+    outputInfo_.sourceExact = false;
+    outputInfo_.resampled = true;
+    outputInfo_.outputPerfect = false;
+    outputInfo_.dsdConversion = "downrate";
+    outputInfo_.dsdConversionReason = "dsd_downrated";
+    outputInfo_.perfectReasonCode = "dsd_downrated";
+    outputInfo_.perfectReason = "DSD source was downrated in the one-bit domain";
+    outputPerfect_ = false;
+  }
+  perfectReason_ = outputInfo_.perfectReason;
   return outputPerfect_;
 }
 
@@ -4380,6 +4616,21 @@ size_t AudioPipeline::renderTyped(PcmBlock& output) {
   // cannot decide: marker/idle writes into plain PCM destroy its top byte.
   const bool dsdTransportActive = dopPathActive || nativeDsdPathActive || pcmToDsdPathActive;
 
+  if (dsdMuteGuard_.muteNext(output.frames)) {
+    if (dsdTransportActive) {
+      fillDsdTransportIdle(output, &renderDopMarkerIndex_);
+    } else if (output.byteSize > 0) {
+      std::memset(output.data, 0, output.byteSize);
+    }
+    if (dsdMuteGuard_.state() == DsdMuteState::Fallback) {
+      renderError_.store(true, std::memory_order_release);
+      renderState_.store(PipelineState::Stopped, std::memory_order_release);
+    }
+    spectrum_.tryResetCapture();
+    recordPerformance();
+    return output.frames;
+  }
+
   if (state != PipelineState::Playing || !active) {
     if (typedPassthroughActive && output.byteSize > 0) {
       if (isDopCarrierFormat(output.format)) {
@@ -4611,6 +4862,17 @@ size_t AudioPipeline::render(float* output, size_t frameCount) {
   bool crossfadeMixActive = renderCrossfadeMixActive_;
   uint64_t crossfadeFramesProcessed = renderCrossfadeFramesProcessed_;
   uint64_t crossfadeTotalFrames = renderCrossfadeTotalFrames_;
+
+  if (dsdMuteGuard_.muteNext(frameCount)) {
+    std::fill(output, output + frameCount * static_cast<size_t>(channels), 0.0f);
+    if (dsdMuteGuard_.state() == DsdMuteState::Fallback) {
+      renderError_.store(true, std::memory_order_release);
+      renderState_.store(PipelineState::Stopped, std::memory_order_release);
+    }
+    spectrum_.tryResetCapture();
+    recordPerformance();
+    return frameCount;
+  }
 
   if (state != PipelineState::Playing || !active) {
     std::fill(output, output + frameCount * static_cast<size_t>(channels), 0.0f);

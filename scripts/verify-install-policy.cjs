@@ -5,7 +5,7 @@ const path = require('node:path')
 const PNPM_VERSION = 'pnpm@11.7.0'
 const REQUIRED_OVERRIDES = Object.freeze({
   'form-data': '4.0.6',
-  qs: '6.15.2'
+  qs: '6.16.0'
 })
 const NCM_PATCH = '@neteasecloudmusicapienhanced/api@4.35.1'
 const NCM_PATCH_PATH = 'patches/@neteasecloudmusicapienhanced__api@4.35.1.patch'

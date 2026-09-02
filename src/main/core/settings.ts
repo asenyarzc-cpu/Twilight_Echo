@@ -224,7 +224,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     preferredBufferSize: 0,
     routingMode: 'auto',
     wasapiExclusivePushMode: false,
-    pcmToDsdMode: 'off'
+    pcmToDsdMode: 'off',
+    dsdMutePreRollFrames: 256,
+    dsdMutePostRollFrames: 256,
+    dsdMuteTimeoutFrames: 4096
   },
   audioProcessing: DEFAULT_AUDIO_PROCESSING,
   dspScenes: [
@@ -611,6 +614,9 @@ export function normalizeOutputConfig(config: unknown): OutputConfig {
     routingMode: normalizeChannelRoutingMode(value.routingMode),
     wasapiExclusivePushMode: value.wasapiExclusivePushMode === true,
     pcmToDsdMode: normalizePcmToDsdMode(value.pcmToDsdMode),
+    dsdMutePreRollFrames: clampNumber(value.dsdMutePreRollFrames, 0, 4096, 256),
+    dsdMutePostRollFrames: clampNumber(value.dsdMutePostRollFrames, 0, 4096, 256),
+    dsdMuteTimeoutFrames: clampNumber(value.dsdMuteTimeoutFrames, 1, 4096, 4096),
     upmixCenterGain: clampNumber(value.upmixCenterGain, 0, 2, 0.7071),
     upmixLfeGain: clampNumber(value.upmixLfeGain, 0, 2, 0.5),
     upmixLfeLowpassHz: clampNumber(value.upmixLfeLowpassHz, 20, 500, 120),

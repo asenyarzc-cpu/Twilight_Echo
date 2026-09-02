@@ -118,7 +118,7 @@ function runRenderTest(host, modulePath, statePath, stateFormat) {
 }
 
 async function main() {
-  if (process.platform !== 'win32')
+  if (process.platform !== 'win32' || process.arch !== 'x64')
     fail('VST3 state smoke validation is available only on Windows x64.')
   const root = resolve(__dirname, '..')
   const environment = resolveVst3MsvcEnvironment()

@@ -1222,6 +1222,7 @@ interface WindowAPI {
     ) => Promise<DesktopLyricsSettingsV3>
     setLocked: (locked: boolean) => Promise<DesktopLyricsSettingsV3>
     setInteractionActive: (active: boolean) => Promise<void>
+    setPausedHidden: (hidden: boolean) => Promise<void>
     transport: (action: DesktopLyricsTransportAction) => void
     moveTo: (x: number, y: number) => void
     moveEnd: () => void

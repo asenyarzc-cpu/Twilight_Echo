@@ -7,6 +7,7 @@ export type {
   ChannelRoutingMode,
   PcmToDsdMode,
   DsdOutputMode,
+  DsdRatePolicy,
   SacdProgramMode,
   EqualizerFilterType,
   EqualizerBand,

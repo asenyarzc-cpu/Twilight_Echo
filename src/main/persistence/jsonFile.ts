@@ -122,16 +122,49 @@ export function writeJsonFileAtomic<T>(
   if (!options.validate(nextValue)) {
     throw new Error(`${options.label} has an invalid structure`)
   }
+  writeValidatedJsonFileAtomic(filePath, json, options)
+}
 
+/**
+ * Serialize an already validated value without parsing the same large JSON
+ * document again. JSON.stringify provides the syntax guarantee; the nesting
+ * scan preserves the persisted-file safety limit.
+ */
+export function writeJsonValueAtomic<T>(
+  filePath: string,
+  value: T,
+  options: JsonFileOptions<T>
+): void {
+  if (!options.validate(value)) {
+    throw new Error(`${options.label} has an invalid structure`)
+  }
+  const json = JSON.stringify(value)
+  if (typeof json !== 'string') throw new Error(`${options.label} is not serializable`)
+  if (Buffer.byteLength(json, 'utf-8') > options.maxBytes) {
+    throw new Error(`${options.label} is too large`)
+  }
+  if (!isJsonNestingWithinLimit(json)) {
+    throw new Error(`${options.label} is too deeply nested`)
+  }
+  writeValidatedJsonFileAtomic(filePath, json, options)
+}
+
+function writeValidatedJsonFileAtomic<T>(
+  filePath: string,
+  json: string,
+  options: JsonFileOptions<T>
+): void {
   mkdirSync(dirname(filePath), { recursive: true })
   const tmpPath = temporaryPathFor(filePath)
   const backupPath = backupPathFor(filePath)
   const current = readJsonCandidate(filePath, options)
+  let backupIsKnownValid = false
 
   try {
     writeFileSync(tmpPath, json, 'utf-8')
     if (current.status === 'loaded') {
       copyFileSync(filePath, backupPath)
+      backupIsKnownValid = true
     } else if (current.status === 'invalid') {
       preserveCorruptCopy(filePath)
     }
@@ -143,9 +176,11 @@ export function writeJsonFileAtomic<T>(
       renameSync(tmpPath, filePath)
     }
 
-    const activeBackup = readJsonCandidate(backupPath, options)
-    if (activeBackup.status !== 'loaded') {
-      copyFileSync(filePath, backupPath)
+    if (!backupIsKnownValid) {
+      const activeBackup = readJsonCandidate(backupPath, options)
+      if (activeBackup.status !== 'loaded') {
+        copyFileSync(filePath, backupPath)
+      }
     }
   } catch (error) {
     const recoveryBackup = readJsonCandidate(backupPath, options)

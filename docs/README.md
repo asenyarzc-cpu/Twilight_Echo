@@ -17,7 +17,10 @@
 
 ## 音频、设备与发布
 
+- [播放能力缺口与路线图](./playback-feature-gap-roadmap.md)
+- [发布能力状态](./release-capability-status.md)
 - [ASIO DSD 直通行业调研](./asio-dsd-passthrough-research.md)
+- [ASIO helper process 隔离 ADR](./asio-helper-process-adr.md)
 - [Windows 发布门禁](./windows-release-gate.md)
 - [Windows HiFi 真实设备检查](./windows-phase-6c-smoke-checklist.md)
 - [真实设备音频证据规则](./audio-smoke-evidence.md)
@@ -31,6 +34,8 @@
 - [主题插件开发](./theme-plugin-authoring.md)
 
 ## 本地库与播放功能
+
+- [播放能力分阶段 Agent 提示词包](./playback-capability-agent-prompt-pack.md)：可直接复制给 GPT-5.6 Sol / Terra / Luna 的单 AP、S0～S5 总控、复核与续作提示词。
 
 - [本地库元数据补全](./local-library-metadata-enrichment.md)
 - [本地库移除策略](./local-library-removal-policy.md)

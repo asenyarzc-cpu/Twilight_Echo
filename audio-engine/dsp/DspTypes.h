@@ -28,6 +28,12 @@ enum class DsdOutputMode {
   Native
 };
 
+enum class DsdRatePolicy {
+  Exact,
+  Downrate,
+  PcmFallback
+};
+
 /**
  * Optional compatibility route for DSD streams. Some DAC ASIO drivers never
  * accept DSD sample types (and some users only have WASAPI), which forces the
@@ -167,6 +173,7 @@ struct DspConfig {
   size_t fftResolution = 8192;
   bool gapless = true;
   DsdOutputMode dsdOutputMode = DsdOutputMode::Auto;
+  DsdRatePolicy dsdRatePolicy = DsdRatePolicy::PcmFallback;
   DsdRouteOverride dsdRoute;
   SacdProgramMode sacdProgramMode = SacdProgramMode::Auto;
 

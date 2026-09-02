@@ -1,7 +1,5 @@
 #include "Vst3Runtime.h"
 
-#include "../core/Utf8Path.h"
-
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
@@ -430,12 +428,12 @@ class Vst3Runtime::Impl {
 
     std::error_code fileError;
     const std::filesystem::path statePath = std::filesystem::u8path(config_.statePath);
-    const uintmax_t size = std::filesystem::file_size(utf8Path(statePath), fileError);
+    const uintmax_t size = std::filesystem::file_size(statePath, fileError);
     if (fileError || size == 0 || size > kMaxStateBytes) {
       return fail(info, "The managed VST3 state file is missing, empty, or exceeds 64 MiB");
     }
 
-    std::ifstream input(utf8Path(statePath), std::ios::binary);
+    std::ifstream input(statePath, std::ios::binary);
     if (!input) return fail(info, "Unable to open the managed VST3 state file");
     std::vector<uint8_t> bytes(static_cast<size_t>(size));
     input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));

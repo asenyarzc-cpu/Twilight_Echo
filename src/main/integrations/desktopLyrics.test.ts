@@ -18,6 +18,7 @@ test('desktop lyrics v3 isolates host and satellite IPC capabilities', async () 
   assert.match(preload, /desktopLyricsHostApi/)
   assert.match(preload, /desktopLyricsWindowApi/)
   assert.match(preload, /desktopLyrics:setInteractionActive/)
+  assert.match(preload, /desktopLyrics:setPausedHidden/)
   assert.match(preload, /desktopLyrics:hoverIntent/)
   assert.match(entry, /desktopLyrics: desktopLyricsHostApi/)
   assert.match(
@@ -60,14 +61,39 @@ test('desktop lyrics uses constrained dragging and locked hover unlock forwardin
   assert.match(main, /screen\.getDisplayMatching/)
   assert.match(
     main,
-    /const ignoreMouseEvents = settings\.locked && !desktopLyricsInteractionActive/
+    /const ignoreMouseEvents =\s*desktopLyricsPausedHidden \|\| \(settings\.locked && !desktopLyricsInteractionActive\)/
   )
   assert.match(main, /screen\.getCursorScreenPoint\(\)/)
   assert.match(main, /desktopLyrics:hoverIntent/)
   assert.match(main, /desktopLyrics:setInteractionActive/)
+  assert.match(main, /const lockChanged = 'locked' in patch/)
+  assert.match(
+    main,
+    /if \(lockChanged\) publishDesktopLyricsHoverIntent\(desktopLyricsPointerInside\)/
+  )
+  const hoverTracking = main.slice(
+    main.indexOf('function refreshDesktopLyricsHoverIntent'),
+    main.indexOf('export function syncDesktopLyricsSettings')
+  )
+  assert.doesNotMatch(hoverTracking, /desktopLyricsInteractionActive/)
   assert.match(app, /setPointerCapture/)
   assert.match(app, /api\.moveTo/)
   assert.match(app, /api\.moveEnd/)
+})
+
+test('pause auto-hide makes the transparent native window click-through', async () => {
+  const main = await source('./desktopLyrics.ts')
+  const preload = await source('../../preload/domains/desktopLyricsApi.ts')
+  const app = await source('../../renderer/src/desktop-lyrics/DesktopLyricsApp.vue')
+
+  assert.match(
+    main,
+    /desktopLyricsPausedHidden \|\| \(settings\.locked && !desktopLyricsInteractionActive\)/
+  )
+  assert.match(main, /ipcMain\.handle\('desktopLyrics:setPausedHidden'/)
+  assert.match(preload, /setPausedHidden: \(hidden: boolean\)/)
+  assert.match(app, /setPausedHidden\(true\)/)
+  assert.match(app, /setPausedHidden\(false\)/)
 })
 
 test('desktop lyrics resumes frozen and requests an authoritative snapshot', async () => {

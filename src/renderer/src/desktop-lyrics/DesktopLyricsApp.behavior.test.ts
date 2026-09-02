@@ -65,6 +65,9 @@ test('desktop lyrics has stable empty, loading, instrumental, and error states',
 test('desktop lyrics schedules line changes locally while karaoke fills run through WAAPI', () => {
   assert.match(slot, /element\.animate\(plan\.keyframes, plan\.timing\)/)
   assert.match(slot, /function syncKaraoke\(positionMs: number, playing: boolean, hard = false\)/)
+  assert.match(slot, /const endTime = animationEndTime\(animation\)/)
+  assert.match(slot, /animation\.playState !== 'finished'/)
+  assert.match(slot, /animation\.finish\(\)/)
   assert.doesNotMatch(slot, /function writeProgress/)
   assert.doesNotMatch(slot, /mode="out-in"/)
   assert.match(app, /if \(changed\) activeIndex\.value = nextIndex/)
@@ -90,6 +93,13 @@ test('desktop lyrics waits for a settled hover before showing the toolbar', () =
   assert.match(app, /function hideToolbar\(\): void/)
 })
 
+test('pause auto-hide synchronizes native window click-through state', () => {
+  assert.match(app, /function setPausedHidden\(hidden: boolean\): void/)
+  assert.match(app, /api\.setPausedHidden\(hidden\)/)
+  assert.match(app, /pauseTimer = setTimeout\([\s\S]*setPausedHidden\(true\)/)
+  assert.match(app, /function schedulePauseHide\(\): void \{[\s\S]*setPausedHidden\(false\)/)
+})
+
 test('locking clears hover UI and does not schedule the toolbar again', () => {
   assert.match(
     app,
@@ -103,7 +113,7 @@ test('locking clears hover UI and does not schedule the toolbar again', () => {
 })
 
 test('locked desktop lyrics show a central unlock affordance after hover or immediately on double click', () => {
-  assert.match(app, /const DESKTOP_LYRICS_LOCKED_HOVER_DELAY_MS = 2000/)
+  assert.match(app, /const DESKTOP_LYRICS_LOCKED_HOVER_DELAY_MS = 3000/)
   assert.match(app, /api\.onHoverIntent\(onHoverIntent\)/)
   assert.match(app, /setLockedInteractionActive\(true\)/)
   assert.match(app, /function onDoubleClick\(event: MouseEvent\): void/)
@@ -111,6 +121,21 @@ test('locked desktop lyrics show a central unlock affordance after hover or imme
   assert.match(app, /v-if="unlockAffordanceVisible"/)
   assert.match(app, /@click="unlock"/)
   assert.match(css, /\.dl-unlock-affordance \{[\s\S]*top: 50%;[\s\S]*left: 50%;/)
+
+  const hoverIntent = app.slice(
+    app.indexOf('function onHoverIntent'),
+    app.indexOf('function onPointerEnter')
+  )
+  const reveal = app.slice(
+    app.indexOf('function revealUnlockAffordance'),
+    app.indexOf('function scheduleUnlockAffordance')
+  )
+  assert.doesNotMatch(hoverIntent, /setLockedInteractionActive\(true\)/)
+  assert.match(reveal, /setLockedInteractionActive\(true\)/)
+  assert.match(
+    app,
+    /function onPointerLeave\(\): void \{[\s\S]*if \(settings\.value\.locked\) \{[\s\S]*clearLockedHover\(\)/
+  )
 })
 
 test('unlocking under the pointer restores the desktop lyrics toolbar hover state', () => {

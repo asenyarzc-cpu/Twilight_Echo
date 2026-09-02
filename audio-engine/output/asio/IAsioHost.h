@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../core/AudioTypes.h"
+#include "AsioQuirkTypes.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -26,7 +27,8 @@ enum class AsioHostEvent {
    * of them would trip the recovery rate limiter into its 10 s cooldown - a
    * CPU spike would take audio down for far longer than the spike itself.
    */
-  Xrun
+  Xrun,
+  HelperFailure
 };
 
 enum class AsioDsdPacking : uint8_t {
@@ -85,6 +87,10 @@ struct AsioOpenConfig {
   std::string deviceId;
   AudioFormat format;
   long bufferSizeFrames = 0;
+  std::optional<AsioSampleFormatMapping> sampleFormatMapping;
+  AsioNativeDsdControlOrder nativeDsdControlOrder = AsioNativeDsdControlOrder::Default;
+  long dsdMinimumBufferFrames = 0;
+  uint32_t dsdCadenceConfirmCallbacks = 2;
 };
 
 /**
@@ -163,9 +169,15 @@ class IAsioHost {
   // The buffer size the driver actually accepted; can differ from the open
   // result when createBuffers fell back to the driver's preferred size.
   virtual long activeBufferSize() const = 0;
+  virtual void commitOutputBuffer(long bufferIndex, size_t frameCount) {
+    (void)bufferIndex;
+    (void)frameCount;
+  }
+  virtual std::string lastCloseError() const { return {}; }
 };
 
 std::unique_ptr<IAsioHost> createRealAsioHost();
+std::unique_ptr<IAsioHost> createIsolatedAsioHost();
 
 std::vector<int> asioDefaultSampleRateProbeSet();
 

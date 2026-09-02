@@ -127,6 +127,11 @@ function scheduleKaraokeBuild(): void {
   void nextTick(buildKaraoke)
 }
 
+function animationEndTime(animation: Animation): number | null {
+  const endTime = animation.effect?.getComputedTiming().endTime
+  return typeof endTime === 'number' && Number.isFinite(endTime) ? endTime : null
+}
+
 function syncKaraoke(positionMs: number, playing: boolean, hard = false): void {
   latestPositionMs = positionMs
   latestPlaying = playing
@@ -139,10 +144,18 @@ function syncKaraoke(positionMs: number, playing: boolean, hard = false): void {
 
   const target = desktopLyricsKaraokeTime(positionMs, lineStartMs())
   for (const animation of karaokeAnimations) {
+    const endTime = animationEndTime(animation)
+    const boundedTarget = endTime == null ? target : Math.min(target, endTime)
     const current = Number(animation.currentTime ?? 0)
-    if (hard || Math.abs(target - current) > 48) animation.currentTime = target
-    if (playing) animation.play()
-    else animation.pause()
+    if (hard || Math.abs(boundedTarget - current) > 48) animation.currentTime = boundedTarget
+    if (playing) {
+      if (endTime != null && target >= endTime) {
+        if (animation.playState !== 'finished') {
+          animation.currentTime = endTime
+          animation.finish()
+        }
+      } else if (animation.playState !== 'finished') animation.play()
+    } else animation.pause()
   }
   syncFallback(positionMs)
 }

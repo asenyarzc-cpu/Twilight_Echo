@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'crypto'
-import type { Dirent } from 'fs'
+import { createReadStream, type Dirent } from 'fs'
 import { mkdir, readFile, readdir, stat, writeFile } from 'fs/promises'
 import { basename, dirname, extname, join, resolve } from 'path'
-import { parseFile } from 'music-metadata'
+import { parseStream, type IAudioMetadata } from 'music-metadata'
 import {
   type LocalLibraryFileIdentity,
   type LocalLibraryScanWorkerMessage,
@@ -55,8 +55,16 @@ if (!parentPort) {
 
 const servicePort = parentPort
 const activeScans = new Map<string, ScanControl>()
-const coverHandlesByDirectory = new Map<string, string | null>()
+const coverHandlesByDirectory = new Map<string, Promise<string | null>>()
 const MAX_COVER_BYTES = 20 * 1024 * 1024
+const SCAN_BATCH_SIZE = 256
+const IDENTITY_BATCH_SIZE = 1_024
+const PARSE_CONCURRENCY = 4
+const PARSE_TIMEOUT_MS = 30_000
+const COVER_LOOKUP_TIMEOUT_MS = 10_000
+const PROGRESS_INTERVAL_MS = 250
+const PROGRESS_FILE_INTERVAL = 256
+const MAX_COVER_DIRECTORY_CACHE_ENTRIES = 2_048
 
 servicePort.postMessage({ kind: 'ready' })
 servicePort.on('message', (message) => {
@@ -121,44 +129,129 @@ async function runScan(
     changes: request.changes,
     completeIdentitySnapshot: collected.completeIdentitySnapshot
   })
+  const streamResults = request.streamResults === true
   const parsedTracks: unknown[] = []
+  const parsedFilePaths: string[] = []
+  let pendingTracks: unknown[] = []
+  let pendingFilePaths: string[] = []
   let parsedFileCount = 0
-  const total = plan.parseFilePaths.length
+  const skipParsePaths = new Set((request.skipParsePaths ?? []).map(normalizePath))
+  const parseFilePaths = plan.parseFilePaths.filter(
+    (filePath) => !skipParsePaths.has(normalizePath(filePath))
+  )
+  const skippedFilePaths = plan.parseFilePaths.filter((filePath) =>
+    skipParsePaths.has(normalizePath(filePath))
+  )
+  const total = parseFilePaths.length
+  const report = createProgressReporter(requestId)
 
-  for (let index = 0; index < plan.parseFilePaths.length; index += 1) {
+  if (streamResults) {
+    for (let index = 0; index < collected.identities.length; index += IDENTITY_BATCH_SIZE) {
+      await waitUntilRunnable(control)
+      if (control.cancelled)
+        return cancelledResult(request.mode, collected.completeIdentitySnapshot)
+      servicePort.postMessage({
+        kind: 'identity-batch',
+        requestId,
+        batch: { identities: collected.identities.slice(index, index + IDENTITY_BATCH_SIZE) }
+      })
+    }
+  }
+
+  for (let index = 0; index < parseFilePaths.length; index += PARSE_CONCURRENCY) {
     await waitUntilRunnable(control)
     if (control.cancelled) return cancelledResult(request.mode, collected.completeIdentitySnapshot)
-    const filePath = plan.parseFilePaths[index]
-    const identity = collected.byPath.get(normalizePath(filePath))
-    if (identity) {
-      parsedTracks.push(...(await parseTrack(identity, request.coverCacheDir)))
-      parsedFileCount += 1
-    }
-    servicePort.postMessage({
-      kind: 'progress',
-      requestId,
-      progress: {
+
+    const paths = parseFilePaths.slice(index, index + PARSE_CONCURRENCY)
+    servicePort.postMessage({ kind: 'activity', requestId, activity: { filePaths: paths } })
+    report(
+      {
         phase: 'parsing',
-        current: index + 1,
+        current: index,
         total,
         parsedFileCount,
         skippedUnchanged: plan.skippedUnchanged
+      },
+      index === 0
+    )
+    const results = await Promise.all(
+      paths.map(async (filePath) => {
+        const identity = collected.byPath.get(normalizePath(filePath))
+        return {
+          filePath,
+          tracks: identity ? await parseTrack(identity, request.coverCacheDir) : []
+        }
+      })
+    )
+    if (control.cancelled) return cancelledResult(request.mode, collected.completeIdentitySnapshot)
+
+    for (const result of results) {
+      if (result.tracks.length > 0) parsedFileCount += 1
+      if (streamResults) {
+        pendingTracks.push(...result.tracks)
+        pendingFilePaths.push(result.filePath)
+        if (pendingFilePaths.length >= SCAN_BATCH_SIZE) {
+          servicePort.postMessage({
+            kind: 'batch',
+            requestId,
+            batch: { parsedTracks: pendingTracks, parsedFilePaths: pendingFilePaths }
+          })
+          pendingTracks = []
+          pendingFilePaths = []
+        }
+      } else {
+        parsedTracks.push(...result.tracks)
+        parsedFilePaths.push(result.filePath)
       }
+    }
+
+    const current = Math.min(index + paths.length, total)
+    report(
+      {
+        phase: 'parsing',
+        current,
+        total,
+        parsedFileCount,
+        skippedUnchanged: plan.skippedUnchanged
+      },
+      index === 0 || current === total
+    )
+    await yieldToEventLoop()
+  }
+
+  if (streamResults && pendingFilePaths.length > 0) {
+    servicePort.postMessage({
+      kind: 'batch',
+      requestId,
+      batch: { parsedTracks: pendingTracks, parsedFilePaths: pendingFilePaths }
     })
+  }
+  if (total === 0) {
+    report(
+      {
+        phase: 'parsing',
+        current: 0,
+        total,
+        parsedFileCount,
+        skippedUnchanged: plan.skippedUnchanged
+      },
+      true
+    )
   }
 
   return {
     mode: request.mode,
     completeIdentitySnapshot: collected.completeIdentitySnapshot,
-    identities: collected.identities,
-    parsedTracks,
-    parsedFilePaths: plan.parseFilePaths,
+    identities: streamResults ? [] : collected.identities,
+    parsedTracks: streamResults ? [] : parsedTracks,
+    parsedFilePaths: streamResults ? [] : parsedFilePaths,
     removedFilePaths: Array.from(
       new Set([...plan.removedFilePaths, ...collected.disappearedFilePaths])
     ),
     skippedUnchanged: plan.skippedUnchanged,
     parsedFileCount,
-    cancelled: false
+    cancelled: false,
+    ...(skippedFilePaths.length > 0 ? { skippedFilePaths } : {})
   }
 }
 
@@ -178,18 +271,18 @@ async function collectIdentities(
   const completeIdentitySnapshot =
     request.mode !== 'watch' || !request.changes?.length || hasReconcileChange
   let unreadableCount = 0
-  const report = (current: number): void => {
-    servicePort.postMessage({
-      kind: 'progress',
-      requestId,
-      progress: {
+  const report = createProgressReporter(requestId)
+  const reportEnumeration = (current: number, force = false): void => {
+    report(
+      {
         phase: 'enumerating',
         current,
         total: 0,
         parsedFileCount: 0,
         skippedUnchanged: 0
-      }
-    })
+      },
+      force
+    )
   }
 
   if (!completeIdentitySnapshot) {
@@ -200,7 +293,7 @@ async function collectIdentities(
       if (control.cancelled) break
       if (change.kind === 'remove' && extname(change.path).toLowerCase() !== '.cue') {
         current += 1
-        report(current)
+        reportEnumeration(current)
         continue
       }
       try {
@@ -230,7 +323,7 @@ async function collectIdentities(
         else unreadableCount += 1
       }
       current += 1
-      report(current)
+      reportEnumeration(current)
     }
     if (unreadableCount > 0) {
       throw new Error(`Local library watcher could not inspect ${unreadableCount} changed path(s)`)
@@ -244,11 +337,12 @@ async function collectIdentities(
   }
 
   const queue = Array.from(new Set(request.roots.map((root) => resolve(root))))
+  let queueIndex = 0
   let current = 0
-  while (queue.length > 0) {
+  while (queueIndex < queue.length) {
     await waitUntilRunnable(control)
     if (control.cancelled) break
-    const directory = queue.shift()!
+    const directory = queue[queueIndex++]!
     let entries: Dirent[]
     try {
       entries = await readdir(directory, { withFileTypes: true })
@@ -272,10 +366,10 @@ async function collectIdentities(
         }
       }
       current += 1
-      if (current % 32 === 0) report(current)
+      if (current % 32 === 0) reportEnumeration(current)
     }
   }
-  report(current)
+  reportEnumeration(current, true)
   if (unreadableCount > 0) {
     throw new Error(
       `Local library enumeration was incomplete (${unreadableCount} unreadable path(s))`
@@ -349,6 +443,76 @@ function isMissingPathError(error: unknown): boolean {
   )
 }
 
+type ScanProgressPayload = {
+  phase: 'enumerating' | 'parsing'
+  current: number
+  total: number
+  parsedFileCount: number
+  skippedUnchanged: number
+}
+
+function createProgressReporter(
+  requestId: string
+): (progress: ScanProgressPayload, force?: boolean) => void {
+  let lastPhase: ScanProgressPayload['phase'] | null = null
+  let lastCurrent = -1
+  let lastReportedAt = 0
+  return (progress, force = false) => {
+    const now = Date.now()
+    const samePhase = lastPhase === progress.phase
+    if (
+      !force &&
+      samePhase &&
+      progress.current - lastCurrent < PROGRESS_FILE_INTERVAL &&
+      now - lastReportedAt < PROGRESS_INTERVAL_MS
+    ) {
+      return
+    }
+    lastPhase = progress.phase
+    lastCurrent = progress.current
+    lastReportedAt = now
+    servicePort.postMessage({ kind: 'progress', requestId, progress })
+  }
+}
+
+async function yieldToEventLoop(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve))
+}
+
+async function parseAudioMetadata(filePath: string, fileSize: number): Promise<IAudioMetadata> {
+  const stream = createReadStream(filePath)
+  let timer: NodeJS.Timeout | undefined
+  const parsing = parseStream(stream, { path: filePath, size: fileSize }, { skipCovers: false })
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(`metadata parsing timed out after ${PARSE_TIMEOUT_MS}ms`)
+      stream.destroy(error)
+      reject(error)
+    }, PARSE_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([parsing, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+    stream.destroy()
+  }
+}
+
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+      timeoutMs
+    )
+  })
+  try {
+    return await Promise.race([operation, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 async function parseTrack(
   file: LocalLibraryFileIdentity,
   coverCacheDir: string
@@ -357,6 +521,7 @@ async function parseTrack(
   const fileName = basename(filePath)
   const dir = dirname(filePath)
   const fallback = getNameFromFile(filePath)
+  const folderCover = await findCoverInDir(dir, coverCacheDir)
   const baseTrack: Record<string, unknown> = {
     id: randomUUID(),
     title: fallback.title,
@@ -368,12 +533,12 @@ async function parseTrack(
     duration: 0,
     size: file.size,
     addedAt: Date.now(),
-    cover: await findCoverInDir(dir, coverCacheDir),
+    cover: folderCover,
     lyrics: null
   }
 
   try {
-    const metadata = await parseFile(filePath, { skipCovers: false })
+    const metadata = await parseAudioMetadata(filePath, file.size)
     const picture = metadata.common.picture?.[0]
     const embeddedCover = picture
       ? await cacheCoverFromBuffer(Buffer.from(picture.data), coverCacheDir)
@@ -432,20 +597,52 @@ async function parseTrack(
 
 async function findCoverInDir(dir: string, coverCacheDir: string): Promise<string | null> {
   const cached = coverHandlesByDirectory.get(dir)
-  if (cached !== undefined) return cached
-  for (const name of COVER_NAMES) {
+  if (cached) return await cached
+
+  const lookup = (async () => {
+    let entries: Dirent[]
     try {
-      const handle = await cacheCoverFromBuffer(await readFile(join(dir, name)), coverCacheDir)
-      if (handle) {
-        coverHandlesByDirectory.set(dir, handle)
-        return handle
-      }
+      entries = await readdir(dir, { withFileTypes: true })
     } catch {
-      // Try the next conventional folder cover name.
+      return null
     }
+    const names = new Set(entries.filter((entry) => entry.isFile()).map((entry) => entry.name))
+    for (const name of COVER_NAMES) {
+      if (!names.has(name)) continue
+      try {
+        const handle = await cacheCoverFromBuffer(await readFile(join(dir, name)), coverCacheDir)
+        if (handle) return handle
+      } catch {
+        // Try the next conventional folder cover name.
+      }
+    }
+    return null
+  })()
+  const pending = withTimeout(lookup, COVER_LOOKUP_TIMEOUT_MS, 'folder cover lookup').catch(
+    () => null
+  )
+  const cachedPending = pending.then(
+    (handle) => {
+      rememberCoverHandle(dir, handle)
+      return handle
+    },
+    () => {
+      rememberCoverHandle(dir, null)
+      return null
+    }
+  )
+  coverHandlesByDirectory.set(dir, cachedPending)
+  return await cachedPending
+}
+
+function rememberCoverHandle(dir: string, handle: string | null): void {
+  coverHandlesByDirectory.delete(dir)
+  coverHandlesByDirectory.set(dir, Promise.resolve(handle))
+  while (coverHandlesByDirectory.size > MAX_COVER_DIRECTORY_CACHE_ENTRIES) {
+    const oldest = coverHandlesByDirectory.keys().next().value
+    if (oldest === undefined) break
+    coverHandlesByDirectory.delete(oldest)
   }
-  coverHandlesByDirectory.set(dir, null)
-  return null
 }
 
 async function cacheCoverFromBuffer(data: Buffer, coverCacheDir: string): Promise<string | null> {

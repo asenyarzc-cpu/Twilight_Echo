@@ -6,8 +6,11 @@ const test = require('node:test')
 
 const {
   REQUIRED_NATIVE_BINARIES,
+  REQUIRED_RELEASE_NATIVE_BINARIES,
   assertBudget,
+  assertX64Pe,
   listNativeBinaries,
+  listReleaseNativeBinaries,
   listRuntimeDependencies,
   listShippedBinaries,
   parseArgs,
@@ -37,6 +40,20 @@ test('PE inspection finds stripped and retained debug metadata', () => {
       () => require('./verify-release-artifacts.cjs').assertStrippedPe(debug),
       /debug directory/
     )
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('native PE verification requires AMD64 binaries', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'twilight-pe-machine-'))
+  try {
+    const x64 = path.join(dir, 'x64.dll')
+    const x86 = path.join(dir, 'x86.dll')
+    fs.writeFileSync(x64, createMinimalPe())
+    fs.writeFileSync(x86, createMinimalPe({ machine: 0x14c }))
+    assert.doesNotThrow(() => assertX64Pe(x64))
+    assert.throws(() => assertX64Pe(x86), /not a Windows x64 PE binary/)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -82,6 +99,10 @@ test('release verification requires every imported runtime dependency beside the
       path.join(dir, 'twilight_audio_node.node'),
       createMinimalPe({ imports: ['twilight-audio-engine.dll', 'libstdc++-6.dll'] })
     )
+    fs.writeFileSync(
+      path.join(dir, 'twilight-asio-helper.exe'),
+      createMinimalPe({ imports: ['libstdc++-6.dll'] })
+    )
     const entries = listNativeBinaries(dir)
     assert.throws(
       () => listRuntimeDependencies(dir, entries),
@@ -109,7 +130,7 @@ test('release verification requires every imported runtime dependency beside the
   }
 })
 
-test('native binary verification requires the core runtime and verifies optional VST3 helpers when staged', () => {
+test('native binary verification keeps capability fixtures flexible but release output requires VST3', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'twilight-native-binaries-'))
   try {
     for (const name of REQUIRED_NATIVE_BINARIES) {
@@ -121,9 +142,17 @@ test('native binary verification requires the core runtime and verifies optional
         .sort(),
       [...REQUIRED_NATIVE_BINARIES].sort()
     )
+    assert.throws(() => listReleaseNativeBinaries(dir), /twilight-vst3-host\.exe/)
     fs.writeFileSync(path.join(dir, 'twilight-vst3-host.exe'), createMinimalPe())
+    assert.throws(() => listReleaseNativeBinaries(dir), /twilight-vst3-scanner\.exe/)
     fs.writeFileSync(path.join(dir, 'twilight-vst3-scanner.exe'), createMinimalPe())
     assert.equal(listNativeBinaries(dir).length, REQUIRED_NATIVE_BINARIES.length + 2)
+    assert.deepEqual(
+      listReleaseNativeBinaries(dir)
+        .map((filePath) => path.basename(filePath))
+        .sort(),
+      [...REQUIRED_RELEASE_NATIVE_BINARIES].sort()
+    )
     fs.rmSync(path.join(dir, 'twilight-audio-engine.dll'))
     assert.throws(() => listNativeBinaries(dir), /Missing required native binary/)
   } finally {

@@ -85,8 +85,11 @@ export type {
   NativeLoudnessAnalysisOptions,
   OutputConfig,
   OutputConfigApplyStatus,
+  OutputConversionInfo,
+  OutputConversionInfoSource,
   OutputDiagnostics,
   OutputInfo,
+  OutputProviderImplementation,
   PlayMode,
   PlaybackInfo,
   PlaybackOutputInfoMirror,
@@ -169,6 +172,9 @@ export class AudioEngineManager extends EventEmitter {
         getNativeOutputRouteSynced: () => this.nativeOutputRouteSynced,
         setNativeOutputRouteSynced: (value) => {
           this.nativeOutputRouteSynced = value
+        },
+        setNativePlaybackActive: (value) => {
+          this.nativePlaybackActive = value
         },
         callNativeMaybeAsync: (context, method, ...args) =>
           this.callNativeMaybeAsync(context, method, ...args),

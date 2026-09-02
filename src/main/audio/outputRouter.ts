@@ -19,6 +19,7 @@ import {
   DEFAULT_AUDIO_DEVICE_OPTION,
   createDefaultPlaybackInfo,
   deviceCompatibleWithOutput,
+  deviceOptionBelongsToAsio,
   getAudioOutputOptions,
   isDefaultAudioDeviceAlias,
   normalizeAudioDevice,
@@ -41,6 +42,7 @@ export interface OutputRouterHost {
   isDestroyed(): boolean
   getNativeOutputRouteSynced(): boolean
   setNativeOutputRouteSynced(value: boolean): void
+  setNativePlaybackActive(value: boolean): void
   callNativeMaybeAsync(
     context: string,
     method: keyof NativeAudioBinding,
@@ -142,6 +144,10 @@ export class OutputRouter {
 
   private set nativeOutputRouteSynced(value: boolean) {
     this.host.setNativeOutputRouteSynced(value)
+  }
+
+  private setNativePlaybackActive(value: boolean): void {
+    this.host.setNativePlaybackActive(value)
   }
 
   private callNativeMaybeAsync(
@@ -264,40 +270,16 @@ export class OutputRouter {
       return await this.getAudioOutputState()
     }
 
-    const previousExclusiveMode = this.exclusiveMode
-    this.exclusiveMode = enabled
-    this.invalidateAudioDeviceOptionsCache('exclusive-mode-changed')
-    this.nativeOutputRouteSynced = false
-    const backendSynced = await this.callNativeMaybeAsync(
-      '切换独占模式',
-      'SetOutputBackend',
-      this.getNativeBackendId()
-    )
-    if (!backendSynced) {
-      this.exclusiveMode = previousExclusiveMode
-      this.invalidateAudioDeviceOptionsCache('exclusive-mode-restore-after-failure')
-      throw nativeAudioError(
-        'audio.exclusive_switch_failed',
-        'exclusive mode switch failed',
-        this.lastNativeError
-      )
-    }
-    const configSynced = await this.callNativeMaybeAsync(
-      '切换输出配置',
-      'SetOutputConfig',
-      JSON.stringify(this.getEffectiveOutputConfig())
-    )
-    if (!configSynced) {
-      this.exclusiveMode = previousExclusiveMode
-      this.invalidateAudioDeviceOptionsCache('exclusive-mode-restore-after-failure')
-      throw nativeAudioError(
-        'audio.exclusive_config_failed',
-        'exclusive mode output config apply failed',
-        this.lastNativeError
-      )
-    }
-    this.nativeOutputRouteSynced = true
-    this.refreshOutputInfoFromNative(true)
+    await this.runOutputRouteTransaction({
+      context: 'exclusive-mode',
+      nextOutput: this.output,
+      nextDevice: this.device,
+      nextExclusiveMode: enabled,
+      nextConfig: this.outputConfig,
+      errorCode: 'audio.exclusive_switch_failed',
+      errorMessage: 'exclusive mode switch failed',
+      cacheReason: 'exclusive-mode-changed'
+    })
     await this.applyNativeDspGraphOrThrow('独占模式切换后解析 DSP 场景')
     return await this.getAudioOutputState()
   }
@@ -329,14 +311,16 @@ export class OutputRouter {
       return await this.getAudioOutputState()
     }
 
-    this.output = nextOutput
-    this.device = nextDevice
-    this.exclusiveMode = nextExclusiveMode
-    this.invalidateAudioDeviceOptionsCache('audio-output-changed')
-    this.nativeOutputRouteSynced = false
-    const routeRestore = await this.restoreAudioServiceOutputRoute('切换')
-    this.nativeOutputRouteSynced = routeRestore.synced
-    this.refreshOutputInfoFromNative(true)
+    await this.runOutputRouteTransaction({
+      context: 'audio-output',
+      nextOutput,
+      nextDevice,
+      nextExclusiveMode,
+      nextConfig: this.outputConfig,
+      errorCode: 'audio.output_switch_failed',
+      errorMessage: 'audio output switch failed',
+      cacheReason: 'audio-output-changed'
+    })
     await this.applyNativeDspGraphOrThrow('输出后端切换后解析 DSP 场景')
     return await this.getAudioOutputState()
   }
@@ -346,26 +330,16 @@ export class OutputRouter {
     if (this.nativeOutputRouteSynced && nextDevice === this.device)
       return await this.getAudioOutputState()
 
-    const previousDevice = this.device
-    this.device = nextDevice
-    this.invalidateAudioDeviceOptionsCache('audio-device-changed')
-    this.nativeOutputRouteSynced = false
-    const deviceSynced = await this.callNativeMaybeAsync(
-      '切换输出设备',
-      'SetOutputDevice',
-      this.device
-    )
-    if (!deviceSynced) {
-      this.device = previousDevice
-      this.invalidateAudioDeviceOptionsCache('audio-device-restore-after-failure')
-      throw nativeAudioError(
-        'audio.device_switch_failed',
-        'audio output device switch failed',
-        this.lastNativeError
-      )
-    }
-    this.nativeOutputRouteSynced = true
-    this.refreshOutputInfoFromNative(true)
+    await this.runOutputRouteTransaction({
+      context: 'audio-device',
+      nextOutput: this.output,
+      nextDevice,
+      nextExclusiveMode: this.exclusiveMode,
+      nextConfig: this.outputConfig,
+      errorCode: 'audio.device_switch_failed',
+      errorMessage: 'audio output device switch failed',
+      cacheReason: 'audio-device-changed'
+    })
     this.rememberFollowedDefaultDeviceFromOptions()
     await this.applyNativeDspGraphOrThrow('输出设备切换后解析 DSP 场景')
     return await this.getAudioOutputState()
@@ -470,49 +444,262 @@ export class OutputRouter {
   }
 
   private async applyOutputConfigDirect(config: Partial<OutputConfig>): Promise<boolean> {
-    const previousConfig = this.outputConfig
-    const nextConfig = normalizeOutputConfig({ ...previousConfig, ...config })
+    const nextConfig = normalizeOutputConfig({ ...this.outputConfig, ...config })
     if (outputConfigsEqual(nextConfig, this.outputConfig)) return false
 
-    const bufferSizeChanged = nextConfig.preferredBufferSize !== previousConfig.preferredBufferSize
-    const needsReopen = bufferSizeChanged && this.output === 'asio'
-    const effectiveNextConfig = this.effectiveOutputConfig(nextConfig)
-    this.nativeOutputRouteSynced = false
-    if (needsReopen) {
-      const reopened = await this.callNativeMaybeAsync(
-        '重开 ASIO 后端以应用 buffer size',
-        'SetOutputBackend',
-        this.getNativeBackendId()
-      )
-      if (!reopened) {
-        this.outputConfig = previousConfig
-        throw nativeAudioError(
-          'audio.output_reopen_failed',
-          'output config reopen failed',
-          this.lastNativeError
-        )
-      }
-    }
-    const configSynced = await this.callNativeMaybeAsync(
-      '设置输出配置',
-      'SetOutputConfig',
-      JSON.stringify(effectiveNextConfig)
-    )
-    if (!configSynced) {
-      this.outputConfig = previousConfig
-      throw nativeAudioError(
-        'audio.output_config_failed',
-        'output config apply failed',
-        this.lastNativeError
-      )
-    }
-    this.outputConfig = nextConfig
-    this.nativeOutputRouteSynced = true
-    this.playbackInfo.outputInfo.channelRoutingMode = effectiveNextConfig.routingMode
-    this.playbackInfo.channelRoutingMode = effectiveNextConfig.routingMode
-    this.refreshOutputInfoFromNative(needsReopen)
+    await this.runOutputRouteTransaction({
+      context: 'output-config',
+      nextOutput: this.output,
+      nextDevice: this.device,
+      nextExclusiveMode: this.exclusiveMode,
+      nextConfig,
+      errorCode: 'audio.output_config_failed',
+      errorMessage: 'output config apply failed',
+      cacheReason: 'output-config-changed'
+    })
+    this.playbackInfo.outputInfo.channelRoutingMode = this.getEffectiveOutputConfig().routingMode
+    this.playbackInfo.channelRoutingMode = this.getEffectiveOutputConfig().routingMode
     await this.applyNativeDspGraphOrThrow('输出配置切换后解析 DSP 场景')
     return true
+  }
+
+  private async runOutputRouteTransaction(options: {
+    context: string
+    nextOutput: AudioOutputId
+    nextDevice: string
+    nextExclusiveMode: boolean
+    nextConfig: OutputConfig
+    errorCode: string
+    errorMessage: string
+    cacheReason: string
+  }): Promise<void> {
+    const snapshot = {
+      output: this.output,
+      device: this.device,
+      exclusiveMode: this.exclusiveMode,
+      outputConfig: { ...this.outputConfig },
+      effectiveConfig: { ...this.getEffectiveOutputConfig() },
+      nativeBackendId: this.getNativeBackendId(),
+      playbackInfo: { ...this.playbackInfo, outputInfo: { ...this.playbackInfo.outputInfo } },
+      volume: this.playbackInfo.volume,
+      serviceGeneration: this.outputConfigServiceGeneration
+    }
+    const targetNativeBackendId = this.getNativeBackendIdFor(
+      options.nextOutput,
+      options.nextExclusiveMode
+    )
+    const targetEffectiveConfig = this.effectiveOutputConfig(options.nextConfig)
+
+    this.emitOutputRouteTransaction(options.context, 'prepare')
+    this.assertOutputTargetAvailable(options.nextOutput, options.nextDevice)
+    this.emitOutputRouteTransaction(options.context, 'validate')
+
+    const muteSynced = await this.callNativeMaybeAsync('输出切换事务静音', 'SetVolume', 0)
+    if (!muteSynced) {
+      throw nativeAudioError(options.errorCode, options.errorMessage, this.lastNativeError)
+    }
+    this.emitOutputRouteTransaction(options.context, 'mute')
+
+    try {
+      this.nativeOutputRouteSynced = false
+      this.emitOutputRouteTransaction(options.context, 'open-target')
+      await this.applyOutputRouteStepsOrThrow(
+        options.context,
+        targetNativeBackendId,
+        options.nextDevice,
+        targetEffectiveConfig
+      )
+      if (snapshot.serviceGeneration !== this.outputConfigServiceGeneration) {
+        throw audioEngineError(
+          'audio.service_restarted_during_topology',
+          'audio service restarted while updating the output topology'
+        )
+      }
+      this.emitOutputRouteTransaction(options.context, 'verify-target-ready')
+      const targetInfo = await this.readNativePlaybackInfoAsync()
+      if (snapshot.playbackInfo.state !== 'stopped') {
+        const targetBackend = targetInfo?.outputInfo.actualBackend || targetInfo?.actualBackend
+        const actualDevice =
+          targetInfo?.outputInfo.actualDeviceName || targetInfo?.outputDevice || ''
+        const targetOption = this.getFreshAudioDeviceOptions().find(
+          (entry) => entry.id === options.nextDevice
+        )
+        const acceptedDeviceNames = new Set(
+          [options.nextDevice, targetOption?.label, targetOption?.name].filter(
+            (value): value is string => Boolean(value)
+          )
+        )
+        if (
+          !targetInfo ||
+          targetBackend !== targetNativeBackendId ||
+          (!isDefaultAudioDeviceAlias(options.nextDevice) &&
+            !acceptedDeviceNames.has(actualDevice)) ||
+          targetInfo.state !== snapshot.playbackInfo.state ||
+          targetInfo.source !== snapshot.playbackInfo.source
+        ) {
+          throw audioEngineError(
+            'audio.output_target_not_ready',
+            'target output route did not preserve the active playback session',
+            {
+              expectedBackend: targetNativeBackendId,
+              actualBackend: targetBackend || '',
+              expectedDevice: options.nextDevice,
+              actualDevice,
+              expectedState: snapshot.playbackInfo.state,
+              actualState: targetInfo?.state || 'unavailable'
+            }
+          )
+        }
+      }
+      if (snapshot.serviceGeneration !== this.outputConfigServiceGeneration) {
+        throw audioEngineError(
+          'audio.service_restarted_during_ack',
+          'audio service restarted while reading the output topology ACK'
+        )
+      }
+
+      this.output = options.nextOutput
+      this.device = options.nextDevice
+      this.exclusiveMode = options.nextExclusiveMode
+      this.outputConfig = options.nextConfig
+      this.invalidateAudioDeviceOptionsCache(options.cacheReason)
+      this.nativeOutputRouteSynced = true
+      this.emitOutputRouteTransaction(options.context, 'commit')
+      this.refreshOutputInfoFromNative(true)
+      const unmuteSynced = await this.callNativeMaybeAsync(
+        '输出切换事务恢复音量',
+        'SetVolume',
+        snapshot.volume
+      )
+      if (!unmuteSynced) {
+        throw nativeAudioError(options.errorCode, options.errorMessage, this.lastNativeError)
+      }
+      this.playbackInfo.volume = snapshot.volume
+      this.emitOutputRouteTransaction(options.context, 'unmute')
+      this.publishPlaybackInfo()
+    } catch (error) {
+      const rollback = await this.rollbackOutputRouteTransaction(options.context, snapshot)
+      if (!rollback) {
+        this.nativeOutputRouteSynced = false
+        await this.callNativeMaybeAsync('输出切换事务安全停止', 'Stop')
+        this.setNativePlaybackActive(false)
+        this.playbackInfo = {
+          ...snapshot.playbackInfo,
+          state: 'stopped',
+          nativePlaybackActive: false
+        }
+        this.publishPlaybackInfo()
+        this.emitOutputRouteTransaction(options.context, 'safe-stop')
+      }
+      const detail = error instanceof Error ? error.message : String(error)
+      throw nativeAudioError(options.errorCode, options.errorMessage, detail)
+    }
+  }
+
+  private async applyOutputRouteStepsOrThrow(
+    context: string,
+    backend: string,
+    device: string,
+    config: OutputConfig
+  ): Promise<void> {
+    const backendSynced = await this.callNativeMaybeAsync(
+      `${context} 输出切换事务应用 backend`,
+      'SetOutputBackend',
+      backend
+    )
+    if (!backendSynced) throw new Error(this.lastNativeError || 'SetOutputBackend failed')
+    const deviceSynced = await this.callNativeMaybeAsync(
+      `${context} 输出切换事务应用 device`,
+      'SetOutputDevice',
+      device
+    )
+    if (!deviceSynced) throw new Error(this.lastNativeError || 'SetOutputDevice failed')
+    const configSynced = await this.callNativeMaybeAsync(
+      `${context} 输出切换事务应用 config`,
+      'SetOutputConfig',
+      JSON.stringify(config)
+    )
+    if (!configSynced) throw new Error(this.lastNativeError || 'SetOutputConfig failed')
+  }
+
+  private async rollbackOutputRouteTransaction(
+    context: string,
+    snapshot: {
+      output: AudioOutputId
+      device: string
+      exclusiveMode: boolean
+      outputConfig: OutputConfig
+      effectiveConfig: OutputConfig
+      nativeBackendId: string
+      playbackInfo: PlaybackInfo
+      volume: number
+      serviceGeneration: number
+    }
+  ): Promise<boolean> {
+    this.emitOutputRouteTransaction(context, 'rollback')
+    try {
+      await this.applyOutputRouteStepsOrThrow(
+        `${context} rollback`,
+        snapshot.nativeBackendId,
+        snapshot.device,
+        snapshot.effectiveConfig
+      )
+      if (snapshot.serviceGeneration !== this.outputConfigServiceGeneration) return false
+      const unmuteSynced = await this.callNativeMaybeAsync(
+        '输出切换事务回滚恢复音量',
+        'SetVolume',
+        snapshot.volume
+      )
+      if (!unmuteSynced) return false
+      this.output = snapshot.output
+      this.device = snapshot.device
+      this.exclusiveMode = snapshot.exclusiveMode
+      this.outputConfig = snapshot.outputConfig
+      this.playbackInfo = snapshot.playbackInfo
+      this.nativeOutputRouteSynced = true
+      this.invalidateAudioDeviceOptionsCache('output-route-rollback')
+      this.publishPlaybackInfo()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private assertOutputTargetAvailable(output: AudioOutputId, device: string): void {
+    if (isDefaultAudioDeviceAlias(device)) return
+    const options = this.getFreshAudioDeviceOptions()
+    const option = options.find((entry) => entry.id === device)
+    const available =
+      output === 'asio'
+        ? Boolean(option && deviceOptionBelongsToAsio(option))
+        : deviceCompatibleWithOutput(output, device, options)
+    if (available) return
+    throw audioEngineError(
+      'audio.output_target_unavailable',
+      'target output device is unavailable',
+      {
+        output,
+        device
+      }
+    )
+  }
+
+  private getFreshAudioDeviceOptions(): AudioDeviceOption[] {
+    const injectedDevices = this.deviceOptionsProvider?.()
+    if (Array.isArray(injectedDevices) && injectedDevices.length > 0) {
+      return normalizeAudioDeviceOptions(injectedDevices)
+    }
+    return this.readNativeAudioDeviceOptions()
+  }
+
+  private getNativeBackendIdFor(output: AudioOutputId, exclusiveMode: boolean): string {
+    if (output === 'wasapi' && exclusiveMode) return 'wasapi-exclusive'
+    if (output === 'coreaudio' && exclusiveMode) return 'coreaudio-exclusive'
+    return output
+  }
+
+  private emitOutputRouteTransaction(context: string, phase: string): void {
+    this.emit('output-route-transaction', { context, phase, at: new Date().toISOString() })
   }
 
   async getAudioOutput(): Promise<AudioOutputId> {

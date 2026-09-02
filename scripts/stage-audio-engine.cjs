@@ -1,6 +1,9 @@
 const { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } = require('node:fs')
 const { dirname, join, resolve } = require('node:path')
 const { collectImportClosure } = require('./pe-imports.cjs')
+const { createAudioCapabilityManifest } = require('./generate-audio-capability-manifest.cjs')
+const { createReleaseCapabilityStatus } = require('./verify-release-capability-consistency.cjs')
+const { readStagedAudioRuntimeObservation } = require('./staged-audio-runtime-observation.cjs')
 
 const root = join(__dirname, '..')
 const outputDir = join(root, 'resources', 'audio-engine')
@@ -40,7 +43,11 @@ const nativeLibrary =
     : process.platform === 'darwin'
       ? 'libtwilight-audio-engine.dylib'
       : 'libtwilight-audio-engine.so'
-const runtimeFiles = [nativeLibrary, 'twilight_audio_node.node']
+const runtimeFiles = [
+  nativeLibrary,
+  'twilight_audio_node.node',
+  ...(process.platform === 'win32' ? ['twilight-asio-helper.exe'] : [])
+]
 
 function findBuildDir() {
   return buildDirs.find((dir) => runtimeFiles.every((file) => existsSync(join(dir, file))))
@@ -141,3 +148,26 @@ function stageWindowsRuntimeDependencies() {
 }
 
 if (process.platform === 'win32') stageWindowsRuntimeDependencies()
+
+const capabilityManifestPath = join(outputDir, 'audio-capabilities.json')
+const binaryCapabilityManifest = createAudioCapabilityManifest({ artifactDir: outputDir })
+const runtimeStatus = readStagedAudioRuntimeObservation({
+  artifactDir: outputDir,
+  manifest: binaryCapabilityManifest
+})
+const capabilityManifest = createAudioCapabilityManifest({ artifactDir: outputDir, runtimeStatus })
+require('node:fs').writeFileSync(
+  capabilityManifestPath,
+  `${JSON.stringify(capabilityManifest, null, 2)}\n`
+)
+console.log(`已暂存原生音频能力清单：${capabilityManifestPath}`)
+const releaseCapabilityStatusPath = join(outputDir, 'release-capability-status.json')
+require('node:fs').writeFileSync(
+  releaseCapabilityStatusPath,
+  `${JSON.stringify(
+    createReleaseCapabilityStatus({ nativeDir: outputDir, manifest: capabilityManifest }),
+    null,
+    2
+  )}\n`
+)
+console.log(`已暂存发布能力状态：${releaseCapabilityStatusPath}`)

@@ -5,11 +5,13 @@ const {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync
 } = require('node:fs')
 const { tmpdir } = require('node:os')
 const { join } = require('node:path')
+const crypto = require('node:crypto')
 const { spawnSync } = require('node:child_process')
 const test = require('node:test')
 
@@ -26,6 +28,7 @@ const {
   validateMingwToolchain
 } = require('./audio-engine-toolchain.cjs')
 const {
+  cmakeCachePath,
   prepareAsioMsvcNinjaToolchain,
   resolveAsioMsvcBuildDirectory
 } = require('./asio-msvc-toolchain.cjs')
@@ -36,6 +39,10 @@ const { createMinimalPe } = require('./pe-fixture.cjs')
 const STAGING_SCRIPT_FILES = Object.freeze([
   'stage-audio-engine.cjs',
   'audio-engine-toolchain.cjs',
+  'generate-audio-capability-manifest.cjs',
+  'staged-audio-runtime-observation.cjs',
+  'verify-release-capability-consistency.cjs',
+  'verify-release-artifacts.cjs',
   'pe-imports.cjs'
 ])
 
@@ -43,6 +50,9 @@ function copyStagingScripts(fixtureScripts) {
   mkdirSync(fixtureScripts, { recursive: true })
   for (const file of STAGING_SCRIPT_FILES) {
     copyFileSync(join(__dirname, file), join(fixtureScripts, file))
+  }
+  for (const file of STAGING_SCRIPT_FILES) {
+    assert.ok(existsSync(join(fixtureScripts, file)), `staging fixture omitted ${file}`)
   }
 }
 
@@ -52,6 +62,14 @@ function nativeLibraryName() {
     : process.platform === 'darwin'
       ? 'libtwilight-audio-engine.dylib'
       : 'libtwilight-audio-engine.so'
+}
+
+function runtimeFileNames() {
+  return [
+    nativeLibraryName(),
+    'twilight_audio_node.node',
+    ...(process.platform === 'win32' ? ['twilight-asio-helper.exe'] : [])
+  ]
 }
 
 /** Staging parses import tables on Windows, so fixtures must be real PE files. */
@@ -142,6 +160,13 @@ test('prepares a deterministic MSVC and Ninja environment for the ASIO ABI fixtu
   assert.match(result.environment.LIB, /Windows Kits\\10\\Lib\\10\.0\.26100\.0\\um\\x64/)
   assert.match(result.cmakePath, /CMake\\bin\\cmake\.exe$/)
   assert.match(result.ninjaPath, /CMake\\Ninja\\ninja\.exe$/)
+})
+
+test('normalizes MSVC cache paths before passing them to CMake', () => {
+  assert.equal(
+    cmakeCachePath('C:\\Program Files (x86)\\Windows Kits\\10\\bin\\rc.exe'),
+    'C:/Program Files (x86)/Windows Kits/10/bin/rc.exe'
+  )
 })
 
 test('uses the MSVC Ninja build directory by default for ASIO ABI fixtures', () => {
@@ -749,7 +774,7 @@ test('MinGW staging rejects an explicitly selected build directory instead of us
   const nativeLibrary = nativeLibraryName()
   for (const fallbackBuildDir of fallbackBuildDirs) {
     mkdirSync(fallbackBuildDir, { recursive: true })
-    for (const file of [nativeLibrary, 'twilight_audio_node.node']) {
+    for (const file of runtimeFileNames()) {
       writeRuntimeFixture(fallbackBuildDir, file, { trailer: 'fallback artifact' })
     }
   }
@@ -781,7 +806,7 @@ for (const fallbackName of ['windows-msvc', 'default']) {
     const nativeLibrary = nativeLibraryName()
     const fallbackBuildDir = join(fixtureRoot, 'audio-engine', 'build', fallbackName)
     mkdirSync(fallbackBuildDir, { recursive: true })
-    for (const file of [nativeLibrary, 'twilight_audio_node.node']) {
+    for (const file of runtimeFileNames()) {
       writeRuntimeFixture(fallbackBuildDir, file, { trailer: `artifact from ${fallbackName}` })
     }
 
@@ -799,6 +824,13 @@ for (const fallbackName of ['windows-msvc', 'default']) {
       ).includes(`artifact from ${fallbackName}`),
       `staged ${nativeLibrary} did not come from the ${fallbackName} build directory`
     )
+    const manifest = JSON.parse(
+      readFileSync(
+        join(fixtureRoot, 'resources', 'audio-engine', 'audio-capabilities.json'),
+        'utf8'
+      )
+    )
+    assert.equal(manifest.artifactDirectory, '.')
   })
 }
 
@@ -818,6 +850,9 @@ function stageRuntimeDependencyFixture(fixtureRoot, { provideRuntimeDll }) {
   writeRuntimeFixture(buildDir, nativeLibrary, { imports: ['libstdc++-6.dll', 'KERNEL32.dll'] })
   writeRuntimeFixture(buildDir, 'twilight_audio_node.node', {
     imports: [nativeLibrary, 'libstdc++-6.dll']
+  })
+  writeRuntimeFixture(buildDir, 'twilight-asio-helper.exe', {
+    imports: ['libstdc++-6.dll']
   })
 
   const toolchainBin = join(fixtureRoot, 'toolchain', 'bin')
@@ -940,7 +975,7 @@ test('MinGW CTest validation requires every native test registration, including 
     ...cmakeLists.matchAll(/add_test\(\s*NAME\s+(twilight_[a-z0-9_]+)/g)
   ].map((match) => match[1])
 
-  assert.equal(MINGW_EXPECTED_CTESTS.length, 28)
+  assert.equal(MINGW_EXPECTED_CTESTS.length, 33)
   assert.ok(MINGW_EXPECTED_CTESTS.includes('twilight_audio_performance_gate'))
   assert.deepEqual([...MINGW_EXPECTED_CTESTS].sort(), registeredTests.sort())
 })
@@ -1027,3 +1062,84 @@ test('caps MinGW compile parallelism by available memory rather than core count'
     7
   )
 })
+
+test('miniaudio vendoring stays pinned, private, and single-TU', () => {
+  const root = join(__dirname, '..')
+  const miniaudioRoot = join(root, 'audio-engine', 'third_party', 'miniaudio')
+  const expectedHashes = new Map([
+    ['miniaudio.h', 'ac7af4de748b7e26b777f37e01cee313a308a7296a3eb080e2906b320cc55c89'],
+    ['miniaudio.c', 'ab1984bb9804ffd7b0303813595d0b345a8a86c34da1daffc353a14b34102a65'],
+    ['LICENSE', '542a5d4b0947d7d9083f75c454409edbac531527dd41cccaa918ce9d33a1d05c']
+  ])
+
+  for (const [file, expectedHash] of expectedHashes) {
+    const data = readFileSync(join(miniaudioRoot, file))
+    assert.equal(crypto.createHash('sha256').update(data).digest('hex'), expectedHash)
+  }
+
+  const header = readFileSync(join(miniaudioRoot, 'miniaudio.h'), 'utf8')
+  assert.match(header, /miniaudio - v0\.11\.25/)
+  assert.match(header, /#define MA_VERSION_MAJOR\s+0/)
+  assert.match(header, /#define MA_VERSION_MINOR\s+11/)
+  assert.match(header, /#define MA_VERSION_REVISION\s+25/)
+
+  const license = readFileSync(join(miniaudioRoot, 'LICENSE'), 'utf8')
+  const provenance = readFileSync(join(miniaudioRoot, 'PROVENANCE.md'), 'utf8')
+  assert.match(license, /ALTERNATIVE 2 - MIT No Attribution/)
+  assert.match(provenance, /MIT No Attribution \(MIT-0\)/)
+  assert.match(provenance, /9634bedb5b5a2ca38c1ee7108a9358a4e233f14d/)
+
+  const cmake = readFileSync(join(root, 'audio-engine', 'CMakeLists.txt'), 'utf8')
+  const stagingScript = readFileSync(join(root, 'scripts', 'stage-audio-engine.cjs'), 'utf8')
+  assert.match(cmake, /option\(TAE_ENABLE_MINIAUDIO .* OFF\)/)
+  assert.match(
+    cmake,
+    /target_sources\(twilight_audio_engine PRIVATE output\/miniaudio\/MiniaudioImplementation\.cpp\)/
+  )
+  assert.match(
+    cmake,
+    /target_include_directories\(twilight_audio_engine PRIVATE \$\{CMAKE_CURRENT_SOURCE_DIR\}\/third_party\/miniaudio\)/
+  )
+  assert.doesNotMatch(cmake, /PUBLIC[^\n]*third_party\/miniaudio/)
+  assert.doesNotMatch(
+    stagingScript,
+    /third_party[\\/]+miniaudio|MiniaudioImplementation|miniaudio\.(?:h|c)/
+  )
+
+  const implementation = readFileSync(
+    join(root, 'audio-engine', 'output', 'miniaudio', 'MiniaudioImplementation.cpp'),
+    'utf8'
+  )
+  assert.match(implementation, /#define MA_ENABLE_ONLY_SPECIFIC_BACKENDS/)
+  assert.match(implementation, /#define MA_ENABLE_WASAPI/)
+  assert.match(implementation, /#define MA_NO_DECODING/)
+  assert.match(implementation, /#define MA_NO_ENCODING/)
+  assert.match(implementation, /#define MA_NO_RESOURCE_MANAGER/)
+  assert.match(implementation, /#define MA_NO_NODE_GRAPH/)
+  assert.match(implementation, /#define MA_NO_ENGINE/)
+  assert.match(implementation, /#define MA_NO_GENERATION/)
+  assert.match(implementation, /#include "\.\.\/\.\.\/third_party\/miniaudio\/miniaudio\.c"/)
+
+  const implementationIncludes = listRepositoryFiles(join(root, 'audio-engine'))
+    .filter((file) => !file.replaceAll('\\', '/').includes('/third_party/miniaudio/'))
+    .filter((file) => /\.(?:c|cc|cpp|cxx|h|hpp)$/.test(file))
+    .filter((file) => readFileSync(file, 'utf8').includes('third_party/miniaudio/miniaudio.c'))
+  assert.deepEqual(
+    implementationIncludes.map((file) => file.replaceAll('\\', '/')),
+    [
+      join(root, 'audio-engine', 'output', 'miniaudio', 'MiniaudioImplementation.cpp').replaceAll(
+        '\\',
+        '/'
+      )
+    ]
+  )
+})
+
+function listRepositoryFiles(directory) {
+  const entries = readdirSync(directory, { withFileTypes: true })
+  return entries.flatMap((entry) => {
+    const entryPath = join(directory, entry.name)
+    if (entry.isDirectory()) return listRepositoryFiles(entryPath)
+    return [entryPath]
+  })
+}

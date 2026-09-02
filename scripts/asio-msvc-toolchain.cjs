@@ -48,6 +48,10 @@ function normalizeVersion(value) {
     .replace(/[\\/]+$/, '')
 }
 
+function cmakeCachePath(value) {
+  return String(value ?? '').replaceAll('\\', '/')
+}
+
 function prepareAsioMsvcNinjaToolchain({
   env = process.env,
   exists = existsSync,
@@ -187,6 +191,7 @@ function validateAsioMsvcToolchain({
 }
 
 module.exports = {
+  cmakeCachePath,
   prepareAsioMsvcNinjaToolchain,
   resolveAsioMsvcBuildDirectory,
   resolveAsioMsvcEnvironment,

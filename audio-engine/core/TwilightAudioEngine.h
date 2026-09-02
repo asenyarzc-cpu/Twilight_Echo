@@ -176,6 +176,7 @@ class TwilightAudioEngine {
   DspConfig dspConfig_;
   std::string nativeDspPluginChainJson_ = "{\"plugins\":[]}";
   OutputConfig outputConfig_;
+  bool outputRoutePending_ = false;
   std::unique_ptr<AudioPipeline> pipeline_;
   TAE_EventCallback eventCallback_ = nullptr;
   void* eventUserData_ = nullptr;

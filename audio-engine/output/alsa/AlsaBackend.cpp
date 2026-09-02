@@ -914,6 +914,7 @@ OutputInfo AlsaBackend::outputInfo() const {
     info.perfectReason.clear();
     info.capabilityReason.clear();
   }
+  synchronizeOutputConversionInfo(info);
   return info;
 }
 
