@@ -39,6 +39,7 @@ const { createMinimalPe } = require('./pe-fixture.cjs')
 const STAGING_SCRIPT_FILES = Object.freeze([
   'stage-audio-engine.cjs',
   'audio-engine-toolchain.cjs',
+  'macos-audio-runtime.cjs',
   'generate-audio-capability-manifest.cjs',
   'staged-audio-runtime-observation.cjs',
   'verify-release-capability-consistency.cjs',
@@ -74,6 +75,26 @@ function runtimeFileNames() {
 
 /** Staging parses import tables on Windows, so fixtures must be real PE files. */
 function writeRuntimeFixture(directory, file, options = {}) {
+  if (process.platform === 'darwin') {
+    const marker = JSON.stringify(options.trailer ?? `fixture ${file}`)
+    const source = file.endsWith('.node')
+      ? `const char *twilight_test_node_marker = ${marker}; int twilight_test_node_fixture(void) { return 0; }\n`
+      : `const char *twilight_test_library_marker = ${marker}; int twilight_test_library_fixture(void) { return 0; }\n`
+    const result = spawnSync(
+      'clang',
+      [
+        '-x',
+        'c',
+        '-',
+        file.endsWith('.node') ? '-bundle' : '-dynamiclib',
+        '-o',
+        join(directory, file)
+      ],
+      { input: source, encoding: 'utf8' }
+    )
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    return
+  }
   writeFileSync(join(directory, file), createMinimalPe(options))
 }
 

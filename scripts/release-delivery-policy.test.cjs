@@ -21,6 +21,16 @@ test('release configuration is intentionally unsigned and does not advertise a p
   assert.equal(fs.existsSync(path.join(root, 'electron-builder.release-win.yml')), false)
 })
 
+test('macOS hardened runtime permits bundled native code under local signatures', () => {
+  const builder = read('electron-builder.yml')
+  const entitlements = read('build/entitlements.mac.plist')
+  assert.match(builder, /^mac:\s*\n\s+entitlementsInherit: build\/entitlements\.mac\.plist$/m)
+  assert.match(
+    entitlements,
+    /<key>com\.apple\.security\.cs\.disable-library-validation<\/key>\s*<true\/>/
+  )
+})
+
 test('Windows packaging strips copied native binaries while unsigned releases stay fail-closed', () => {
   const afterPack = read('scripts/after-pack-windows.cjs')
   const packageBuild = read('scripts/build-app-package.cjs')

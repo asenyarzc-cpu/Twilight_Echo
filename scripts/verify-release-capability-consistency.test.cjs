@@ -103,6 +103,20 @@ test('controlled capability statuses retain staged-build and real-device dimensi
   }
 })
 
+test('macOS core artifacts can produce capability status without Windows-only binaries', () => {
+  const directory = fixtureDirectory()
+  try {
+    fs.writeFileSync(path.join(directory, 'libtwilight-audio-engine.dylib'), 'mac engine')
+    fs.writeFileSync(path.join(directory, 'twilight_audio_node.node'), 'mac node addon')
+    const manifest = createAudioCapabilityManifest({ artifactDir: directory })
+    const status = createReleaseCapabilityStatus({ nativeDir: directory, manifest })
+    assert.equal(status.capabilities.ASIO.status, 'unverified')
+    assert.equal(status.capabilities.VST3.status, 'not-built')
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 test('ASIO-disabled runtime evidence reports not-built instead of inferring support from the core DLL', () => {
   const directory = fixtureDirectory()
   try {

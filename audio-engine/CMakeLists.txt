@@ -246,6 +246,11 @@ if(TAE_ALSA_AVAILABLE)
 endif()
 
 if(TAE_BUILD_NAPI)
+  if(APPLE)
+    set(TAE_NAPI_RPATH "@loader_path")
+  else()
+    set(TAE_NAPI_RPATH "$ORIGIN")
+  endif()
   add_library(twilight_audio_node MODULE napi/twilight_audio_node.cpp)
   if(WIN32)
     target_sources(twilight_audio_node PRIVATE napi/node_api_dynamic_win32.cpp)
@@ -256,8 +261,8 @@ if(TAE_BUILD_NAPI)
   set_target_properties(twilight_audio_node PROPERTIES
     PREFIX ""
     SUFFIX ".node"
-    BUILD_RPATH "$ORIGIN"
-    INSTALL_RPATH "$ORIGIN"
+    BUILD_RPATH "${TAE_NAPI_RPATH}"
+    INSTALL_RPATH "${TAE_NAPI_RPATH}"
   )
   if(APPLE)
     target_link_options(twilight_audio_node PRIVATE "-undefined" "dynamic_lookup")

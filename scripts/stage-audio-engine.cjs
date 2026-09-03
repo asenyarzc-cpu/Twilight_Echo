@@ -1,9 +1,18 @@
-const { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } = require('node:fs')
+const {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync
+} = require('node:fs')
 const { dirname, join, resolve } = require('node:path')
 const { collectImportClosure } = require('./pe-imports.cjs')
 const { createAudioCapabilityManifest } = require('./generate-audio-capability-manifest.cjs')
 const { createReleaseCapabilityStatus } = require('./verify-release-capability-consistency.cjs')
 const { readStagedAudioRuntimeObservation } = require('./staged-audio-runtime-observation.cjs')
+const { bundleMacOSRuntimeDependencies } = require('./macos-audio-runtime.cjs')
 
 const root = join(__dirname, '..')
 const outputDir = join(root, 'resources', 'audio-engine')
@@ -70,6 +79,12 @@ if (!buildDir) {
 
 mkdirSync(outputDir, { recursive: true })
 
+if (process.platform === 'darwin') {
+  for (const name of readdirSync(outputDir)) {
+    if (name.endsWith('.dylib')) rmSync(join(outputDir, name), { force: true })
+  }
+}
+
 function stageFile(source, file) {
   const target = join(outputDir, file)
   try {
@@ -88,6 +103,17 @@ function stageFile(source, file) {
 
 for (const file of runtimeFiles) {
   stageFile(join(buildDir, file), file)
+}
+
+if (process.platform === 'darwin') {
+  const bundled = bundleMacOSRuntimeDependencies(
+    runtimeFiles.map((file) => join(outputDir, file)),
+    outputDir
+  )
+  console.log(
+    `已暂存 macOS 音频动态依赖：${bundled.copiedDependencies} 个；` +
+      `已验证 ${bundled.verification.binaries} 个 Mach-O 文件`
+  )
 }
 
 /**

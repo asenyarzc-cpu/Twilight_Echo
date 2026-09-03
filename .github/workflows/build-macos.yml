@@ -75,8 +75,11 @@ jobs:
 
       - name: Verify staged native engine in the packaged app
         run: |
-          find dist -path '*/TwilightEcho.app/Contents/Resources/audio-engine/libtwilight-audio-engine.dylib' -type f -print -quit | grep -q .
-          find dist -path '*/TwilightEcho.app/Contents/Resources/audio-engine/twilight_audio_node.node' -type f -print -quit | grep -q .
+          runtime_dir="$(find dist -path '*/TwilightEcho.app/Contents/Resources/audio-engine' -type d -print -quit)"
+          test -n "$runtime_dir"
+          test -f "$runtime_dir/libtwilight-audio-engine.dylib"
+          test -f "$runtime_dir/twilight_audio_node.node"
+          node scripts/macos-audio-runtime.cjs --runtime-dir "$runtime_dir"
 
       - name: Upload macOS packages
         uses: actions/upload-artifact@v4
