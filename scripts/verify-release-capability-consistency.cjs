@@ -77,6 +77,23 @@ function allImportsInspectable(manifest) {
   return manifest.nativeArtifacts.every((artifact) => artifact.importInspection?.status === 'ok')
 }
 
+function listCapabilityNativeBinaries(nativeDir) {
+  if (fs.existsSync(path.join(nativeDir, 'twilight-audio-engine.dll'))) {
+    return listNativeBinaries(nativeDir)
+  }
+  const engines = ['libtwilight-audio-engine.dylib', 'libtwilight-audio-engine.so'].filter((name) =>
+    fs.existsSync(path.join(nativeDir, name))
+  )
+  assert.equal(
+    engines.length,
+    1,
+    `Expected exactly one macOS/Linux native audio engine in ${nativeDir}`
+  )
+  const addon = path.join(nativeDir, 'twilight_audio_node.node')
+  assert.ok(fs.existsSync(addon), `Missing required native binary: ${addon}`)
+  return [path.join(nativeDir, engines[0]), addon]
+}
+
 function observationCapability(observation, name, key) {
   const value = observation?.capabilities?.[name]
   return value && typeof value === 'object' && typeof value[key] === 'boolean' ? value[key] : null
@@ -123,7 +140,7 @@ function capabilityStatus(status, buildStatus, runtimeStatus, deviceVerification
 }
 
 function createReleaseCapabilityStatus({ nativeDir, manifest }) {
-  listNativeBinaries(nativeDir)
+  listCapabilityNativeBinaries(nativeDir)
   const importsInspectable = allImportsInspectable(manifest)
   const vst3HelpersPresent = assertVst3HelperPair(nativeDir)
   const observation = assertPermittedRuntimeObservation(manifest)
@@ -395,8 +412,10 @@ function verifyReleaseCapabilityConsistency(options) {
   assert.ok(fs.existsSync(nativeDir), `Staged native directory does not exist: ${nativeDir}`)
   assert.ok(fs.existsSync(manifestPath), `Missing audio capability manifest: ${manifestPath}`)
   const manifest = assertManifestMatchesArtifacts(nativeDir, manifestPath)
-  const nativeBinaries = listNativeBinaries(nativeDir)
-  const runtimeDependencies = listRuntimeDependencies(nativeDir, nativeBinaries)
+  const nativeBinaries = listCapabilityNativeBinaries(nativeDir)
+  const runtimeDependencies = nativeBinaries.some((file) => file.endsWith('.dll'))
+    ? listRuntimeDependencies(nativeDir, nativeBinaries)
+    : []
   const status = createReleaseCapabilityStatus({ nativeDir, manifest })
   const productRoot = path.resolve(options.productRoot || path.join(__dirname, '..'))
   assertControlledProductClaims(productRoot)
@@ -463,5 +482,6 @@ module.exports = {
   declarationFields,
   parseArgs,
   parseDeclaration,
+  listCapabilityNativeBinaries,
   verifyReleaseCapabilityConsistency
 }

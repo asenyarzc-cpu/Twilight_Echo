@@ -70,7 +70,7 @@
     "verify:install-policy": "node scripts/verify-install-policy.cjs",
     "verify:ncm-patch": "node scripts/verify-ncm-patch.cjs",
     "verify:asio-sdk-free": "node scripts/verify-asio-sdk-free.cjs",
-    "test:release-artifacts": "node --test scripts/verify-install-policy.test.cjs scripts/release-artifact-strip.test.cjs scripts/verify-release-artifacts.test.cjs scripts/verify-release-capability-consistency.test.cjs scripts/staged-audio-runtime-observation.test.cjs scripts/release-delivery-policy.test.cjs scripts/verify-packaged-dependency-closure.test.cjs scripts/verify-windows-app-branding.test.cjs",
+    "test:release-artifacts": "node --test scripts/verify-install-policy.test.cjs scripts/release-artifact-strip.test.cjs scripts/verify-release-artifacts.test.cjs scripts/verify-release-capability-consistency.test.cjs scripts/staged-audio-runtime-observation.test.cjs scripts/release-delivery-policy.test.cjs scripts/verify-packaged-dependency-closure.test.cjs scripts/verify-windows-app-branding.test.cjs scripts/macos-audio-runtime.test.cjs",
     "verify:release-artifacts": "node scripts/verify-release-artifacts.cjs",
     "verify:packaged-dependencies": "node scripts/verify-packaged-dependency-closure.cjs dist/win-unpacked/resources/app.asar",
     "verify:renderer-budgets": "node scripts/verify-renderer-budgets.cjs --renderer-dir out/renderer",
