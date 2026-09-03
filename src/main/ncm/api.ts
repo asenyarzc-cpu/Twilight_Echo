@@ -13,12 +13,16 @@ import {
 } from '../security/ipcValidation.ts'
 import { assertTrustedIpcSender } from '../security/electronSecurity.ts'
 import { setupNcmCloudTransferIpc } from './cloudTransfer.ts'
+import { getListeningPort, waitForListeningPort } from './serverBinding.ts'
 import { Agent } from 'undici'
 
-export const NCM_API_PORT = 3100
 export const NCM_API_HOST = '127.0.0.1'
 export const NCM_OFFICIAL_LOGIN_TIMEOUT_MS = 180000
 export const NCM_API_REQUEST_TIMEOUT_MS = 25000
+// The upstream server treats numeric 0 as absent (`options.port || 3000`). A string keeps the
+// request for an OS-assigned port while still being converted to number 0 inside serveNcmApi.
+const NCM_API_EPHEMERAL_PORT = '0' as unknown as number
+const NCM_API_ORIGIN = `http://${NCM_API_HOST}`
 const NCM_KEEP_ALIVE_AGENT = new Agent({
   connections: 8,
   keepAliveTimeout: 60_000,
@@ -73,8 +77,11 @@ export async function requestNcmApi(
   if (!normalizedPath) {
     return { code: -1, message: 'Invalid NetEase API path' }
   }
+  let port: number
   try {
     await ensureNcmServer()
+    if (!runtime.ncmServer) throw new Error('NetEase API server did not start')
+    port = getListeningPort(runtime.ncmServer)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('网易云音乐服务启动失败：', redactSensitiveText(message))
@@ -84,7 +91,7 @@ export async function requestNcmApi(
   const timestamp = shouldTimestampNcmApiPath(normalizedPath)
     ? `${separator}timestamp=${Date.now()}`
     : ''
-  const url = `http://${NCM_API_HOST}:${NCM_API_PORT}${normalizedPath}${timestamp}`
+  const url = `http://${NCM_API_HOST}:${port}${normalizedPath}${timestamp}`
   const headers: Record<string, string> = {}
   const normalizedCookie = normalizeNcmCookie(cookie)
   if (normalizedCookie) {
@@ -109,7 +116,13 @@ export async function requestNcmApi(
       headers,
       dispatcher: NCM_KEEP_ALIVE_AGENT
     } as RequestInit)
-    return await res.json()
+    const responseText = await res.text()
+    try {
+      return JSON.parse(responseText) as unknown
+    } catch {
+      const contentType = res.headers.get('content-type') || 'unknown content type'
+      throw new Error(`NetEase API returned invalid JSON (HTTP ${res.status}, ${contentType})`)
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(
@@ -223,9 +236,11 @@ export async function openNcmOfficialLogin(): Promise<string> {
 
 export function setupNcmIpc(): void {
   setupNcmCloudTransferIpc()
-  ipcMain.handle('ncm:getPort', (event) => {
+  ipcMain.handle('ncm:getPort', async (event) => {
     assertTrustedIpcSender(event, 'NCM IPC')
-    return NCM_API_PORT
+    await ensureNcmServer()
+    if (!runtime.ncmServer) throw new Error('NetEase API server did not start')
+    return getListeningPort(runtime.ncmServer)
   })
 
   ipcMain.handle('ncm:getCachedSong', async (_event, songId: number) => {
@@ -261,8 +276,8 @@ function normalizeNcmApiPath(path: unknown): string | null {
   if (!normalized.startsWith('/') || normalized.startsWith('//') || normalized.includes('\\'))
     return null
   try {
-    const parsed = new URL(`http://${NCM_API_HOST}:${NCM_API_PORT}${normalized}`)
-    if (parsed.origin !== `http://${NCM_API_HOST}:${NCM_API_PORT}`) return null
+    const parsed = new URL(normalized, NCM_API_ORIGIN)
+    if (parsed.origin !== NCM_API_ORIGIN) return null
     return normalized
   } catch {
     return null
@@ -311,10 +326,12 @@ async function startNcmServer(): Promise<void> {
   }
   const { serveNcmApi } = await import('@neteasecloudmusicapienhanced/api/server.js')
   const ncmApp = await serveNcmApi({
-    port: NCM_API_PORT,
+    port: NCM_API_EPHEMERAL_PORT,
     host: NCM_API_HOST,
     checkVersion: false
   })
+  if (!ncmApp.server) throw new Error('NetEase API server did not return a listener')
+  const port = await waitForListeningPort(ncmApp.server)
   if (runtime.forceQuit) {
     ncmApp.server.close()
     throw new Error('NetEase API server startup was cancelled')
@@ -323,5 +340,5 @@ async function startNcmServer(): Promise<void> {
   ncmApp.server.once('close', () => {
     if (runtime.ncmServer === ncmApp.server) runtime.ncmServer = null
   })
-  console.log(`网易云音乐服务已启动：http://${NCM_API_HOST}:${NCM_API_PORT}`)
+  console.log(`网易云音乐服务已启动：http://${NCM_API_HOST}:${port}`)
 }
