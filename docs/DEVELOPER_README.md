@@ -84,6 +84,8 @@ Renderer -> preload API -> main IPC -> audioEngineManager
 
 DSD / passthrough 路径会绕过不安全的 DSP。WASAPI 与 CoreAudio 没有平台级 native DSD 通道，DSD 通过 DoP 或 PCM fallback；ALSA `hw:` 可支持 native DSD。macOS 和 Linux 音频后端仍未完成发布级验证。
 
+DSP Rack 保存前通过 `utils/dspSceneDraft.ts` 将响应式场景深拷贝为可跨 IPC 克隆的数据，包含 VST3 参数、预设引用和场景规则。“应用”先保存当前编辑，再按选中的场景 ID 应用，保存失败时保留草稿且不应用旧参数；DSD 转 PCM 仍需用户确认。场景副本与 A 快照隔离嵌套参数和 VST3 状态引用。
+
 ## 本地库与搜索数据流
 
 本地曲库加载时先把已保存曲目放入 renderer，使界面尽快可用；`libraryScanService` 随后用快速索引做启动增量核对，provider 元数据补全也在后台进行。后台结果按 track id/path 合并，避免覆盖用户在加载期间新增、删除或排除的曲目。完整扫描的大规模提交只返回有界增量；renderer 收到 reload 标记后重新加载已原子提交的曲库文档。主进程加载路径不得遍历解析全库 metadata、转换 base64 封面或逐项修复封面；这些工作只允许在显式后台重扫中执行。

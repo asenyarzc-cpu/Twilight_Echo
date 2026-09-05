@@ -17,11 +17,11 @@ import DspGraphCanvas from './dsp-rack/DspGraphCanvas.vue'
 import DspNodeEditor from './dsp-rack/DspNodeEditor.vue'
 import DspScenePane from './dsp-rack/DspScenePane.vue'
 import {
-  cloneNodeParams,
   nodeCatalog,
   normalizeNodeEditorParams,
   singletonNodeTypes
 } from '@renderer/utils/dspNodeParams'
+import { cloneDspScene as cloneScene, submitDspSceneDraft } from '@renderer/utils/dspSceneDraft'
 
 const state = ref<DspSceneState | null>(null)
 const status = ref<DspGraphStatus | null>(null)
@@ -79,20 +79,6 @@ const graphApplyLabel = computed(() => {
 })
 const soxrFallbackActive = computed(() => status.value?.outputStage?.resamplerFallback === true)
 let diagnosticsPoll: number | null = null
-
-function cloneScene(scene: DspScene, id = scene.id, name = scene.name): DspScene {
-  return {
-    ...scene,
-    id,
-    name,
-    rules: { ...scene.rules },
-    graph: {
-      ...scene.graph,
-      outputStage: { ...scene.graph.outputStage },
-      nodes: scene.graph.nodes.map((node) => ({ ...node, params: cloneNodeParams(node.params) }))
-    }
-  }
-}
 
 function selectScene(id: string): void {
   selectedSceneId.value = id
@@ -198,7 +184,8 @@ async function saveScenes(): Promise<void> {
   busy.value = true
   try {
     state.value.scenes.forEach((scene) => scene.graph.nodes.forEach(normalizeNodeEditorParams))
-    state.value = await window.api.audioEngine.setDspScenes(
+    state.value = await submitDspSceneDraft(
+      window.api.audioEngine,
       state.value.scenes,
       state.value.pinnedSceneId
     )
@@ -215,15 +202,22 @@ async function saveScenes(): Promise<void> {
 }
 
 async function applySelectedScene(): Promise<void> {
-  if (!selectedScene.value) return
+  if (!selectedScene.value || !state.value) return
+  const sceneId = selectedScene.value.id
   busy.value = true
   try {
-    let next = await window.api.audioEngine.applyDspScene(selectedScene.value.id)
+    state.value.scenes.forEach((scene) => scene.graph.nodes.forEach(normalizeNodeEditorParams))
+    let next = await submitDspSceneDraft(
+      window.api.audioEngine,
+      state.value.scenes,
+      state.value.pinnedSceneId,
+      sceneId
+    )
     if (next.requiresPcmFallback && !next.dsdPcmFallbackApplied) {
       const confirmed = window.confirm(
         '此场景需要 DSP 处理。切换到 PCM 并应用会停止 Native DSD/DoP 直通，是否继续？'
       )
-      if (confirmed) next = await window.api.audioEngine.applyDspScene(selectedScene.value.id, true)
+      if (confirmed) next = await window.api.audioEngine.applyDspScene(sceneId, true)
     }
     state.value = next
     message.value =
