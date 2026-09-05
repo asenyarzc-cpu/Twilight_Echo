@@ -281,6 +281,8 @@ function compactPlaybackInfo(info) {
     dsdMode: output.dsdMode || info.dsdMode,
     dsdRate: output.dsdRate || info.dsdRate,
     actualBackend: output.actualBackend || info.actualBackend,
+    providerImplementation: output.providerImplementation || 'legacy-native',
+    actualDeviceId: output.actualDeviceId || '',
     actualOutputFormat: output.actualOutputFormat || info.actualOutputFormat,
     actualSampleRate: output.actualSampleRate || info.actualSampleRate,
     actualBitDepth: output.actualBitDepth || info.actualBitDepth,
@@ -291,8 +293,20 @@ function compactPlaybackInfo(info) {
     pcmPassthrough: output.pcmPassthrough,
     perfectReasonCode: output.perfectReasonCode || info.perfectReasonCode,
     perfectReason: output.perfectReason || info.perfectReason,
+    callbackFormat: {
+      sampleFormat: output.outputSampleFormat || 'unknown',
+      sampleRate: output.outputSampleRate || 0,
+      bitDepth: output.outputBitDepth || 0,
+      channels: output.outputChannels || 0
+    },
+    conversionInfo: output.conversionInfo || {},
+    bufferSizeFrames: output.bufferSizeFrames || info.bufferSizeFrames || 0,
+    latencyFrames: output.latencyFrames || info.latencyFrames || 0,
+    latencyMs: output.latencyMs || info.latencyMs || 0,
+    periodSizeFrames: output.periodSizeFrames || 0,
     latencyInfo: output.latencyInfo,
-    diagnostics: output.diagnostics || {}
+    diagnostics: output.diagnostics || {},
+    renderPerformance: output.renderPerformance || info.renderPerformance || {}
   }
 }
 
@@ -316,8 +330,11 @@ async function runPlaybackProbe(audio, fixture, options, device) {
   const errors = []
   let info = null
   let lastError = null
+  let openDurationMs = 0
+  let closeDurationMs = 0
   safeStop(audio)
   try {
+    const openStartedAt = process.hrtime.bigint()
     audio.SetVolume(1)
     audio.SetReplayGainMode('off', 0, 0, true)
     audio.SetEqBands(JSON.stringify({ enabled: false, bands: [] }))
@@ -335,6 +352,7 @@ async function runPlaybackProbe(audio, fixture, options, device) {
       JSON.stringify({ preferredBufferSize: options.buffer, routingMode: 'auto' })
     )
     audio.Play(fixture.source, 0)
+    openDurationMs = Number(process.hrtime.bigint() - openStartedAt) / 1e6
     await sleep(options.durationMs)
     info = compactPlaybackInfo(parseJson(audio.GetPlaybackInfo(), 'GetPlaybackInfo'))
 
@@ -356,7 +374,9 @@ async function runPlaybackProbe(audio, fixture, options, device) {
       lastError = parseJson(audio.GetLastError(), 'GetLastError')
     } catch (_) {}
   } finally {
+    const closeStartedAt = process.hrtime.bigint()
     safeStop(audio)
+    closeDurationMs = Number(process.hrtime.bigint() - closeStartedAt) / 1e6
   }
   return {
     ok: errors.length === 0,
@@ -366,6 +386,7 @@ async function runPlaybackProbe(audio, fixture, options, device) {
     device,
     info,
     lastError,
+    timing: { openDurationMs, closeDurationMs },
     errors
   }
 }

@@ -85,6 +85,7 @@ struct WasapiSharedBackend::Impl {
   OutputInfo::Diagnostics diagnostics;
   DopRuntimeFacts dopRuntimeFacts;
   std::string deviceName = "系统默认";
+  std::string deviceId;
   mutable std::mutex infoMutex;
 
 #if defined(_WIN32) && defined(TAE_ENABLE_WASAPI)
@@ -149,7 +150,18 @@ struct WasapiSharedBackend::Impl {
     return true;
   }
 
+  bool loadDeviceId() {
+    if (!device) return false;
+    LPWSTR rawId = nullptr;
+    const HRESULT hr = device->GetId(&rawId);
+    if (FAILED(hr)) return false;
+    deviceId = wideToUtf8(rawId);
+    CoTaskMemFree(rawId);
+    return !deviceId.empty();
+  }
+
   void resetOutputInfo() {
+    deviceId.clear();
     OutputInfo::Diagnostics lifetime = diagnostics;
     diagnostics = {};
     diagnostics.lifetimeUnderrunCount = lifetime.lifetimeUnderrunCount;
@@ -173,6 +185,7 @@ struct WasapiSharedBackend::Impl {
     outputInfo.devicePathKind = "default";
     outputInfo.deviceName = deviceName;
     outputInfo.actualDeviceName = deviceName;
+    outputInfo.actualDeviceId = deviceId;
     outputInfo.diagnostics = diagnostics;
   }
 
@@ -450,6 +463,7 @@ bool WasapiSharedBackend::open(const std::string& deviceId, const AudioFormat& r
     return failAfterCom();
   }
   impl_->loadDeviceName();
+  impl_->loadDeviceId();
 
   auto activateAudioClient = [&]() {
     impl_->audioClient.Reset();
@@ -463,6 +477,7 @@ bool WasapiSharedBackend::open(const std::string& deviceId, const AudioFormat& r
       return failAfterCom();
     }
     impl_->loadDeviceName();
+    impl_->loadDeviceId();
     hr = activateAudioClient();
   }
   if (!impl_->succeeded(hr, error, "无法激活输出设备音频客户端", "backend_open_failure")) {
@@ -533,11 +548,13 @@ bool WasapiSharedBackend::open(const std::string& deviceId, const AudioFormat& r
   impl_->outputInfo.capabilityReason = impl_->outputInfo.perfectReason;
   impl_->outputInfo.outputSampleRate = impl_->outputFormat.sampleRate;
   impl_->outputInfo.outputBitDepth = impl_->outputFormat.bitDepth;
+  impl_->outputInfo.outputChannels = impl_->outputFormat.channelCount;
   impl_->outputInfo.backend = "wasapi";
   impl_->outputInfo.actualBackend = "wasapi";
   impl_->outputInfo.devicePathKind = "default";
   impl_->outputInfo.deviceName = impl_->deviceName;
   impl_->outputInfo.actualDeviceName = impl_->deviceName;
+  impl_->outputInfo.actualDeviceId = impl_->deviceId;
   impl_->outputInfo.actualOutputFormat = sampleFormatToString(impl_->outputFormat.sampleFormat);
   impl_->outputInfo.actualSampleRate = impl_->outputFormat.sampleRate;
   impl_->outputInfo.actualBitDepth = impl_->outputFormat.bitDepth;

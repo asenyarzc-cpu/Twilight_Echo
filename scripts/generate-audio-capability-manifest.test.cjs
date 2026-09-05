@@ -29,6 +29,16 @@ test('missing staged native artifacts report no compiled playback capabilities',
       detected: [],
       importInspectionComplete: true
     })
+    assert.deepEqual(manifest.capabilities.pcmOutputProvider, {
+      publicBackend: 'wasapi',
+      pathKind: 'shared-default-pcm',
+      buildAvailability: { legacy: 'unverified', miniaudio: 'not-built' },
+      defaultProvider: 'legacy',
+      activeProvider: null,
+      runtimeObservation: 'unverified',
+      deviceVerification: 'unverified',
+      rollbackProvider: 'legacy'
+    })
     assert.deepEqual(manifest.capabilities.miniaudio, {
       compiled: false,
       version: null,
@@ -81,6 +91,16 @@ test('native artifact facts inspect every staged native binary for GPU imports',
       detected: ['opencl'],
       importInspectionComplete: true
     })
+    assert.deepEqual(manifest.capabilities.pcmOutputProvider, {
+      publicBackend: 'wasapi',
+      pathKind: 'shared-default-pcm',
+      buildAvailability: { legacy: 'available', miniaudio: 'available' },
+      defaultProvider: 'legacy',
+      activeProvider: null,
+      runtimeObservation: 'unverified',
+      deviceVerification: 'unverified',
+      rollbackProvider: 'legacy'
+    })
     assert.deepEqual(manifest.capabilities.miniaudio, {
       compiled: true,
       version: '0.11.25',
@@ -94,6 +114,35 @@ test('native artifact facts inspect every staged native binary for GPU imports',
     assert.equal(helper?.importInspection.status, 'ok')
     assert.deepEqual(helper?.imports, ['libvst3-runtime.dll'])
     assert.match(helper?.sha256 || '', /^[a-f0-9]{64}$/)
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('provider manifest keeps build, default, active, runtime, and device facts separate', () => {
+  const directory = fixtureDirectory()
+  try {
+    fs.writeFileSync(
+      path.join(directory, 'twilight-audio-engine.dll'),
+      createMinimalPe({ trailer: 'twilight-miniaudio-provider:miniaudio-0.11.25' })
+    )
+    const manifest = createAudioCapabilityManifest({
+      artifactDir: directory,
+      runtimeStatus: {
+        activeProvider: 'miniaudio',
+        observation: {
+          schemaVersion: 1,
+          source: 'audio-engine-runtime-observation',
+          artifactSha256: {}
+        },
+        capabilities: {}
+      }
+    })
+    assert.equal(manifest.capabilities.pcmOutputProvider.defaultProvider, 'legacy')
+    assert.equal(manifest.capabilities.pcmOutputProvider.activeProvider, 'miniaudio')
+    assert.equal(manifest.capabilities.pcmOutputProvider.buildAvailability.miniaudio, 'available')
+    assert.equal(manifest.capabilities.pcmOutputProvider.runtimeObservation, 'available')
+    assert.equal(manifest.capabilities.pcmOutputProvider.deviceVerification, 'unverified')
   } finally {
     fs.rmSync(directory, { recursive: true, force: true })
   }

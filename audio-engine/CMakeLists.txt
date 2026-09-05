@@ -10,6 +10,18 @@ option(TAE_ENABLE_COREAUDIO "Enable the macOS CoreAudio backend" ON)
 option(TAE_ENABLE_ALSA "Enable the Linux ALSA backend" ON)
 option(TAE_ENABLE_MINIAUDIO "Enable the miniaudio Shared/default PCM provider PoC" OFF)
 
+set(TAE_DEFAULT_PCM_PROVIDER "legacy" CACHE STRING
+  "Default Windows Shared/default PCM provider when TWILIGHT_AUDIO_PCM_PROVIDER is unset")
+set_property(CACHE TAE_DEFAULT_PCM_PROVIDER PROPERTY STRINGS legacy miniaudio)
+if(NOT TAE_DEFAULT_PCM_PROVIDER STREQUAL "legacy" AND NOT TAE_DEFAULT_PCM_PROVIDER STREQUAL "miniaudio")
+  message(FATAL_ERROR "TAE_DEFAULT_PCM_PROVIDER must be legacy or miniaudio")
+endif()
+if(TAE_DEFAULT_PCM_PROVIDER STREQUAL "miniaudio")
+  set(TAE_DEFAULT_PCM_PROVIDER_MINIAUDIO 1)
+else()
+  set(TAE_DEFAULT_PCM_PROVIDER_MINIAUDIO 0)
+endif()
+
 set(TAE_NODE_INCLUDE_DIR "" CACHE PATH "Path to Node-API headers")
 
 set(CMAKE_CXX_STANDARD 20)
@@ -67,6 +79,7 @@ set(TAE_ENGINE_SOURCES
   decoder/FFmpegDecoder.cpp
   decoder/SacdIsoDemuxer.cpp
   decoder/ScarletbookToc.cpp
+  devices/DeviceCatalog.cpp
   devices/DeviceManager.cpp
   dsp/ChannelRouter.cpp
   dsp/ConvolverProcessor.cpp
@@ -97,7 +110,12 @@ target_include_directories(twilight_audio_engine
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_compile_definitions(twilight_audio_engine PRIVATE TAE_BUILDING_LIBRARY=1)
+target_compile_definitions(
+  twilight_audio_engine
+  PRIVATE
+    TAE_BUILDING_LIBRARY=1
+    TAE_DEFAULT_PCM_PROVIDER_MINIAUDIO=${TAE_DEFAULT_PCM_PROVIDER_MINIAUDIO}
+)
 target_link_libraries(twilight_audio_engine PRIVATE ${CMAKE_DL_LIBS})
 if(UNIX AND NOT APPLE)
   target_link_options(twilight_audio_engine PRIVATE "-Wl,-Bsymbolic")
@@ -288,6 +306,7 @@ else()
 endif()
 message(STATUS "  FFmpeg: ${FFMPEG_FOUND}")
 message(STATUS "  libebur128: ${TAE_EBUR128_AVAILABLE}")
+message(STATUS "  Default Shared PCM provider: ${TAE_DEFAULT_PCM_PROVIDER}")
 if(TAE_MINIAUDIO_AVAILABLE)
   message(STATUS "  miniaudio: built (version: 0.11.25, backend: WASAPI)")
 else()
@@ -486,10 +505,35 @@ if(TAE_BUILD_TESTS)
   target_include_directories(twilight_queue_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   add_test(NAME twilight_queue_unit COMMAND twilight_queue_tests)
 
-  add_executable(twilight_backend_factory_tests tests/backend_factory_tests.cpp)
+  add_executable(twilight_backend_factory_tests
+    tests/backend_factory_tests.cpp
+    output/OutputBackendFactory.test.cpp
+    output/OutputBackendFactory.cpp
+  )
   target_include_directories(twilight_backend_factory_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_definitions(
+    twilight_backend_factory_tests
+    PRIVATE TAE_TEST_MINIAUDIO_AVAILABLE=$<BOOL:${TAE_MINIAUDIO_AVAILABLE}>
+    TAE_DEFAULT_PCM_PROVIDER_MINIAUDIO=${TAE_DEFAULT_PCM_PROVIDER_MINIAUDIO}
+  )
   target_link_libraries(twilight_backend_factory_tests PRIVATE twilight_audio_engine)
   add_test(NAME twilight_backend_factory_unit COMMAND twilight_backend_factory_tests)
+  add_test(
+    NAME twilight_pcm_provider_miniaudio_unit
+    COMMAND twilight_backend_factory_tests --provider-miniaudio
+  )
+  add_test(
+    NAME twilight_pcm_provider_invalid_unit
+    COMMAND twilight_backend_factory_tests --provider-invalid
+  )
+  add_test(
+    NAME twilight_pcm_provider_special_unit
+    COMMAND twilight_backend_factory_tests --provider-special
+  )
+  add_test(
+    NAME twilight_pcm_provider_default_unit
+    COMMAND twilight_backend_factory_tests --provider-default
+  )
 
   add_executable(twilight_platform_backend_smoke
     tests/platform_backend_smoke.cpp
@@ -530,14 +574,28 @@ if(TAE_BUILD_TESTS)
 
   add_executable(twilight_miniaudio_backend_tests
     tests/miniaudio_backend_tests.cpp
+    devices/DeviceCatalog.cpp
+    devices/DeviceCatalog.test.cpp
     output/miniaudio/MiniaudioPcmBackend.cpp
     core/AudioTypes.cpp
   )
   target_include_directories(twilight_miniaudio_backend_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   if(TAE_MINIAUDIO_AVAILABLE)
-    target_sources(twilight_miniaudio_backend_tests PRIVATE output/miniaudio/MiniaudioImplementation.cpp)
+    target_sources(twilight_miniaudio_backend_tests PRIVATE
+      output/miniaudio/MiniaudioImplementation.cpp
+      output/OutputBackendFactory.cpp
+      output/wasapi/WasapiFormatNegotiator.cpp
+      output/wasapi/WasapiSharedBackend.cpp
+      output/wasapi/WasapiExclusiveBackend.cpp
+    )
     target_include_directories(twilight_miniaudio_backend_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio)
-    target_compile_definitions(twilight_miniaudio_backend_tests PRIVATE TAE_ENABLE_MINIAUDIO=1)
+    target_compile_definitions(
+      twilight_miniaudio_backend_tests
+      PRIVATE
+        TAE_ENABLE_MINIAUDIO=1
+        TAE_ENABLE_WASAPI=1
+        TAE_DEFAULT_PCM_PROVIDER_MINIAUDIO=${TAE_DEFAULT_PCM_PROVIDER_MINIAUDIO}
+    )
     target_link_libraries(twilight_miniaudio_backend_tests PRIVATE ole32 uuid avrt)
   endif()
   add_test(NAME twilight_miniaudio_backend_unit COMMAND twilight_miniaudio_backend_tests)
@@ -672,14 +730,16 @@ if(TAE_BUILD_TESTS)
     output/asio/AsioQuirkRegistry.cpp
     output/asio/DeviceCapabilityCache.cpp
     output/asio/AsioFormatSupport.cpp
-    output/asio/AsioHelperHost.cpp
     output/asio/AsioHostQueries.cpp
     output/asio/MockAsioHost.cpp
-    output/asio/helper/AsioHelperProcess.cpp
     core/AudioTypes.cpp
   )
   target_include_directories(twilight_output_backend_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   if(TAE_ASIO_AVAILABLE)
+    target_sources(twilight_output_backend_tests PRIVATE
+      output/asio/AsioHelperHost.cpp
+      output/asio/helper/AsioHelperProcess.cpp
+    )
     target_compile_definitions(twilight_output_backend_tests PRIVATE TAE_ENABLE_ASIO=1)
     target_link_libraries(twilight_output_backend_tests PRIVATE user32)
     add_dependencies(twilight_output_backend_tests twilight_asio_helper)

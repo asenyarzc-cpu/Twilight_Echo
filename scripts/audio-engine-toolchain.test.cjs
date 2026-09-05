@@ -975,7 +975,7 @@ test('MinGW CTest validation requires every native test registration, including 
     ...cmakeLists.matchAll(/add_test\(\s*NAME\s+(twilight_[a-z0-9_]+)/g)
   ].map((match) => match[1])
 
-  assert.equal(MINGW_EXPECTED_CTESTS.length, 33)
+  assert.equal(MINGW_EXPECTED_CTESTS.length, 37)
   assert.ok(MINGW_EXPECTED_CTESTS.includes('twilight_audio_performance_gate'))
   assert.deepEqual([...MINGW_EXPECTED_CTESTS].sort(), registeredTests.sort())
 })
@@ -1090,8 +1090,13 @@ test('miniaudio vendoring stays pinned, private, and single-TU', () => {
   assert.match(provenance, /9634bedb5b5a2ca38c1ee7108a9358a4e233f14d/)
 
   const cmake = readFileSync(join(root, 'audio-engine', 'CMakeLists.txt'), 'utf8')
+  const presets = readFileSync(join(root, 'audio-engine', 'CMakePresets.json'), 'utf8')
   const stagingScript = readFileSync(join(root, 'scripts', 'stage-audio-engine.cjs'), 'utf8')
   assert.match(cmake, /option\(TAE_ENABLE_MINIAUDIO .* OFF\)/)
+  assert.match(cmake, /set\(TAE_DEFAULT_PCM_PROVIDER "legacy" CACHE STRING/)
+  assert.match(cmake, /TAE_DEFAULT_PCM_PROVIDER_MINIAUDIO/)
+  assert.match(presets, /"TAE_ENABLE_MINIAUDIO"\s*:\s*"ON"/)
+  assert.match(presets, /"TAE_DEFAULT_PCM_PROVIDER"\s*:\s*"legacy"/)
   assert.match(
     cmake,
     /target_sources\(twilight_audio_engine PRIVATE output\/miniaudio\/MiniaudioImplementation\.cpp\)/

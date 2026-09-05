@@ -574,7 +574,7 @@ void writeScenarioJson(std::ostream& out, const ScenarioReport& report, bool tra
 
 namespace twilight::audio {
 
-std::unique_ptr<IOutputBackend> createOutputBackend(const std::string&) {
+std::unique_ptr<IOutputBackend> createOutputBackend(const std::string&, std::string*) {
   return std::make_unique<ControlledPumpBackend>();
 }
 

@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '..')
 function usage() {
   return [
     'Usage:',
-    '  pnpm run smoke:wasapi -- --device "FiiO JM21"',
+    '  pnpm run smoke:wasapi -- --device "扬声器 (2- FiiO M series)"',
     '  node scripts/wasapi-real-smoke.cjs --device "{endpoint-id}" --buffer 256',
     '',
     'Options:',
@@ -117,7 +117,9 @@ function normalized(value) {
 
 function resolveDevice(devices, query) {
   if (!query)
-    throw new Error('Missing --device. Pass a device name such as "FiiO JM21" or an endpoint id.')
+    throw new Error(
+      'Missing --device. Pass a device name such as "扬声器 (2- FiiO M series)" or an endpoint id.'
+    )
   if (query === 'auto') {
     const auto = devices.find((device) => device.id === 'auto')
     if (!auto) throw new Error('The native device list did not include auto')
@@ -424,6 +426,19 @@ function safeStop(audio) {
   }
 }
 
+function cleanupTempDir(tempDir) {
+  try {
+    fs.rmSync(tempDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 100
+    })
+  } catch (error) {
+    if (!['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(error && error.code)) throw error
+  }
+}
+
 function resetProcessing(audio, volume) {
   audio.SetVolume(volume)
   audio.SetReplayGainMode('off', 0, 0, true)
@@ -497,7 +512,7 @@ async function runBitPerfectProbe({
     return result
   } finally {
     safeStop(audio)
-    fs.rmSync(tempDir, { recursive: true, force: true })
+    cleanupTempDir(tempDir)
   }
 }
 
@@ -551,7 +566,7 @@ async function runFormatMatrix({ audio, device, buffer, durationMs }) {
     return results
   } finally {
     safeStop(audio)
-    fs.rmSync(tempDir, { recursive: true, force: true })
+    cleanupTempDir(tempDir)
   }
 }
 
@@ -769,7 +784,7 @@ async function runWorker(options) {
     else if (options.json) console.log(JSON.stringify(summary, null, 2))
     else printHumanSummary(summary)
   } finally {
-    fs.rmSync(toneDir, { recursive: true, force: true })
+    cleanupTempDir(toneDir)
   }
 }
 
@@ -793,9 +808,18 @@ async function main() {
   if (summary.results.some((result) => !result.ok)) process.exitCode = 1
 }
 
-main().catch((error) => {
-  const message = error && error.message ? error.message : String(error)
-  if (typeof process.send === 'function') process.send({ type: 'error', error: message })
-  else console.error(message)
-  process.exitCode = 1
-})
+if (require.main === module) {
+  main().catch((error) => {
+    const message = error && error.message ? error.message : String(error)
+    if (typeof process.send === 'function') process.send({ type: 'error', error: message })
+    else console.error(message)
+    process.exitCode = 1
+  })
+}
+
+module.exports = {
+  cleanupTempDir,
+  parseArgs,
+  staticFormatMatrix,
+  workerTimeoutMs
+}

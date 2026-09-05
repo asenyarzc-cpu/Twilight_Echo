@@ -45,9 +45,22 @@ function binaryManifestFacts(manifest) {
   } = manifest
   const { pcmSrc, ...otherCapabilities } = capabilities ?? {}
   const { soxr: _soxr, ...pcmSrcBinary } = pcmSrc ?? {}
+  const { pcmOutputProvider, ...capabilitiesWithoutProviderRuntime } = otherCapabilities
+  const pcmOutputProviderBinary = pcmOutputProvider
+    ? {
+        ...pcmOutputProvider,
+        activeProvider: null,
+        runtimeObservation: 'unverified',
+        deviceVerification: 'unverified'
+      }
+    : null
   return {
     ...binary,
-    capabilities: { ...otherCapabilities, ...(pcmSrc ? { pcmSrc: pcmSrcBinary } : {}) }
+    capabilities: {
+      ...capabilitiesWithoutProviderRuntime,
+      ...(pcmSrc ? { pcmSrc: pcmSrcBinary } : {}),
+      ...(pcmOutputProvider ? { pcmOutputProvider: pcmOutputProviderBinary } : {})
+    }
   }
 }
 
@@ -107,6 +120,14 @@ function assertPermittedRuntimeObservation(manifest) {
     observation.capabilities && typeof observation.capabilities === 'object',
     'Runtime observation capabilities must be an object'
   )
+  if ('activeProvider' in observation) {
+    assert.ok(
+      observation.activeProvider === null ||
+        observation.activeProvider === 'legacy' ||
+        observation.activeProvider === 'miniaudio',
+      'Runtime observation activeProvider is invalid'
+    )
+  }
   if (soxr?.observed) {
     assert.ok(['swr', 'soxr'].includes(soxr.actualEngine), 'Runtime SoXR engine is invalid')
     assert.equal(typeof soxr.fallback, 'boolean', 'Runtime SoXR fallback is invalid')

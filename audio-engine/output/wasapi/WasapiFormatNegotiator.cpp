@@ -285,6 +285,7 @@ bool WasapiFormatNegotiator::negotiate(const AudioFormat& sourceFormat, std::str
     }
     outputInfo_.outputSampleRate = outputFormat_.sampleRate;
     outputInfo_.outputBitDepth = outputFormat_.bitDepth;
+    outputInfo_.outputChannels = outputFormat_.channelCount;
     outputInfo_.backend = "wasapi-exclusive";
     outputInfo_.actualBackend = "wasapi-exclusive";
     outputInfo_.devicePathKind = "default";

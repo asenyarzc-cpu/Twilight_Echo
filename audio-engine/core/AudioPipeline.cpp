@@ -6,6 +6,7 @@
 #include "../dsp/DsdDownrateProcessor.h"
 #include "../decoder/DopPackerUtils.h"
 #include "../decoder/SacdIsoProbe.h"
+#include "../output/OutputBackendFactory.h"
 #include "../utils/JsonUtils.h"
 
 #include <algorithm>
@@ -1930,9 +1931,11 @@ TAE_Result AudioPipeline::playInternal(
     nativeActive->setTargetDsdRate(targetRate);
     if (nativeActive->openNativeDsdSource(item, &nativeAttemptError)) {
       output = backendFactoryOverride() ? backendFactoryOverride()(routeBackendId)
-                                        : createOutputBackend(routeBackendId);
+                                        : createOutputBackend(routeBackendId, &nativeAttemptError);
       if (!output) {
-        nativeAttemptError = "请求的音频输出后端不可用：" + routeBackendId;
+        if (nativeAttemptError.empty()) {
+          nativeAttemptError = "请求的音频输出后端不可用：" + routeBackendId;
+        }
       } else if (!output->setOutputConfig(outputConfig, &nativeAttemptError)) {
         output.reset();
       } else {
@@ -1978,9 +1981,11 @@ TAE_Result AudioPipeline::playInternal(
     dopActive->setTargetDsdRate(targetRate);
     if (dopActive->openDsdSource(item, &dopAttemptError)) {
       output = backendFactoryOverride() ? backendFactoryOverride()(routeBackendId)
-                                        : createOutputBackend(routeBackendId);
+                                        : createOutputBackend(routeBackendId, &dopAttemptError);
       if (!output) {
-        dopAttemptError = "请求的音频输出后端不可用：" + routeBackendId;
+        if (dopAttemptError.empty()) {
+          dopAttemptError = "请求的音频输出后端不可用：" + routeBackendId;
+        }
       } else if (!output->setOutputConfig(outputConfig, &dopAttemptError)) {
         output.reset();
       } else {
@@ -2122,9 +2127,9 @@ TAE_Result AudioPipeline::playInternal(
 
     const auto createPcmStageBackend = [&](const std::string& routeBackendId) -> bool {
       output = backendFactoryOverride() ? backendFactoryOverride()(routeBackendId)
-                                        : createOutputBackend(routeBackendId);
+                                        : createOutputBackend(routeBackendId, error);
       if (!output) {
-        if (error) *error = "请求的音频输出后端不可用：" + routeBackendId;
+        if (error && error->empty()) *error = "请求的音频输出后端不可用：" + routeBackendId;
         return false;
       }
       return output->setOutputConfig(outputConfig, error);

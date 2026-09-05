@@ -36,6 +36,42 @@ std::string jsonEscape(const std::string& value) {
 
 }  // namespace
 
+#if !defined(_WIN32) || !defined(_WIN64) || !defined(TAE_ENABLE_ASIO)
+/**
+ * The real isolated host spawns the Windows helper process, but the portable
+ * backend TU still references the factory. Non-ASIO builds link this fail-closed
+ * stub instead, so device enumeration degrades to an empty list and every open
+ * attempt reports ASIO as unavailable rather than failing to link.
+ */
+class UnsupportedAsioHost final : public IAsioHost {
+ public:
+  std::vector<AsioDeviceInfo> enumerateDevices() override { return {}; }
+  AsioHostDiagnostics diagnostics() const override { return {}; }
+  bool probeDevice(const std::string&, AsioDeviceInfo*, std::string*) override { return false; }
+  bool open(const AsioOpenConfig&, AsioOpenResult*, std::string* error) override {
+    if (error) *error = "ASIO is only supported on Windows x64";
+    return false;
+  }
+  bool createBuffers(AsioBufferSwitchCallback, AsioEventCallback, std::string*) override {
+    return false;
+  }
+  bool start(std::string*) override { return false; }
+  void stop() override {}
+  void close() override {}
+  void* outputBuffer(long, long) override { return nullptr; }
+  AudioSampleFormat outputSampleFormat(long) const override {
+    return AudioSampleFormat::Float32Interleaved;
+  }
+  AsioChannelFormat outputChannelFormat(long) const override { return {}; }
+  bool outputReady() override { return false; }
+  long activeBufferSize() const override { return 0; }
+};
+
+std::unique_ptr<IAsioHost> createIsolatedAsioHost() {
+  return std::make_unique<UnsupportedAsioHost>();
+}
+#endif
+
 std::string enumerateAsioDevicesJson() {
   std::ostringstream json;
   json << '[';

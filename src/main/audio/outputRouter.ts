@@ -436,7 +436,6 @@ export class OutputRouter {
     }
     this.nativeOutputRouteSynced = true
     this.playbackInfo.outputInfo.channelRoutingMode = this.getEffectiveOutputConfig().routingMode
-    this.playbackInfo.channelRoutingMode = this.getEffectiveOutputConfig().routingMode
   }
 
   getOutputConfigApplyStatus(): OutputConfigApplyStatus {
@@ -458,7 +457,6 @@ export class OutputRouter {
       cacheReason: 'output-config-changed'
     })
     this.playbackInfo.outputInfo.channelRoutingMode = this.getEffectiveOutputConfig().routingMode
-    this.playbackInfo.channelRoutingMode = this.getEffectiveOutputConfig().routingMode
     await this.applyNativeDspGraphOrThrow('输出配置切换后解析 DSP 场景')
     return true
   }
@@ -472,6 +470,7 @@ export class OutputRouter {
     errorCode: string
     errorMessage: string
     cacheReason: string
+    expectedActualDeviceId?: string
   }): Promise<void> {
     const snapshot = {
       output: this.output,
@@ -521,6 +520,7 @@ export class OutputRouter {
         const targetBackend = targetInfo?.outputInfo.actualBackend || targetInfo?.actualBackend
         const actualDevice =
           targetInfo?.outputInfo.actualDeviceName || targetInfo?.outputDevice || ''
+        const actualDeviceId = targetInfo?.outputInfo.actualDeviceId || ''
         const targetOption = this.getFreshAudioDeviceOptions().find(
           (entry) => entry.id === options.nextDevice
         )
@@ -529,11 +529,18 @@ export class OutputRouter {
             (value): value is string => Boolean(value)
           )
         )
+        let actualDeviceMatches = true
+        if (options.expectedActualDeviceId) {
+          actualDeviceMatches = actualDeviceId === options.expectedActualDeviceId
+        } else if (!isDefaultAudioDeviceAlias(options.nextDevice)) {
+          actualDeviceMatches = actualDeviceId
+            ? actualDeviceId === options.nextDevice
+            : acceptedDeviceNames.has(actualDevice)
+        }
         if (
           !targetInfo ||
           targetBackend !== targetNativeBackendId ||
-          (!isDefaultAudioDeviceAlias(options.nextDevice) &&
-            !acceptedDeviceNames.has(actualDevice)) ||
+          !actualDeviceMatches ||
           targetInfo.state !== snapshot.playbackInfo.state ||
           targetInfo.source !== snapshot.playbackInfo.source
         ) {
@@ -544,6 +551,8 @@ export class OutputRouter {
               expectedBackend: targetNativeBackendId,
               actualBackend: targetBackend || '',
               expectedDevice: options.nextDevice,
+              expectedActualDeviceId: options.expectedActualDeviceId || '',
+              actualDeviceId,
               actualDevice,
               expectedState: snapshot.playbackInfo.state,
               actualState: targetInfo?.state || 'unavailable'
@@ -954,23 +963,45 @@ export class OutputRouter {
 
       const previousFollowed = this.lastFollowedDefaultDeviceId
       this.lastFollowedDefaultDeviceId = defaultId
-      const deviceSynced = await this.callNativeMaybeAsync(
-        '跟随系统默认输出设备',
-        'SetOutputDevice',
-        'auto'
-      )
-      if (!deviceSynced) {
+      try {
+        if (this.playbackInfo.state === 'stopped') {
+          const deviceSynced = await this.callNativeMaybeAsync(
+            '跟随系统默认输出设备',
+            'SetOutputDevice',
+            'auto'
+          )
+          if (!deviceSynced) {
+            throw nativeAudioError(
+              'audio.default_device_rebind_failed',
+              'following the system default output device failed',
+              this.lastNativeError
+            )
+          }
+          this.refreshOutputInfoFromNative(true)
+          return
+        }
+        await this.runOutputRouteTransaction({
+          context: 'audio-device-default-follow',
+          nextOutput: this.output,
+          nextDevice: 'auto',
+          nextExclusiveMode: this.exclusiveMode,
+          nextConfig: this.outputConfig,
+          errorCode: 'audio.default_device_rebind_failed',
+          errorMessage: 'following the system default output device failed',
+          cacheReason: 'audio-device-default-follow',
+          expectedActualDeviceId: defaultId
+        })
+      } catch (error) {
         this.lastFollowedDefaultDeviceId = previousFollowed
-        console.warn(
-          `跟随系统默认输出设备失败（${reason}）：`,
-          this.lastNativeError || '原生音频引擎不可用'
-        )
+        console.warn(`跟随系统默认输出设备失败（${reason}）：`, error)
         return
       }
-      this.refreshOutputInfoFromNative(true)
-      // Re-resolve DSP only while actively playing so idle default flips stay cheap.
       if (this.playbackInfo.state === 'playing' || this.playbackInfo.state === 'paused') {
-        await this.applyNativeDspGraphOrThrow('系统默认输出设备切换后解析 DSP 场景')
+        try {
+          await this.applyNativeDspGraphOrThrow('系统默认输出设备切换后解析 DSP 场景')
+        } catch (error) {
+          console.warn(`系统默认输出设备切换后解析 DSP 场景失败（${reason}）：`, error)
+        }
       }
     } catch (error) {
       console.warn(`跟随系统默认输出设备失败（${reason}）：`, error)

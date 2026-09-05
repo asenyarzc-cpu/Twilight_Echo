@@ -715,6 +715,7 @@ bool AlsaBackend::open(const std::string& deviceId, const AudioFormat& requested
   impl_->outputInfo.resampled = !formatMatched;
   impl_->outputInfo.outputSampleRate = impl_->outputFormat.sampleRate;
   impl_->outputInfo.outputBitDepth = impl_->outputFormat.bitDepth;
+  impl_->outputInfo.outputChannels = impl_->outputFormat.channelCount;
   impl_->outputInfo.backend = "alsa";
   impl_->outputInfo.actualBackend = "alsa";
   impl_->outputInfo.devicePathKind =

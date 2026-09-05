@@ -69,7 +69,9 @@
         "VCPKG_APPLOCAL_DEPS": "OFF",
         "TAE_BUILD_NAPI": "ON",
         "TAE_ENABLE_WASAPI": "ON",
-        "TAE_ENABLE_ASIO": "ON"
+        "TAE_ENABLE_ASIO": "ON",
+        "TAE_ENABLE_MINIAUDIO": "ON",
+        "TAE_DEFAULT_PCM_PROVIDER": "legacy"
       },
       "condition": {
         "type": "equals",

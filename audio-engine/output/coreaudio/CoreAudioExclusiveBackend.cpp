@@ -415,6 +415,7 @@ bool CoreAudioExclusiveBackend::open(const std::string& deviceId, const AudioFor
   impl_->outputInfo.resampled = !formatMatched;
   impl_->outputInfo.outputSampleRate = impl_->outputFormat.sampleRate;
   impl_->outputInfo.outputBitDepth = impl_->outputFormat.bitDepth;
+  impl_->outputInfo.outputChannels = impl_->outputFormat.channelCount;
   impl_->outputInfo.backend = "coreaudio-exclusive";
   impl_->outputInfo.actualBackend = "coreaudio-exclusive";
   impl_->outputInfo.devicePathKind = "hal";

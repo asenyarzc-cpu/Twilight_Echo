@@ -46,6 +46,13 @@ const OPERATIONAL_SCENARIOS = [
     minimumPlaybackDurationSeconds: 0,
     expectedState:
       'Device loss and recovery/failure are reported without a silent backend or format switch.'
+  },
+  {
+    id: 'explicit-disappearance',
+    label: 'Controlled explicit endpoint disappearance',
+    minimumPlaybackDurationSeconds: 0,
+    expectedState:
+      'A missing explicit endpoint fails or stops without falling back to the system default, then recovers after an explicit reopen.'
   }
 ]
 
@@ -179,7 +186,7 @@ function normalizeEntry(entry) {
     ),
     expectedState: entry && entry.expectedState ? entry.expectedState : null,
     evidenceKind:
-      entry && ['real-device', 'mock'].includes(entry.evidenceKind)
+      entry && ['real-device', 'mock', 'software-only'].includes(entry.evidenceKind)
         ? entry.evidenceKind
         : 'unknown',
     notes: String(entry && entry.notes ? entry.notes : '')
@@ -255,7 +262,11 @@ function inspectEvidenceEntry(entry, options = {}) {
     return {
       valid: false,
       reason:
-        normalized.evidenceKind === 'mock' ? 'mock-not-hardware-evidence' : 'unknown-evidence-kind',
+        normalized.evidenceKind === 'mock'
+          ? 'mock-not-hardware-evidence'
+          : normalized.evidenceKind === 'software-only'
+            ? 'software-only-not-hardware-evidence'
+            : 'unknown-evidence-kind',
       missingFields,
       artifactStatus: 'not-hardware-evidence'
     }
@@ -472,7 +483,7 @@ function normalizeOperationalResult(result) {
     capturedAt: String(result && result.capturedAt ? result.capturedAt : ''),
     inputCommand: String(result && result.inputCommand ? result.inputCommand : ''),
     evidenceKind:
-      result && ['real-device', 'mock'].includes(result.evidenceKind)
+      result && ['real-device', 'mock', 'software-only'].includes(result.evidenceKind)
         ? result.evidenceKind
         : 'unknown',
     switchCount: Number(result && result.switchCount ? result.switchCount : 0),
@@ -511,7 +522,11 @@ function inspectOperationalResult(result, options = {}) {
       valid: false,
       status: 'not-real-device',
       reason:
-        normalized.evidenceKind === 'mock' ? 'mock-not-hardware-evidence' : 'unknown-evidence-kind',
+        normalized.evidenceKind === 'mock'
+          ? 'mock-not-hardware-evidence'
+          : normalized.evidenceKind === 'software-only'
+            ? 'software-only-not-hardware-evidence'
+            : 'unknown-evidence-kind',
       artifactStatus: 'not-hardware-evidence'
     }
   }

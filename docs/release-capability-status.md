@@ -14,3 +14,5 @@
 | Native DSD provider | `available`    | `available`    | `available`         | `unverified`             |
 
 每个完整发布流程会生成并校验 `release-capability-status.json`。它与 `audio-capabilities.json` 同处于暂存/打包的 `resources/audio-engine`，是实际发布包的机器可读声明；每项输出都带 build/runtime/device 的 state、reason 与 provenance。二者不一致、必需 DLL/node 缺失、VST3 helper 只暂存一半，或非系统导入未随包携带都会使门禁失败。
+
+Windows Shared/default PCM provider 的采用事实不并入上述受控能力表；它保留在同目录的 `audio-capabilities.json` `capabilities.pcmOutputProvider` 中，并单独区分构建可用性、编译默认 provider、实际活动 provider、运行观测和设备验证。当前默认与 rollback 均为 `legacy`，没有播放路由观测时 `activeProvider` 为 `null`。

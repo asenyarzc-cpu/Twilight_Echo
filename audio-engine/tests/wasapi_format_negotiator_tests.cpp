@@ -599,6 +599,7 @@ void testDsd64NegotiatesDopCarrier() {
   // An accepted DoP carrier is the requested transport, not a conversion of
   // the source; reporting it as resampled failed the pipeline's DoP proof.
   assert(!info.resampled);
+  assert(info.outputChannels == 2);
   assert(info.actualOutputFormat == "int24-in32");
   assert(info.perfectReason.find("DoP carrier") != std::string::npos);
 
@@ -667,6 +668,7 @@ void testInt24SourceOnInt24In32OnlyDeviceIsNotReportedAsConverted() {
   assert(!info.resampled);
   assert(info.perfectReasonCode.empty());
   assert(info.perfectReason.empty());
+  assert(info.outputChannels == 2);
   assert(info.actualOutputFormat == "int24-in32");
 }
 

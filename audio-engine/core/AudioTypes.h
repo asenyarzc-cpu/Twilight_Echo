@@ -233,11 +233,14 @@ struct OutputInfo {
   std::string dsdConversionReason;
   int outputSampleRate = 0;
   int outputBitDepth = 0;
+  int outputChannels = 0;
+  std::string outputSampleFormat;
   std::string backend;
   std::string actualBackend;
   std::string devicePathKind = "default";
   std::string deviceName;
   std::string actualDeviceName;
+  std::string actualDeviceId;
   std::string driverName;
   std::string actualDriverName;
   long driverVersion = 0;

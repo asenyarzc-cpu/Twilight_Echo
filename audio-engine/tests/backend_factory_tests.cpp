@@ -1,5 +1,7 @@
 #include "twilight_audio_engine.h"
+#include "output/OutputBackendFactory.h"
 
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -28,12 +30,110 @@ std::string stringField(const std::string& json, const std::string& key) {
   return json.substr(valueStart, valueEnd - valueStart);
 }
 
+bool setProviderEnvironment(const char* value) {
+#if defined(_WIN32)
+  return _putenv_s("TWILIGHT_AUDIO_PCM_PROVIDER", value) == 0;
+#else
+  return setenv("TWILIGHT_AUDIO_PCM_PROVIDER", value, 1) == 0;
+#endif
+}
+
 }  // namespace
 
-int main() {
+namespace twilight::audio {
+void runOutputProviderSelectorTests();
+}
+
+int main(int argc, char** argv) {
+  const std::string mode = argc > 1 ? argv[1] : "--provider-legacy";
+  if (mode == "--provider-default") {
+    if (!setProviderEnvironment("")) {
+      std::cerr << "Failed to clear provider test environment\n";
+      return 1;
+    }
+    const auto& selection = twilight::audio::configuredPcmOutputProvider();
+    const std::string compiledDefault = twilight::audio::compiledDefaultPcmProviderControlValue();
+    if (compiledDefault == "legacy") {
+      if (selection.status != twilight::audio::PcmOutputProviderStatus::Ready ||
+          selection.provider != twilight::audio::PcmOutputProvider::Legacy) {
+        std::cerr << "The unset provider did not preserve the compiled legacy default\n";
+        return 1;
+      }
+    } else {
+#if TAE_TEST_MINIAUDIO_AVAILABLE
+      if (selection.status != twilight::audio::PcmOutputProviderStatus::Ready ||
+          selection.provider != twilight::audio::PcmOutputProvider::Miniaudio) {
+        std::cerr << "The unset provider did not select the compiled miniaudio default\n";
+        return 1;
+      }
+#else
+      if (selection.status != twilight::audio::PcmOutputProviderStatus::ProviderUnavailable ||
+          selection.provider != twilight::audio::PcmOutputProvider::Miniaudio) {
+        std::cerr << "A build-disabled compiled miniaudio default was not rejected\n";
+        return 1;
+      }
+#endif
+    }
+    return 0;
+  }
+  const char* providerValue =
+      mode == "--provider-miniaudio" ? "miniaudio" : (mode == "--provider-legacy" ? "legacy" : "automatic");
+  if (!setProviderEnvironment(providerValue)) {
+    std::cerr << "Failed to configure provider test environment\n";
+    return 1;
+  }
+  twilight::audio::runOutputProviderSelectorTests();
   TAE_EngineHandle engine = nullptr;
   if (TAE_CreateEngine(&engine) != TAE_RESULT_OK || !engine) {
     std::cerr << "TAE_CreateEngine failed\n";
+    return 1;
+  }
+
+  const char* backend = mode == "--provider-special" ? "wasapi-exclusive" : "wasapi";
+  const TAE_Result providerResult = TAE_SetOutputBackend(engine, backend);
+  if (mode == "--provider-invalid") {
+    if (providerResult != TAE_RESULT_INVALID_ARGUMENT) {
+      std::cerr << "An invalid provider value was not rejected\n";
+      TAE_DestroyEngine(engine);
+      return 1;
+    }
+    const std::string providerError = callString(engine, TAE_GetLastError);
+    if (providerError.find("automatic") == std::string::npos) {
+      std::cerr << "Invalid provider error was not actionable: " << providerError << "\n";
+      TAE_DestroyEngine(engine);
+      return 1;
+    }
+  } else if (mode == "--provider-special") {
+    if (providerResult != TAE_RESULT_OK) {
+      std::cerr << "The PCM provider selector affected WASAPI Exclusive: "
+                << callString(engine, TAE_GetLastError) << "\n";
+      TAE_DestroyEngine(engine);
+      return 1;
+    }
+  } else if (mode == "--provider-miniaudio") {
+#if TAE_TEST_MINIAUDIO_AVAILABLE
+    if (providerResult != TAE_RESULT_OK) {
+      std::cerr << "Feature-enabled miniaudio provider selection failed: "
+                << callString(engine, TAE_GetLastError) << "\n";
+      TAE_DestroyEngine(engine);
+      return 1;
+    }
+#else
+    if (providerResult != TAE_RESULT_BACKEND_UNAVAILABLE) {
+      std::cerr << "A build without miniaudio silently accepted that provider\n";
+      TAE_DestroyEngine(engine);
+      return 1;
+    }
+    const std::string providerError = callString(engine, TAE_GetLastError);
+    if (providerError.find("TAE_ENABLE_MINIAUDIO=OFF") == std::string::npos) {
+      std::cerr << "Build-disabled provider error was not actionable: " << providerError << "\n";
+      TAE_DestroyEngine(engine);
+      return 1;
+    }
+#endif
+  } else if (providerResult != TAE_RESULT_OK) {
+    std::cerr << "Legacy provider selection failed: " << callString(engine, TAE_GetLastError) << "\n";
+    TAE_DestroyEngine(engine);
     return 1;
   }
 

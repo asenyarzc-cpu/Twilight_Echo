@@ -418,7 +418,18 @@ test('real-device pass requires complete collection metadata and a matching arti
       mock.json.operationalScenarioRows.find((item) => item.scenario === 'soak-2h').status,
       'not-run'
     )
-    assert.equal(mock.json.operationalScenarioRows.length, 4)
+    assert.equal(mock.json.operationalScenarioRows.length, 5)
+
+    const softwareOnly = buildAudioSmokeEvidenceReport({
+      entries: [{ ...entry, evidenceKind: 'software-only' }],
+      verifyArtifacts: true,
+      artifactBaseDir: dir
+    })
+    assert.deepEqual(softwareOnly.json.coverage.nonHardwareEvidenceSurfaces, ['WASAPI Exclusive'])
+    assert.match(
+      softwareOnly.markdown,
+      /\| WASAPI Exclusive \| pass \| software-only \| not-hardware-evidence \|/
+    )
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -559,6 +570,28 @@ test('operational evidence preserves envelope fields and rejects mock, incomplet
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('operational evidence registers controlled explicit endpoint disappearance', () => {
+  const report = buildAudioSmokeEvidenceReport({
+    operationalResults: [
+      {
+        scenario: 'explicit-disappearance',
+        status: 'pass',
+        evidenceKind: 'software-only',
+        observedState:
+          'hidden endpoint stopped without default fallback; explicit reopen recovered',
+        notes: 'Controlled visibility hide/show; not physical USB unplug/replug.'
+      }
+    ]
+  })
+  const row = report.json.operationalScenarioRows.find(
+    (item) => item.scenario === 'explicit-disappearance'
+  )
+  assert.equal(row.label, 'Controlled explicit endpoint disappearance')
+  assert.equal(row.status, 'not-real-device')
+  assert.equal(row.expectedState.includes('without falling back'), true)
+  assert.equal(report.json.operationalScenarioSchema.length, 5)
 })
 
 test('CoreAudio Hog action plan requires the exclusive backend and hog expected state', () => {

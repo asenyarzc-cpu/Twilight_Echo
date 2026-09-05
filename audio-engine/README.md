@@ -11,7 +11,7 @@ Twilight Echo 的 C++20 原生音频引擎，通过稳定 C ABI 和 Node-API 桥
 - 解码与管线：FFmpeg 解码、Float32 内部渲染、环形缓冲、gapless preload、只读 visualization tap（含 decoupled 示波器时域采样）。
 - DSD-preserving DST provider：vendored FFmpeg dstdec 算术核心（LGPL-2.1+，attribution 保留，未 relicense 为 Apache），输出原始 DSD 字节而非 PCM，接入 SACD ISO demuxer，使 DST 压缩曲目进入与未压缩 DSD 相同的 Native DSD / DoP / PCM 决策链。
 - Queue：native 侧负责队列索引、upcoming track、EOF auto-next、gapless 预加载和 crossfade overlap mixing。
-- 后端：WASAPI Shared/Exclusive、Windows x64 独立 ASIO 兼容层、CoreAudio/ALSA 源码后端；ASIO 默认枚举已安装驱动，可用 `TWILIGHT_DISABLE_ASIO=1` 显式禁用；ALSA `hw:` 支持 native DSD 直送（`DSD_U8` / `DSD_U16_LE` / `DSD_U32_LE`），`backendCanAttemptNativeDsd("alsa")==true`；ICoreAudioHost / IAlsaHost seam + Mock 使 CoreAudio / ALSA 后端逻辑可在 Windows 单元测试。
+- 后端：WASAPI Shared/Exclusive、Windows x64 独立 ASIO 兼容层、CoreAudio/ALSA 源码后端；Windows MinGW preset 编译包含 miniaudio 0.11.25 Shared/default PCM PoC，但 `TAE_DEFAULT_PCM_PROVIDER=legacy` 使未设置 selector 时仍走 legacy，`TWILIGHT_AUDIO_PCM_PROVIDER=miniaudio` 仅用于显式实验/A-B，Exclusive/ASIO/DSD 特殊路径不变；ASIO 默认枚举已安装驱动，可用 `TWILIGHT_DISABLE_ASIO=1` 显式禁用；ALSA `hw:` 支持 native DSD 直送（`DSD_U8` / `DSD_U16_LE` / `DSD_U32_LE`），`backendCanAttemptNativeDsd("alsa")==true`；ICoreAudioHost / IAlsaHost seam + Mock 使 CoreAudio / ALSA 后端逻辑可在 Windows 单元测试。
 - DSP：ReplayGain、Parametric EQ、FIR Convolver、Crossfeed、FFT Spectrum / Waveform / Peak / LUFS / Spectrogram / 示波器采样。
 - Metadata：container、channel layout、channel count、DSD64/128/256/512 识别字段、ReplayGain/R128 字段。
 
@@ -31,6 +31,8 @@ pnpm run test:no-real-device
 ```
 
 该脚本会串联 MinGW configure/build、native CTest、Electron manager 测试、typecheck 和前端 build。ASIO 驱动、真实 WASAPI Exclusive DAC、Native DSD、SACD ISO 播放和真实 DoP DAC smoke 都不进入默认门禁，通过 `TAE_RUN_REAL_AUDIO_BACKEND_TESTS=1` 开启，不伪造结果。
+
+Windows MinGW 的构建能力与 provider 采用状态分开记录：preset 会编译 miniaudio，但当前编译期默认仍为 `legacy`。短时 Shared PCM A/B 可显式设置 `TWILIGHT_AUDIO_PCM_PROVIDER=miniaudio`；完整 Windows 真机矩阵、packaged burn-in 和 MA-106 独立决策完成前，不得把编译能力或 bounded A/B 写成默认采用。
 
 ## 构建目标
 
@@ -89,6 +91,8 @@ WASAPI Exclusive / ASIO 已具备 typed PCM passthrough 分支：当无 DSP、�
 Phase 6B 中，后端只上报事实：WASAPI Shared 始终按系统混音路径报告 false；WASAPI Exclusive/ASIO 只有实际格式完整上报并与 decoded PCM 完全匹配时才进入 evaluator；CoreAudio 默认路径在 Hog/Exclusive 未验证前继续 false；ALSA `default` / `plughw:` 默认 false，只有显式 `hw:` 且格式匹配才可能 true。
 
 `TAE_GetEngineCapabilities` 暴露 `backends` / `backendCapabilities`、`pcmPassthrough`、`outputPerfectRequiresPcmPassthrough`、`htmlAudioFallbackDefault` 和 DSD 能力模型（`sacdIsoDst`、`sacdIsoDstMode`、`sacdIsoDstDsdProvider`，provider 默认可用时分别为 `true` / `"native"` / `true`）。`TAE_GetLastError` 使用 buffer/required-size 模式返回稳定 JSON。
+
+暂存发布清单中的 `capabilities.pcmOutputProvider` 将构建可用性、编译默认 provider、实际活动 provider、运行观测和设备验证分开记录；没有打开播放路由时 `activeProvider` 为 `null`，不代表真实设备通过。当前编译默认和显式 rollback 都是 `legacy`。
 
 ## Electron 集成
 

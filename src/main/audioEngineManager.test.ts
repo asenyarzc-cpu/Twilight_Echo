@@ -157,6 +157,7 @@ function makeOutputInfo(overrides: Partial<OutputInfo> = {}): OutputInfo {
     perfectReason: '共享输出经过系统混音',
     outputSampleRate: 48000,
     outputBitDepth: 32,
+    outputChannels: 2,
     backend: 'wasapi',
     actualBackend: 'wasapi',
     deviceName: 'System Default',
@@ -438,6 +439,30 @@ test('playback fanout signature changes for non-position playback facts', () => 
       true
     ],
     [
+      'actualDeviceId',
+      {
+        ...info,
+        outputInfo: { ...info.outputInfo, actualDeviceId: 'endpoint-b' }
+      },
+      true
+    ],
+    [
+      'outputSampleFormat',
+      {
+        ...info,
+        outputInfo: { ...info.outputInfo, outputSampleFormat: 'float32' }
+      },
+      true
+    ],
+    [
+      'outputChannels',
+      {
+        ...info,
+        outputInfo: { ...info.outputInfo, outputChannels: 6 }
+      },
+      true
+    ],
+    [
       'perfectReasonCode',
       {
         ...info,
@@ -626,6 +651,8 @@ class FakeNativeBinding implements NativeAudioBinding {
   failRollbackOutputConfig = ''
   routeCalls: Array<{ method: string; value: string }> = []
   failOutputDeviceValues = new Set<string>()
+  actualDeviceIdOverride = ''
+  autoDeviceUsesPhysicalDefault = false
   inRollback = false
   loadQueueCalls = 0
   stopCalls = 0
@@ -725,9 +752,11 @@ class FakeNativeBinding implements NativeAudioBinding {
     }
     const currentBackend = this.playbackInfo.outputInfo.actualBackend
     const nextDevice =
-      device === 'auto' && currentBackend === 'asio'
-        ? (this.devices.find((entry) => entry.pathKind === 'asio') ?? this.devices[0])
-        : (this.devices.find((entry) => entry.id === device) ?? this.devices[0])
+      device === 'auto' && currentBackend !== 'asio' && this.autoDeviceUsesPhysicalDefault
+        ? (this.devices.find((entry) => entry.id !== 'auto' && entry.isDefault) ?? this.devices[0])
+        : device === 'auto' && currentBackend === 'asio'
+          ? (this.devices.find((entry) => entry.pathKind === 'asio') ?? this.devices[0])
+          : (this.devices.find((entry) => entry.id === device) ?? this.devices[0])
     const deviceName = nextDevice.name || nextDevice.label
     const devicePathKind =
       currentBackend === 'coreaudio' || currentBackend === 'coreaudio-exclusive'
@@ -737,6 +766,7 @@ class FakeNativeBinding implements NativeAudioBinding {
       ...this.playbackInfo.outputInfo,
       deviceName: device,
       actualDeviceName: deviceName,
+      actualDeviceId: this.actualDeviceIdOverride || nextDevice.platformStableId || nextDevice.id,
       devicePathKind
     }
     this.playbackInfo = this.withOutputInfo(outputInfo, {
@@ -2981,6 +3011,43 @@ test('audio device options expose runtime-probed DSD support states without forc
   assert.equal(dac?.nativeDsdSupportState, 'unsupported')
 })
 
+test('audio device options preserve additive stable catalog identity fields', async () => {
+  const stableId = '{0.0.0.00000000}.{stable-endpoint}'
+  const nativeBinding = new FakeNativeBinding(undefined, [
+    DEVICE_OPTIONS[0],
+    {
+      id: stableId,
+      platformStableId: stableId,
+      label: 'USB DAC',
+      lastKnownLabel: 'USB DAC',
+      providerFamily: 'wasapi',
+      defaultRole: 'console',
+      backend: 'wasapi',
+      isDefault: true,
+      pathKind: 'default'
+    }
+  ])
+  const manager = new AudioEngineManager(
+    {
+      exclusiveMode: false,
+      audioOutput: 'wasapi',
+      audioDevice: stableId
+    },
+    {
+      nativeBinding,
+      scheduler: TEST_SCHEDULER
+    }
+  )
+
+  const state = await manager.getAudioOutputState()
+  const device = state.deviceOptions.find((option) => option.id === stableId)
+  assert.equal(state.device, stableId)
+  assert.equal(device?.platformStableId, stableId)
+  assert.equal(device?.lastKnownLabel, 'USB DAC')
+  assert.equal(device?.providerFamily, 'wasapi')
+  assert.equal(device?.defaultRole, 'console')
+})
+
 test('an unreadable ASIO catalog keeps the persisted driver instead of dropping to auto', async () => {
   // The manager resolves the initial device in its constructor, before the audio
   // service is up, so the catalog reads empty there. Rewriting the selection at
@@ -3090,6 +3157,51 @@ test('output route switch rejects a target device that disappears after prepare'
   assert.equal(state.output, 'wasapi')
   assert.equal(state.device, 'dac-1')
   assert.equal(nativeBinding.outputBackendCalls, 0)
+})
+
+test('output route verification uses stable device ids when labels are duplicated', async () => {
+  const endpointA = '{0.0.0.00000000}.{endpoint-a}'
+  const endpointB = '{0.0.0.00000000}.{endpoint-b}'
+  const options: AudioDeviceOption[] = [
+    DEVICE_OPTIONS[0],
+    {
+      id: endpointA,
+      platformStableId: endpointA,
+      label: 'Duplicate DAC',
+      backend: 'wasapi',
+      isDefault: true,
+      pathKind: 'default'
+    },
+    {
+      id: endpointB,
+      platformStableId: endpointB,
+      label: 'Duplicate DAC',
+      backend: 'wasapi',
+      isDefault: false,
+      pathKind: 'default'
+    }
+  ]
+  const nativeBinding = new FakeNativeBinding(undefined, options)
+  nativeBinding.actualDeviceIdOverride = endpointA
+  const manager = new AudioEngineManager(
+    {
+      exclusiveMode: false,
+      audioOutput: 'wasapi',
+      audioDevice: endpointA
+    },
+    {
+      nativeBinding,
+      scheduler: TEST_SCHEDULER,
+      deviceOptionsProvider: () => options
+    }
+  )
+  await manager.play('track.flac', 4)
+
+  await assert.rejects(() => manager.setAudioDevice(endpointB), /did not preserve/)
+
+  const state = await manager.getAudioOutputState()
+  assert.equal(state.device, endpointA)
+  assert.equal(nativeBinding.stopCalls, 0)
 })
 
 test('output route switch rolls back after target open failure without auto replay', async () => {
@@ -5592,6 +5704,7 @@ test('auto device follows OS default endpoint changes while playing', async () =
       }
     ]
   )
+  nativeBinding.autoDeviceUsesPhysicalDefault = true
   const manager = new AudioEngineManager(
     {
       exclusiveMode: false,
@@ -5604,7 +5717,10 @@ test('auto device follows OS default endpoint changes while playing', async () =
     }
   )
   await manager.start()
+  await manager.play('default-follow.flac', 5)
   const deviceCallsAfterStart = nativeBinding.outputDeviceCalls
+  const routeCallsAfterStart = nativeBinding.routeCalls.length
+  const dspGraphCallsAfterStart = nativeBinding.dspGraphCalls
 
   // Flip the physical default endpoint (auto stays selected).
   nativeBinding.devices = [
@@ -5636,8 +5752,103 @@ test('auto device follows OS default endpoint changes while playing', async () =
   await new Promise((resolve) => setImmediate(resolve))
 
   assert.ok(nativeBinding.outputDeviceCalls > deviceCallsAfterStart)
+  assert.deepEqual(
+    nativeBinding.routeCalls.slice(routeCallsAfterStart).map((call) => call.method),
+    ['SetOutputBackend', 'SetOutputDevice', 'SetOutputConfig']
+  )
   assert.equal((await manager.getAudioOutputState()).device, 'auto')
   assert.equal(nativeBinding.playbackInfo.outputDevice, 'auto')
+  assert.equal(nativeBinding.playbackInfo.outputInfo.actualDeviceId, 'speakers-2')
+  assert.equal(nativeBinding.playbackInfo.outputInfo.actualDeviceName, 'USB Speakers')
+  assert.equal(nativeBinding.playbackInfo.state, 'playing')
+  assert.equal(nativeBinding.dspGraphCalls, dspGraphCallsAfterStart + 1)
+})
+
+test('auto device records OS default endpoint changes without reopening while stopped', async () => {
+  const nativeBinding = new FakeNativeBinding(
+    {
+      state: 'stopped',
+      outputDevice: 'auto',
+      outputInfo: makeOutputInfo({
+        deviceName: 'auto',
+        actualDeviceName: 'Desk DAC',
+        actualBackend: 'wasapi',
+        backend: 'wasapi'
+      })
+    },
+    [
+      {
+        id: 'auto',
+        label: '系统默认',
+        name: '系统默认',
+        isDefault: true,
+        pathKind: 'default'
+      },
+      {
+        id: 'dac-1',
+        label: 'Desk DAC',
+        name: 'Desk DAC',
+        isDefault: true,
+        pathKind: 'default'
+      },
+      {
+        id: 'speakers-2',
+        label: 'USB Speakers',
+        name: 'USB Speakers',
+        isDefault: false,
+        pathKind: 'default'
+      }
+    ]
+  )
+  nativeBinding.autoDeviceUsesPhysicalDefault = true
+  const manager = new AudioEngineManager(
+    {
+      exclusiveMode: false,
+      audioOutput: 'wasapi',
+      audioDevice: 'auto'
+    },
+    {
+      nativeBinding,
+      scheduler: TEST_SCHEDULER
+    }
+  )
+  await manager.start()
+  const routeCallsAfterStart = nativeBinding.routeCalls.length
+
+  nativeBinding.devices = [
+    {
+      id: 'auto',
+      label: '系统默认',
+      name: '系统默认',
+      isDefault: true,
+      pathKind: 'default'
+    },
+    {
+      id: 'dac-1',
+      label: 'Desk DAC',
+      name: 'Desk DAC',
+      isDefault: false,
+      pathKind: 'default'
+    },
+    {
+      id: 'speakers-2',
+      label: 'USB Speakers',
+      name: 'USB Speakers',
+      isDefault: true,
+      pathKind: 'default'
+    }
+  ]
+
+  manager.notifyAudioDeviceOptionsChanged('platform-device-change:wm-devicechange')
+  await new Promise((resolve) => setImmediate(resolve))
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(
+    nativeBinding.routeCalls.slice(routeCallsAfterStart).map((call) => call.method),
+    ['SetOutputDevice']
+  )
+  assert.equal(nativeBinding.playbackInfo.outputInfo.actualDeviceId, 'speakers-2')
+  assert.equal(nativeBinding.playbackInfo.state, 'stopped')
 })
 
 test('pinned device does not rebind when OS default endpoint changes', async () => {

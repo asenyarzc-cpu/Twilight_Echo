@@ -91,6 +91,10 @@ export interface AudioDeviceOption {
   id: string
   label: string
   isDefault: boolean
+  platformStableId?: string
+  providerFamily?: string
+  defaultRole?: string
+  lastKnownLabel?: string
   backend?: string
   name?: string
   channels?: number
@@ -529,10 +533,13 @@ export interface OutputInfo {
   perfectReason: string
   outputSampleRate: number
   outputBitDepth: number
+  outputChannels?: number
+  outputSampleFormat?: string
   backend: string
   actualBackend: string
   deviceName: string
   actualDeviceName: string
+  actualDeviceId?: string
   driverName: string
   actualDriverName: string
   driverVersion: number

@@ -1,3 +1,7 @@
+#include "DeviceCatalog.h"
+#include "DeviceManager.h"
+#include "../output/OutputBackendFactory.h"
+
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
@@ -13,6 +17,10 @@
 #include <propsys.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <wrl/client.h>
+#endif
+
+#if defined(_WIN32) && defined(TAE_ENABLE_MINIAUDIO)
+#include "../output/miniaudio/MiniaudioPcmBackend.h"
 #endif
 
 #if defined(__APPLE__) && defined(TAE_ENABLE_COREAUDIO)
@@ -80,6 +88,57 @@ std::string readDeviceName(IMMDevice* device) {
   }
   PropVariantClear(&value);
   return name;
+}
+
+std::vector<PcmDeviceCatalogEntry> enumerateLegacyWindowsPcmDevices(std::string* error) {
+  HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  const bool shouldUninitialize = SUCCEEDED(hr);
+  if (hr == RPC_E_CHANGED_MODE) hr = S_OK;
+  if (FAILED(hr)) {
+    if (error) *error = "初始化 Windows 音频设备目录失败";
+    return {};
+  }
+
+  Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
+  hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator));
+  if (FAILED(hr)) {
+    if (shouldUninitialize) CoUninitialize();
+    if (error) *error = "创建 Windows 音频设备目录失败";
+    return {};
+  }
+
+  std::string defaultId;
+  Microsoft::WRL::ComPtr<IMMDevice> defaultDevice;
+  if (SUCCEEDED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &defaultDevice))) {
+    LPWSTR rawId = nullptr;
+    if (SUCCEEDED(defaultDevice->GetId(&rawId))) {
+      defaultId = wideToUtf8(rawId);
+      CoTaskMemFree(rawId);
+    }
+  }
+
+  std::vector<PcmDeviceCatalogEntry> devices;
+  Microsoft::WRL::ComPtr<IMMDeviceCollection> collection;
+  if (SUCCEEDED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &collection))) {
+    UINT count = 0;
+    collection->GetCount(&count);
+    devices.reserve(count);
+    for (UINT index = 0; index < count; ++index) {
+      Microsoft::WRL::ComPtr<IMMDevice> device;
+      if (FAILED(collection->Item(index, &device))) continue;
+      LPWSTR rawId = nullptr;
+      if (FAILED(device->GetId(&rawId))) continue;
+      const std::string id = wideToUtf8(rawId);
+      CoTaskMemFree(rawId);
+      const std::string label = readDeviceName(device.Get());
+      devices.push_back({id, label.empty() ? id : label, id == defaultId});
+    }
+  } else if (error) {
+    *error = "枚举 Windows 音频设备失败";
+  }
+
+  if (shouldUninitialize) CoUninitialize();
+  return keepUnambiguousPcmDevices(devices);
 }
 #endif
 
@@ -156,67 +215,31 @@ std::string enumerateAsioDevicesJson();
 
 std::string enumeratePlatformDevicesJson() {
 #if defined(_WIN32) && defined(TAE_ENABLE_WASAPI)
-  HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-  const bool shouldUninitialize = SUCCEEDED(hr);
-  if (hr == RPC_E_CHANGED_MODE) hr = S_OK;
-  if (FAILED(hr)) {
-    return "[{\"id\":\"auto\",\"label\":\"\\u7cfb\\u7edf\\u9ed8\\u8ba4\",\"isDefault\":true}]";
+  std::string catalogError;
+  std::vector<PcmDeviceCatalogEntry> devices;
+  const PcmOutputProviderSelection& selection = configuredPcmOutputProvider();
+  if (selection.status != PcmOutputProviderStatus::Ready) {
+    catalogError = selection.error;
+  } else if (selection.provider == PcmOutputProvider::Miniaudio) {
+#if defined(TAE_ENABLE_MINIAUDIO)
+    devices = enumerateMiniaudioPcmDevices(&catalogError);
+#else
+    catalogError = "当前构建未启用 miniaudio 设备目录";
+#endif
+  } else {
+    devices = enumerateLegacyWindowsPcmDevices(&catalogError);
   }
 
-  Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
-  hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator));
-  if (FAILED(hr)) {
-    if (shouldUninitialize) CoUninitialize();
-    return "[{\"id\":\"auto\",\"label\":\"\\u7cfb\\u7edf\\u9ed8\\u8ba4\",\"isDefault\":true}]";
-  }
-
-  std::string defaultId;
-  Microsoft::WRL::ComPtr<IMMDevice> defaultDevice;
-  if (SUCCEEDED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &defaultDevice))) {
-    LPWSTR rawId = nullptr;
-    if (SUCCEEDED(defaultDevice->GetId(&rawId))) {
-      defaultId = wideToUtf8(rawId);
-      CoTaskMemFree(rawId);
-    }
-  }
-
-  std::ostringstream json;
-  json << "[{\"id\":\"auto\",\"label\":\"\\u7cfb\\u7edf\\u9ed8\\u8ba4\",\"isDefault\":true,"
-       << "\"supportsExclusive\":true,\"supportsHogMode\":false,\"supportsDirectHw\":false,"
-       << "\"supportsDop\":false,\"supportsNativeDsd\":false,\"supportedDsdRates\":[],"
-       << "\"pathKind\":\"default\",\"capabilityReason\":\"\"}";
-
-  Microsoft::WRL::ComPtr<IMMDeviceCollection> collection;
-  if (SUCCEEDED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &collection))) {
-    UINT count = 0;
-    collection->GetCount(&count);
-    for (UINT i = 0; i < count; ++i) {
-      Microsoft::WRL::ComPtr<IMMDevice> device;
-      if (FAILED(collection->Item(i, &device))) continue;
-      LPWSTR rawId = nullptr;
-      if (FAILED(device->GetId(&rawId))) continue;
-      const std::string id = wideToUtf8(rawId);
-      CoTaskMemFree(rawId);
-      const std::string label = readDeviceName(device.Get());
-      json << ",{\"id\":\"" << escapeJson(id) << "\",\"label\":\""
-           << escapeJson(label.empty() ? id : label) << "\",\"isDefault\":"
-           << (id == defaultId ? "true" : "false")
-           << ",\"supportsExclusive\":true,\"supportsHogMode\":false,\"supportsDirectHw\":false,"
-           << "\"supportsDop\":false,\"supportsNativeDsd\":false,\"supportedDsdRates\":[],"
-           << "\"pathKind\":\"default\",\"capabilityReason\":\"\"}";
-    }
-  }
-
-  if (shouldUninitialize) CoUninitialize();
+  std::string json = windowsPcmDeviceCatalogJson(devices, catalogError);
 
 #if TAE_ENABLE_ASIO
   const std::string asioJson = enumerateAsioDevicesJson();
   if (asioJson.size() > 2) {
-    json << "," << asioJson.substr(1, asioJson.size() - 2);
+    json.pop_back();
+    json += "," + asioJson.substr(1);
   }
 #endif
-  json << "]";
-  return json.str();
+  return json;
 #elif defined(__APPLE__) && defined(TAE_ENABLE_COREAUDIO)
   std::ostringstream json;
   const std::string defaultUid = defaultCoreAudioUid();

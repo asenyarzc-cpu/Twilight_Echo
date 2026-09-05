@@ -10,8 +10,11 @@
 
 - `outputInfo.backend`：用户选择的后端，例如 `wasapi`、`wasapi-exclusive`、`asio`、`coreaudio`、`alsa`。
 - `outputInfo.actualBackend`：实际运行后端，应该与后端实现和 fallback 状态一致。
-- `outputInfo.deviceName` / `actualDeviceName`：请求设备名与实际设备名。`auto` 会解析为平台默认输出设备。
-- `outputInfo.outputSampleRate` / `outputBitDepth`：引擎向解码与渲染管线公开的输出格式。
+- `outputInfo.deviceName` / `actualDeviceName`：请求设备名与实际设备显示名。`auto` 会解析为平台默认输出设备。
+- `outputInfo.actualDeviceId`：backend 实际打开的 platform stable device ID；Windows WASAPI Shared 的 legacy 与 miniaudio provider 都会上报该字段，并由 route ACK 优先校验它，同名设备不能只比较 `actualDeviceName`。当用户选择 `auto`、播放中的系统默认端点变化时，main 会重放完整 backend/device/config 事务，并要求 ACK 的该字段匹配新观察到的默认 endpoint 后才 commit；idle 时只更新待打开的 `auto` 偏好。其它旧 backend 未上报时保持可选兼容字段。
+- `outputInfo.outputSampleRate` / `outputBitDepth` / `outputChannels` / `outputSampleFormat`：引擎
+  callback/render 格式；`outputChannels` 是实际 callback 通道数，不从源文件通道数推断；
+  `outputSampleFormat` 仅在 active provider 可直接观测时返回，未知时为空字符串。
 - `outputInfo.actualSampleRate` / `actualBitDepth` / `actualChannels`：后端协商后的实际输出参数。
 - `outputInfo.actualOutputFormat`：后端样本格式，例如 `float32`、`S16_LE`、`S24_3LE`。
 - `decodedSampleRate` / `decodedBitDepth` / `decodedChannels` / `decodedSampleFormat`：FFmpeg 解码后送入 AudioPipeline 的 PCM 工作格式，供 UI 展示输出链路并参与 passthrough 事实核对。
@@ -25,6 +28,8 @@
 - `outputInfo.pcmPassthrough`：本次播放 decoded PCM 与后端实际 PCM 格式完全一致且没有后端 resample 时为 `true`；由 `AudioPipeline` 比较 decoded PCM 与 backend actual output 后写入，不由后端自行声明。
 - `outputInfo.resampled`：后端或统一评估发现采样率、位深、声道数或 sample format 发生转换；它仍是现有 evaluator 使用的兼容事实。
 - `outputInfo.providerImplementation`：实际实现诊断，取 `legacy-native` 或 `miniaudio`；这不是用户可选择的新 backend，公开 backend id 仍保持不变。
+- Windows Shared/default PCM 可通过进程环境 `TWILIGHT_AUDIO_PCM_PROVIDER=legacy|miniaudio` 选择实现；未设置时仍为 `legacy`。非法值或请求未编译进当前引擎的 `miniaudio` 会在输出后端 prepare 阶段明确失败，不会静默回退；WASAPI Exclusive、ASIO 与 DSD 特殊路由忽略该选择。
+- `TAE_EnumerateDevices()` 的 Windows PCM 记录保持兼容 `id/label/isDefault`，并增量返回 `platformStableId`、`providerFamily="wasapi"`、`defaultRole="console"` 与 `lastKnownLabel`。`id` 与 `platformStableId` 均为 Windows endpoint ID；`ma_device_id`、指针和枚举序号不进入 JSON 或设置持久化。空 ID 和重复 stable ID 不进入可选目录，重复 label 则保留并依靠 stable ID 区分。
 - `outputInfo.conversionInfo`：增量转换事实，包括 `sampleFormatConverted`、`sampleRateConverted`、`channelLayoutConverted` 和来源 `source`（`backend-runtime`、`engine-inferred` 或 `unavailable`）。`sampleRateConverted` 与既有 `resampled` 保持一致；当 legacy backend 无法证明某项转换时必须报告 `source="unavailable"`，不能把占位的 `false` 当作未转换证据。
 - `outputInfo.perfectReason`：`sourceExact` 或 `outputPerfect` 未达成时的 canonical 原因。
 - `outputInfo.isDsd` / `dsdMode` / `dsdRate`：DSD 状态 canonical 字段。顶层 `PlaybackInfo.isDsd`、`dsdMode`、`dsdRate` 只做镜像；Renderer 应优先读取 `outputInfo` 表示当前 runtime 传输状态。若 DoP 在运行时回退到 PCM，canonical 状态必须同步为 `isDsd=false`、`dsdMode='pcm'`、`dsdRate=0`，UI 可另外基于源文件元数据保留 `DSF/DFF DSD64 -> PCM fallback ...` 的源侧说明。
@@ -144,7 +149,9 @@ main 进程（`engineIpc.ts`）在播放状态变化、引擎错误与诊断导�
 
 SoXR 不是独立链接的宿主 backend，而是 FFmpeg 的构建可选 resampler engine。清单把它标记为 `ffmpeg-runtime-probe`：只有播放期 `DspOutputStageStatus.resamplerEngine` 与 `resamplerFallback` 才能报告实际 engine 和回退。没有 runtime observation 只表示“未观察”，不表示 SoXR 已可用，也不把它伪装为编译保证。
 
-miniaudio 目前仅是 `TAE_ENABLE_MINIAUDIO=OFF` 默认关闭的 Windows Shared/default PCM provider PoC 编译依赖。MA-101 的 callback 固定为 Float32 interleaved，并关闭 WASAPI `AUTOCONVERTPCM`，使 miniaudio 自己的 converter 与公开的 internal device facts 保持可区分；设备通知在 control event path 延迟派发。Manifest 中的 `capabilities.miniaudio.compiled=true` 只说明 staged 主引擎包含该 PoC 代码与 WASAPI backend 编译标记；`runtimeStatus` 和 `deviceStatus` 在真实运行与设备 A/B 证据前保持 `unverified`，也不改变公开 backend id 或默认输出选择。
+miniaudio 0.11.25 是 Windows Shared/default PCM provider PoC。通用 CMake 选项 `TAE_ENABLE_MINIAUDIO` 仍默认关闭，但 Windows MinGW 发布 preset 已将它打开以保证目标二进制具备可回退的实验实现；编译期默认 provider 通过 `TAE_DEFAULT_PCM_PROVIDER` 固定为 `legacy`，因此当前未设置 `TWILIGHT_AUDIO_PCM_PROVIDER` 时仍使用现有 legacy provider。只有显式设置 `TWILIGHT_AUDIO_PCM_PROVIDER=miniaudio` 才选择 miniaudio，`legacy` 是明确 rollback 值；非法值和未编译 provider 均明确失败，不静默回退。MA-101 的 callback 固定为 Float32 interleaved，并关闭 WASAPI `AUTOCONVERTPCM`，使 miniaudio 自己的 converter 与公开的 internal device facts 保持可区分；设备通知在 control event path 延迟派发。Manifest 中的 `capabilities.miniaudio.compiled=true` 只说明 staged 主引擎包含该 PoC 代码与 WASAPI backend 编译标记；`runtimeStatus` 和 `deviceStatus` 在真实运行与设备 A/B 证据前保持 `unverified`，也不改变公开 backend id、默认输出选择或 G3/G4 采用结论。
+
+Manifest 中的 `capabilities.pcmOutputProvider` 单独列出 `buildAvailability`、当前编译默认 `defaultProvider`、实际打开路由的 `activeProvider`、`runtimeObservation` 和 `deviceVerification`。暂存阶段没有打开播放路由时 `activeProvider` 必须为 `null`，这不等同于 legacy 或 miniaudio 已完成真实设备验证；`rollbackProvider` 固定为 `legacy`。因此构建可用性、活动实现、运行观察和设备验证不能互相推断或合并。
 
 当前批准的产品术语是“PCM SRC”和“实验性 PCM→DSD64/128/256（CPU）”。CUDA SDM 与完整高品质 SDM 在 AP-409 完成并拥有数值、性能及真机证据前不得作为支持能力发布。
 

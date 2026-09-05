@@ -57,6 +57,7 @@ int main() {
         const OutputInfo info = backend.outputInfo();
         assert(info.actualBackend == "wasapi");
         assert(!info.actualDeviceName.empty());
+        assert(!info.actualDeviceId.empty());
         assert(!info.actualOutputFormat.empty());
         assert(info.actualSampleRate > 0);
         assert(info.actualBitDepth > 0);

@@ -6,6 +6,8 @@ const { readPeImports } = require('./pe-imports.cjs')
 const { readStagedAudioRuntimeObservation } = require('./staged-audio-runtime-observation.cjs')
 
 const NATIVE_ARTIFACT_EXTENSIONS = new Set(['.dll', '.node', '.exe', '.so', '.dylib'])
+const PCM_OUTPUT_PROVIDERS = new Set(['legacy', 'miniaudio'])
+const COMPILED_DEFAULT_PCM_PROVIDER = 'legacy'
 const CUDA_IMPORT = /^(?:cudart(?:64)?|nvcuda|nvrtc(?:64)?)(?:[._-]|$)/i
 const OTHER_GPU_IMPORTS = [
   ['opencl', /^opencl(?:[._-]|$)/i],
@@ -84,10 +86,14 @@ function runtimeObservation(runtimeStatus) {
   const observation = runtimeStatus.observation
   if (!observation || typeof observation !== 'object') return null
   const capabilities = runtimeStatus.capabilities
+  const activeProvider = PCM_OUTPUT_PROVIDERS.has(runtimeStatus.activeProvider)
+    ? runtimeStatus.activeProvider
+    : null
   return {
     schemaVersion: observation.schemaVersion,
     source: observation.source,
     artifactSha256: observation.artifactSha256,
+    activeProvider,
     capabilities:
       capabilities && typeof capabilities === 'object'
         ? {
@@ -96,6 +102,25 @@ function runtimeObservation(runtimeStatus) {
             nativeDsdProvider: capabilities.nativeDsdProvider
           }
         : {}
+  }
+}
+
+function pcmOutputProviderCapability(miniaudioCompiled, runtimeStatus) {
+  const activeProvider = PCM_OUTPUT_PROVIDERS.has(runtimeStatus?.activeProvider)
+    ? runtimeStatus.activeProvider
+    : null
+  return {
+    publicBackend: 'wasapi',
+    pathKind: 'shared-default-pcm',
+    buildAvailability: {
+      legacy: miniaudioCompiled ? 'available' : 'unverified',
+      miniaudio: miniaudioCompiled ? 'available' : 'not-built'
+    },
+    defaultProvider: COMPILED_DEFAULT_PCM_PROVIDER,
+    activeProvider,
+    runtimeObservation: activeProvider ? 'available' : 'unverified',
+    deviceVerification: 'unverified',
+    rollbackProvider: 'legacy'
   }
 }
 
@@ -154,6 +179,7 @@ function createAudioCapabilityManifest({ artifactDir, runtimeStatus = null }) {
         backend: pcmToDsdCompiled ? 'cpu' : null,
         experimentalRates: pcmToDsdCompiled ? ['dsd64', 'dsd128', 'dsd256'] : []
       },
+      pcmOutputProvider: pcmOutputProviderCapability(miniaudioCompiled, runtimeStatus),
       cuda: {
         compiled: cudaImports.length > 0 ? true : importInspectionComplete ? false : null,
         imports: cudaImports,
@@ -303,6 +329,7 @@ module.exports = {
   hasUnsupportedProductClaim,
   listFilesMatching,
   listNativeArtifacts,
+  pcmOutputProviderCapability,
   parseArgs,
   runtimeResamplerStatus
 }

@@ -124,6 +124,8 @@ const outputDiagnosticsText = computed(() => {
   return `Underrun ${diagnostics.sessionUnderrunCount} · Drop ${diagnostics.sessionBufferDropCount}`
 })
 
+const outputProviderImplementation = computed(() => outputInfo.value?.providerImplementation ?? '')
+
 /**
  * Why the output chain is not bit-perfect, in prose.
  *
@@ -436,6 +438,9 @@ function setCrossfadeSeconds(event: Event): void {
       <div class="diagnostic-meta">
         <span v-if="outputLatencyText"><i class="pi pi-clock"></i> {{ outputLatencyText }}</span>
         <span><i class="pi pi-chart-bar"></i> {{ outputDiagnosticsText }}</span>
+        <span v-if="outputProviderImplementation">
+          <i class="pi pi-cog"></i> Provider {{ outputProviderImplementation }}
+        </span>
       </div>
     </div>
 

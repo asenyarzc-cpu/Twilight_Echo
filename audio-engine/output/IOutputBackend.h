@@ -103,7 +103,4 @@ class IOutputBackend {
   virtual std::string deviceName() const = 0;
 };
 
-std::string defaultBackendId();
-std::unique_ptr<IOutputBackend> createOutputBackend(const std::string& backendId);
-
 }  // namespace twilight::audio

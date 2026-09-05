@@ -1223,6 +1223,7 @@ export class PlaybackController {
       canonicalOutput?.actualDeviceName,
       outputInfo.deviceName
     )
+    outputInfo.actualDeviceId = canonicalOutput?.actualDeviceId || outputInfo.actualDeviceId || ''
     outputInfo.driverName = preferNonEmpty(canonicalOutput?.driverName, info.driverName)
     outputInfo.actualDriverName = preferNonEmpty(
       canonicalOutput?.actualDriverName,
@@ -1238,6 +1239,7 @@ export class PlaybackController {
     outputInfo.actualChannels = canonicalOutput?.actualChannels ?? info.actualChannels ?? 0
     outputInfo.outputSampleRate = canonicalOutput?.outputSampleRate ?? info.outputSampleRate ?? 0
     outputInfo.outputBitDepth = canonicalOutput?.outputBitDepth ?? info.outputBitDepth ?? 0
+    outputInfo.outputChannels = canonicalOutput?.outputChannels ?? outputInfo.outputChannels ?? 0
     outputInfo.bufferSizeFrames = canonicalOutput?.bufferSizeFrames ?? info.bufferSizeFrames ?? 0
     outputInfo.latencyFrames = canonicalOutput?.latencyFrames ?? info.latencyFrames ?? 0
     outputInfo.latencyMs = canonicalOutput?.latencyMs ?? info.latencyMs ?? 0

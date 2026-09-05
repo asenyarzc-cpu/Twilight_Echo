@@ -9,6 +9,7 @@ const { createAudioCapabilityManifest } = require('./generate-audio-capability-m
 const {
   CAPABILITY_STATES,
   assertCapabilityProductClaims,
+  binaryManifestFacts,
   createReleaseCapabilityStatus,
   verifyReleaseCapabilityConsistency
 } = require('./verify-release-capability-consistency.cjs')
@@ -98,6 +99,20 @@ test('controlled capability statuses retain staged-build and real-device dimensi
     assert.equal(result.status.capabilities.VST3.status, 'not-built')
     assert.equal(result.status.capabilities.CUDA.status, 'not-built')
     assert.equal(result.status.capabilities['Native DSD provider'].deviceVerification, 'unverified')
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('provider runtime facts do not masquerade as staged binary drift', () => {
+  const directory = fixtureDirectory()
+  try {
+    const manifest = createAudioCapabilityManifest({ artifactDir: directory })
+    const observed = structuredClone(manifest)
+    observed.capabilities.pcmOutputProvider.activeProvider = 'miniaudio'
+    observed.capabilities.pcmOutputProvider.runtimeObservation = 'available'
+    observed.capabilities.pcmOutputProvider.deviceVerification = 'unverified'
+    assert.deepEqual(binaryManifestFacts(observed), binaryManifestFacts(manifest))
   } finally {
     fs.rmSync(directory, { recursive: true, force: true })
   }

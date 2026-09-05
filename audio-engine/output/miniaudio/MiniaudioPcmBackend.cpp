@@ -1,5 +1,6 @@
 #include "MiniaudioPcmBackend.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -13,6 +14,10 @@
 #include <utility>
 
 #if defined(_WIN32) && defined(TAE_ENABLE_MINIAUDIO)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #include "../../third_party/miniaudio/miniaudio.h"
 #endif
 
@@ -22,6 +27,7 @@ namespace {
 using miniaudio_backend_detail::Api;
 using miniaudio_backend_detail::CallbackContext;
 using miniaudio_backend_detail::DeviceConfig;
+using miniaudio_backend_detail::DeviceDescriptor;
 using miniaudio_backend_detail::DeviceFormat;
 using miniaudio_backend_detail::DeviceState;
 using miniaudio_backend_detail::NotificationType;
@@ -141,6 +147,45 @@ int bitDepthForDeviceFormat(DeviceFormat format) {
 
 #if defined(_WIN32) && defined(TAE_ENABLE_MINIAUDIO)
 
+std::string wasapiDeviceIdToUtf8(const ma_device_id& id) {
+  const int size = WideCharToMultiByte(CP_UTF8, 0, id.wasapi, -1, nullptr, 0, nullptr, nullptr);
+  if (size <= 0) return {};
+  std::string out(static_cast<size_t>(size), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, id.wasapi, -1, out.data(), size, nullptr, nullptr);
+  if (!out.empty() && out.back() == '\0') out.pop_back();
+  return out;
+}
+
+int realEnumeratePlaybackDevices(void*, std::vector<DeviceDescriptor>* devices) {
+  if (!devices) return MA_INVALID_ARGS;
+  devices->clear();
+  static_assert(sizeof(ma_device_id) <= miniaudio_backend_detail::kAdapterDeviceIdCapacity);
+
+  const ma_backend backends[] = {ma_backend_wasapi};
+  ma_context context{};
+  ma_result result = ma_context_init(backends, 1, nullptr, &context);
+  if (result != MA_SUCCESS) return result;
+
+  ma_device_info* playbackDevices = nullptr;
+  ma_uint32 playbackDeviceCount = 0;
+  result = ma_context_get_devices(&context, &playbackDevices, &playbackDeviceCount, nullptr, nullptr);
+  if (result == MA_SUCCESS) {
+    devices->reserve(playbackDeviceCount);
+    for (ma_uint32 index = 0; index < playbackDeviceCount; ++index) {
+      const ma_device_info& source = playbackDevices[index];
+      DeviceDescriptor target;
+      target.platformStableId = wasapiDeviceIdToUtf8(source.id);
+      target.label = source.name;
+      target.isDefault = source.isDefault == MA_TRUE;
+      target.adapterDeviceIdSize = sizeof(source.id);
+      std::memcpy(target.adapterDeviceId.data(), &source.id, sizeof(source.id));
+      devices->push_back(std::move(target));
+    }
+  }
+  ma_context_uninit(&context);
+  return result;
+}
+
 DeviceFormat fromMiniaudioFormat(ma_format format) {
   switch (format) {
     case ma_format_u8:
@@ -205,6 +250,8 @@ void copyDeviceState(const ma_device* device, DeviceState* state) {
   state->sampleRateConverted = device->playback.converter.hasResampler != MA_FALSE;
   state->channelLayoutConverted = device->playback.converter.hasChannelConverter != MA_FALSE;
   std::strncpy(state->deviceName, device->playback.name, sizeof(state->deviceName) - 1);
+  const std::string stableId = wasapiDeviceIdToUtf8(device->playback.id);
+  std::strncpy(state->deviceId, stableId.c_str(), sizeof(state->deviceId) - 1);
 }
 
 void realDataCallback(ma_device* device, void* output, const void*, ma_uint32 frameCount) {
@@ -240,12 +287,23 @@ int realInitializeDevice(void*, void* storage, const DeviceConfig* config, Devic
   deviceConfig.sampleRate = config->sampleRate;
   deviceConfig.noFixedSizedCallback = config->noFixedSizedCallback ? MA_TRUE : MA_FALSE;
   deviceConfig.wasapi.noAutoConvertSRC = config->noAutoConvertSRC ? MA_TRUE : MA_FALSE;
+  deviceConfig.wasapi.noAutoStreamRouting = config->allowAutomaticReroute ? MA_FALSE : MA_TRUE;
   deviceConfig.noPreSilencedOutputBuffer = MA_TRUE;
   deviceConfig.noClip = MA_TRUE;
   deviceConfig.dataCallback = realDataCallback;
   deviceConfig.notificationCallback = realNotificationCallback;
   deviceConfig.pUserData = config->callbackContext;
-  deviceConfig.playback.pDeviceID = nullptr;
+  ma_device_id selectedDeviceId{};
+  if (config->selectedDevice) {
+    if (config->selectedDevice->adapterDeviceIdSize != sizeof(selectedDeviceId)) return MA_INVALID_ARGS;
+    std::memcpy(
+        &selectedDeviceId,
+        config->selectedDevice->adapterDeviceId.data(),
+        sizeof(selectedDeviceId));
+    deviceConfig.playback.pDeviceID = &selectedDeviceId;
+  } else {
+    deviceConfig.playback.pDeviceID = nullptr;
+  }
   deviceConfig.playback.format = ma_format_f32;
   deviceConfig.playback.channels = config->channels;
   deviceConfig.playback.shareMode = ma_share_mode_shared;
@@ -285,6 +343,7 @@ const Api& realApi() {
 #if defined(_WIN32) && defined(TAE_ENABLE_MINIAUDIO)
   static const Api api = {
       nullptr,
+      realEnumeratePlaybackDevices,
       realCreateDevice,
       realDestroyDevice,
       realInitializeDevice,
@@ -306,6 +365,7 @@ struct MiniaudioPcmBackend::Impl {
     callbackContext.dataCallback = &Impl::dataCallback;
     callbackContext.notificationCallback = &Impl::notificationCallback;
     callbackContext.userData = this;
+    resetOutputInfo();
   }
 
   ~Impl() { close(); }
@@ -439,11 +499,12 @@ struct MiniaudioPcmBackend::Impl {
   }
 
   bool hasValidApi() const {
-    return api.createDevice && api.destroyDevice && api.initializeDevice && api.readDeviceState && api.startDevice &&
-           api.stopDevice && api.uninitializeDevice;
+    return api.enumeratePlaybackDevices && api.createDevice && api.destroyDevice && api.initializeDevice &&
+           api.readDeviceState && api.startDevice && api.stopDevice && api.uninitializeDevice;
   }
 
   void resetOutputInfo() {
+    std::lock_guard lock(infoMutex);
     OutputInfo::Diagnostics lifetime = diagnostics;
     diagnostics = {};
     diagnostics.lifetimeUnderrunCount = lifetime.lifetimeUnderrunCount;
@@ -453,7 +514,6 @@ struct MiniaudioPcmBackend::Impl {
     diagnostics.deviceLostCount = lifetime.deviceLostCount;
     sessionShortRenderCount.store(0, std::memory_order_relaxed);
 
-    std::lock_guard lock(infoMutex);
     outputInfo = {};
     outputInfo.exclusive = false;
     outputInfo.accessMode = "shared";
@@ -539,11 +599,15 @@ struct MiniaudioPcmBackend::Impl {
     outputInfo.resampled = sampleRateConversion;
     outputInfo.outputSampleRate = callbackStateKnown ? callbackFormat.sampleRate : 0;
     outputInfo.outputBitDepth = callbackStateKnown ? bitDepthForDeviceFormat(state.callbackFormat) : 0;
+    outputInfo.outputChannels = callbackStateKnown ? callbackFormat.channelCount : 0;
+    outputInfo.outputSampleFormat =
+        callbackStateKnown ? sampleFormatToString(callbackFormat.sampleFormat) : "";
     outputInfo.backend = "wasapi";
     outputInfo.actualBackend = "wasapi";
     outputInfo.devicePathKind = "default";
     outputInfo.deviceName = deviceName;
     outputInfo.actualDeviceName = deviceName;
+    outputInfo.actualDeviceId = state.deviceId;
     outputInfo.actualOutputFormat = actualStateKnown ? sampleFormatToString(actualFormat.sampleFormat) : "unknown";
     outputInfo.actualSampleRate = actualStateKnown ? actualFormat.sampleRate : 0;
     outputInfo.actualBitDepth = actualStateKnown ? bitDepthForDeviceFormat(state.internalFormat) : 0;
@@ -572,11 +636,6 @@ struct MiniaudioPcmBackend::Impl {
     dopFacts = {};
     resetOutputInfo();
 
-    if (!isDefaultDeviceAlias(deviceId)) {
-      const std::string reason = "miniaudio Shared PoC 仅支持系统默认输出设备 (auto)；显式设备 ID 留给 MA-103";
-      recordFailure("device_not_supported", reason, error);
-      return false;
-    }
     if (isDsdOrDopRequest(requestedFormat)) {
       const std::string reason = "miniaudio Shared PoC 不支持 DSD/DoP 输出";
       recordFailure("format_not_supported", reason, error);
@@ -585,6 +644,37 @@ struct MiniaudioPcmBackend::Impl {
     if (!hasValidApi()) {
       const std::string reason = "当前构建未启用 miniaudio Shared provider";
       recordFailure("backend_unavailable", reason, error);
+      return false;
+    }
+
+    std::vector<DeviceDescriptor> devices;
+    const int enumerateResult = api.enumeratePlaybackDevices(api.userData, &devices);
+    if (enumerateResult != 0) {
+      const std::string reason = resultMessage("枚举 Shared WASAPI 设备", enumerateResult);
+      recordFailure(resultReasonCode("enumerate", enumerateResult), reason, error);
+      return false;
+    }
+    const bool useDefaultRole = isDefaultDeviceAlias(deviceId);
+    const auto matchesSelection = [&](const DeviceDescriptor& candidate) {
+      return useDefaultRole ? candidate.isDefault : candidate.platformStableId == deviceId;
+    };
+    const size_t matchCount = static_cast<size_t>(std::count_if(devices.begin(), devices.end(), matchesSelection));
+    if (matchCount == 0) {
+      const std::string reason = useDefaultRole ? "miniaudio 未找到 console role 的默认输出设备"
+                                                : "miniaudio 未找到显式输出设备：" + deviceId;
+      recordFailure("device_not_found", reason, error);
+      return false;
+    }
+    if (matchCount != 1) {
+      const std::string reason = useDefaultRole ? "miniaudio 设备目录包含多个 console role 默认输出设备"
+                                                : "miniaudio 设备目录包含重复的稳定设备 ID：" + deviceId;
+      recordFailure("device_id_ambiguous", reason, error);
+      return false;
+    }
+    const DeviceDescriptor selectedDevice = *std::find_if(devices.begin(), devices.end(), matchesSelection);
+    if (selectedDevice.platformStableId.empty() || selectedDevice.adapterDeviceIdSize == 0) {
+      const std::string reason = "miniaudio 设备目录返回了无效的稳定设备 ID";
+      recordFailure("device_id_invalid", reason, error);
       return false;
     }
 
@@ -601,7 +691,9 @@ struct MiniaudioPcmBackend::Impl {
     config.shared = true;
     config.noFixedSizedCallback = true;
     config.noAutoConvertSRC = true;
+    config.allowAutomaticReroute = false;
     config.callbackContext = &callbackContext;
+    config.selectedDevice = &selectedDevice;
     DeviceState state;
     const int result = api.initializeDevice(api.userData, device, &config, &state);
     if (result != 0) {
@@ -777,6 +869,31 @@ bool miniaudioPcmBackendAvailable() {
 #else
   return false;
 #endif
+}
+
+std::vector<PcmDeviceCatalogEntry> enumerateMiniaudioPcmDevices(const Api& api, std::string* error) {
+  if (!api.enumeratePlaybackDevices) {
+    if (error) *error = "当前构建未启用 miniaudio 设备目录";
+    return {};
+  }
+
+  std::vector<DeviceDescriptor> devices;
+  const int result = api.enumeratePlaybackDevices(api.userData, &devices);
+  if (result != 0) {
+    if (error) *error = resultMessage("枚举 Shared WASAPI 设备", result);
+    return {};
+  }
+
+  std::vector<PcmDeviceCatalogEntry> publicDevices;
+  publicDevices.reserve(devices.size());
+  for (const auto& device : devices) {
+    publicDevices.push_back({device.platformStableId, device.label, device.isDefault});
+  }
+  return keepUnambiguousPcmDevices(publicDevices);
+}
+
+std::vector<PcmDeviceCatalogEntry> enumerateMiniaudioPcmDevices(std::string* error) {
+  return enumerateMiniaudioPcmDevices(miniaudio_backend_detail::realApi(), error);
 }
 
 }  // namespace twilight::audio

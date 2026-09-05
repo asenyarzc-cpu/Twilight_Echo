@@ -200,14 +200,38 @@ or `TAE_MINGW_RUNTIME_DIR` to point it elsewhere. Staging fails rather than ship
 Take the DLLs from the toolchain that actually built the artifacts — an unrelated MinGW earlier on
 `PATH` ships a different libstdc++ and produces `The specified procedure could not be found`.
 
-The miniaudio `0.11.25` implementation is an opt-in, default-off Windows Shared/default PCM build
-capability. MA-101 fixes the callback at Float32 and disables WASAPI `AUTOCONVERTPCM` so the
+The miniaudio `0.11.25` implementation is a Windows Shared/default PCM build capability. The generic
+`TAE_ENABLE_MINIAUDIO` option remains default-off, while the Windows MinGW release preset enables it
+so the staged target contains the rollback-capable experiment. `TAE_DEFAULT_PCM_PROVIDER=legacy` keeps
+the compiled default on the existing provider: an unset selector and explicit
+`TWILIGHT_AUDIO_PCM_PROVIDER=legacy` both preserve legacy behavior. Only an explicit
+`TWILIGHT_AUDIO_PCM_PROVIDER=miniaudio` selects miniaudio. Invalid values and miniaudio requests
+against a build without that provider fail output route prepare without silently falling back. WASAPI
+Exclusive, ASIO, and DSD routes ignore this selector. MA-101
+fixes the callback at Float32 and disables WASAPI `AUTOCONVERTPCM` so the
 miniaudio converter and internal device state can report conversion facts without treating the
 requested format as actual device state; device notifications are dispatched through a deferred
 control event path. Its `outputInfo.providerImplementation` and `outputInfo.conversionInfo` fields are
 diagnostic facts only; they do not add a public backend, prove runtime/device support, or change
 Shared `outputPerfect=false` semantics. A capability manifest showing miniaudio compiled is not a
-real-device or A/B validation result.
+real-device or A/B validation result, and does not authorize the G3/G4 default-adoption claim.
+
+The staged manifest's `capabilities.pcmOutputProvider` keeps `buildAvailability`, the compiled
+`defaultProvider`, the route-level `activeProvider`, `runtimeObservation`, and
+`deviceVerification` separate. Staging does not open a playback route, so `activeProvider` is
+`null`; that is an explicit absence of an active observation, not evidence that either provider
+has passed real-device verification. `rollbackProvider` remains `legacy` until an independent
+MA-106 decision authorizes any default change.
+
+The Windows PCM catalog uses the endpoint stable ID for both legacy and miniaudio providers. The
+miniaudio adapter resolves an explicit ID, or the current console-role default, from a fresh catalog
+and keeps raw `ma_device_id` data inside that open attempt. Automatic WASAPI rerouting in miniaudio is
+disabled: default changes and hotplug continue through the main-process cache invalidation and route
+transaction. An active `auto` default change replays backend/device/config and commits only after
+`outputInfo.actualDeviceId` matches the newly observed default endpoint; an idle change only updates
+the pending `auto` preference. Missing, duplicate, stale, or removed-during-open explicit devices fail
+without falling back to the system default. Route ACK uses `outputInfo.actualDeviceId` when available
+so duplicate friendly names cannot validate the wrong endpoint.
 
 ## Unsigned Release Artifact Gate
 

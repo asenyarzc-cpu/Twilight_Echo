@@ -689,6 +689,7 @@ bool AsioBackend::open(const std::string& deviceId, const AudioFormat& requested
   outputInfo_.perfectReason = outputInfo_.resampled ? "ASIO 输出格式已协商为驱动支持格式" : "";
   outputInfo_.outputSampleRate = outputFormat_.sampleRate;
   outputInfo_.outputBitDepth = outputFormat_.bitDepth;
+  outputInfo_.outputChannels = outputFormat_.channelCount;
   outputInfo_.backend = "asio";
   outputInfo_.actualBackend = "asio";
   outputInfo_.devicePathKind = "asio";

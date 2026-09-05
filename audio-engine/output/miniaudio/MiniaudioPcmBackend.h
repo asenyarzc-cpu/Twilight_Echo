@@ -1,10 +1,12 @@
 #pragma once
 
+#include "../../devices/DeviceCatalog.h"
 #include "../IOutputBackend.h"
 #include "MiniaudioApi.h"
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace twilight::audio {
 
@@ -33,5 +35,9 @@ class MiniaudioPcmBackend final : public IOutputBackend {
 };
 
 bool miniaudioPcmBackendAvailable();
+std::vector<PcmDeviceCatalogEntry> enumerateMiniaudioPcmDevices(
+    const miniaudio_backend_detail::Api& api,
+    std::string* error = nullptr);
+std::vector<PcmDeviceCatalogEntry> enumerateMiniaudioPcmDevices(std::string* error = nullptr);
 
 }  // namespace twilight::audio

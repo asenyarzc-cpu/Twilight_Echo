@@ -6,6 +6,7 @@
 #include "../decoder/FFmpegDecoder.h"
 #include "../dsp/Vst3BridgeProcessor.h"
 #include "../output/IOutputBackend.h"
+#include "../output/OutputBackendFactory.h"
 
 #include <algorithm>
 #include <atomic>
@@ -2018,6 +2019,26 @@ void testOutputRouteTransactionCommitsOnceAfterBackendDeviceConfig() {
   assertLatestPlaybackContains(engine, "\"outputDevice\":\"device-b\"");
 }
 
+void testAutoOutputDeviceRefreshCommitsRouteTransaction() {
+  EngineHarness harness;
+  auto& engine = harness.engine();
+
+  assert(engine.setOutputDevice("auto") == TAE_RESULT_OK);
+  assert(engine.play("auto-route-refresh.flac", 7.0) == TAE_RESULT_OK);
+  assert(waitForStartedBackendCount(1));
+  const size_t backendCountBefore = g_backendRegistry.snapshots().size();
+
+  assert(engine.setOutputDevice("auto") == TAE_RESULT_OK);
+  assert(g_backendRegistry.snapshots().size() == backendCountBefore);
+  assert(engine.setOutputConfig("{}") == TAE_RESULT_OK);
+  assert(waitUntil([&] {
+    return g_backendRegistry.snapshots().size() == backendCountBefore + 1;
+  }));
+  assertLatestPlaybackContains(engine, "\"state\":\"playing\"");
+  assertLatestPlaybackContains(engine, "\"source\":\"auto-route-refresh.flac\"");
+  assertLatestPlaybackContains(engine, "\"outputDevice\":\"auto\"");
+}
+
 void testRenderWaitsForTransientDecoderLag() {
   EngineHarness harness;
   auto& engine = harness.engine();
@@ -3671,8 +3692,12 @@ std::string defaultBackendId() {
   return "wasapi-exclusive";
 }
 
-std::unique_ptr<IOutputBackend> createOutputBackend(const std::string& backendId) {
+std::unique_ptr<IOutputBackend> createOutputBackend(const std::string& backendId, std::string*) {
   return std::make_unique<FakeOutputBackend>(backendId);
+}
+
+PcmOutputProviderStatus validatePcmOutputProviderForBackend(const std::string&, std::string*) {
+  return PcmOutputProviderStatus::Ready;
 }
 
 std::string enumeratePlatformDevicesJson() {
@@ -3851,6 +3876,7 @@ int main() {
   testBackendRenderErrorIsReportedThroughLastError();
   testStoppedSetOutputDeviceKeepsOutputInfoDeviceNamesConsistent();
   testOutputRouteTransactionCommitsOnceAfterBackendDeviceConfig();
+  testAutoOutputDeviceRefreshCommitsRouteTransaction();
   testRenderWaitsForTransientDecoderLag();
   testRoutedRenderHandlesCallbacksLargerThanPreparedScratch();
   testPcmVolumeFallsBackToFloatProcessing();

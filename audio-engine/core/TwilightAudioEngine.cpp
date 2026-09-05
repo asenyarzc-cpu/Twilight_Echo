@@ -3,7 +3,9 @@
 #include "../analysis/BpmAnalyzer.h"
 #include "../analysis/LoudnessAnalyzer.h"
 #include "../decoder/SacdIsoProbe.h"
+#include "../devices/DeviceManager.h"
 #include "../metadata/AudioMetadataService.h"
+#include "../output/OutputBackendFactory.h"
 #include "../utils/JsonUtils.h"
 #include "DiagnosticLog.h"
 
@@ -18,7 +20,6 @@
 
 namespace twilight::audio {
 
-std::string enumeratePlatformDevicesJson();
 std::string enumerateAsioDevicesJson();
 std::string pluginCapabilitiesJson();
 
@@ -418,11 +419,14 @@ std::string playbackInfoToJson(const PlaybackInfo& info) {
        << "\"dsdConversionReason\":\"" << json_utils::escape(out.dsdConversionReason) << "\","
        << "\"outputSampleRate\":" << out.outputSampleRate << ","
        << "\"outputBitDepth\":" << out.outputBitDepth << ","
+       << "\"outputChannels\":" << out.outputChannels << ","
+       << "\"outputSampleFormat\":\"" << json_utils::escape(out.outputSampleFormat) << "\","
        << "\"backend\":\"" << json_utils::escape(out.backend) << "\","
        << "\"actualBackend\":\"" << json_utils::escape(out.actualBackend) << "\","
        << "\"devicePathKind\":\"" << json_utils::escape(out.devicePathKind) << "\","
        << "\"deviceName\":\"" << json_utils::escape(out.deviceName) << "\","
        << "\"actualDeviceName\":\"" << json_utils::escape(out.actualDeviceName) << "\","
+       << "\"actualDeviceId\":\"" << json_utils::escape(out.actualDeviceId) << "\","
        << "\"driverName\":\"" << json_utils::escape(out.driverName) << "\","
        << "\"actualDriverName\":\"" << json_utils::escape(out.actualDriverName) << "\","
        << "\"driverVersion\":" << out.driverVersion << ","
@@ -967,7 +971,10 @@ TAE_Result TwilightAudioEngine::setLoopRange(double startSeconds, double endSeco
 TAE_Result TwilightAudioEngine::setOutputDevice(const std::string& deviceId) {
   std::lock_guard lock(mutex_);
   const std::string nextDevice = deviceId.empty() ? "auto" : deviceId;
-  if (nextDevice != info_.outputDevice) outputRoutePending_ = true;
+  if (nextDevice != info_.outputDevice ||
+      (nextDevice == "auto" && info_.state != PlaybackState::Stopped)) {
+    outputRoutePending_ = true;
+  }
   info_.outputDevice = nextDevice;
   if (info_.state == PlaybackState::Stopped) {
     info_.outputInfo.deviceName = nextDevice;
@@ -979,8 +986,18 @@ TAE_Result TwilightAudioEngine::setOutputDevice(const std::string& deviceId) {
 
 TAE_Result TwilightAudioEngine::setOutputBackend(const std::string& backendId) {
   if (backendId.empty()) return TAE_RESULT_INVALID_ARGUMENT;
-  std::lock_guard lock(mutex_);
   const std::string nextBackend = backendId == "wasapi-shared" ? "wasapi" : backendId;
+  std::string providerError;
+  const PcmOutputProviderStatus providerStatus =
+      validatePcmOutputProviderForBackend(nextBackend, &providerError);
+  if (providerStatus != PcmOutputProviderStatus::Ready) {
+    const TAE_Result result = providerStatus == PcmOutputProviderStatus::InvalidConfiguration
+                                  ? TAE_RESULT_INVALID_ARGUMENT
+                                  : TAE_RESULT_BACKEND_UNAVAILABLE;
+    emitError(providerError, result, "output-backend");
+    return result;
+  }
+  std::lock_guard lock(mutex_);
   if (nextBackend != info_.outputBackend) outputRoutePending_ = true;
   info_.outputBackend = nextBackend;
   if (info_.state == PlaybackState::Stopped) {

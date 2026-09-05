@@ -28,6 +28,56 @@ pnpm run smoke:audio-evidence -- --input-dir evidence/envelopes --require-comple
 
 `--require-complete` 只作为 opt-in gate。没有对应硬件时不要把它加入默认 CI。
 
+## Windows Shared PCM A/B Artifact
+
+`pnpm run smoke:miniaudio-ab` 在两个独立的 Node 子进程中，对同一个 Windows Shared
+WASAPI case 分别设置 `TWILIGHT_AUDIO_PCM_PROVIDER=legacy` 与 `miniaudio`。它只向子进程
+传递 selector，不会修改用户的全局设置。每一侧都必须回传同一个 public backend、endpoint
+stable-ID hash、backend 实际打开 endpoint ID 的 hash 和 test-input hash；成功 case 的实际 ID hash
+必须等于受控 endpoint hash。runner 会拒绝 provider、hash、负的 open/close duration 或受控
+backend/device 参数被调用方改写的结果，并输出逐字段 diff。
+
+case 的 `platformStableDeviceId` 是显式 endpoint ID；它只在子进程环境中使用，产物只保存
+`platformStableDeviceIdHash` 和每侧的 `actualDeviceIdHash`，不保存 raw device ID。`formatMatrixArgs` 必须指向**恰好一个** fixture，且不得含
+`--backend`、`--device`、`--json` 或 `--worker`，这些参数由 A/B adapter 固定为同一 Shared
+WASAPI backend 与 stable device：
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "shared-wasapi-pcm-48k",
+  "publicBackend": "wasapi",
+  "platformStableDeviceId": "{0.0.0.00000000}.{endpoint-id}",
+  "testInput": {
+    "formatMatrixArgs": ["--manifest", "artifacts/one-pcm-fixture.json", "--duration-ms", "1200"],
+    "requestedFormat": { "sampleFormat": "float32", "sampleRate": 48000, "channels": 2 }
+  }
+}
+```
+
+运行并写入一个可单独校验 SHA-256 的 artifact：
+
+```bash
+pnpm run smoke:miniaudio-ab -- --case artifacts/shared-wasapi-pcm-48k.json --output artifacts/shared-wasapi-pcm-48k-ab.json
+```
+
+产物固定标记 `evidenceKind=software-only`，即使 probe 实际运行了本机 endpoint，也**不能**
+计入本页的 `coverage.complete` 或替代 MA-105 真机证据。`audio-smoke-evidence` 会把
+`software-only` 与 mock 一样归为 `not-real-device`。`--fixture-probe` 是 node:test 的内部
+故障 fixture，不得用于采集。
+
+以下命令仅供受控设备会话使用，默认测试不会执行或等待它们：
+
+```bash
+# case 的 durationMs=15000；60 次 legacy→miniaudio 切换合计至少约 30 分钟。
+pnpm run smoke:miniaudio-ab -- --case artifacts/shared-wasapi-switch-30m.json --iterations 60 --output artifacts/shared-wasapi-switch-30m.json
+
+# case 的 durationMs=14400000；legacy 与 miniaudio 各持续 4 小时，合计约 8 小时。
+pnpm run smoke:miniaudio-ab -- --case artifacts/shared-wasapi-soak-8h.json --output artifacts/shared-wasapi-soak-8h.json
+```
+
+runner 会从 case 的 `--duration-ms` 推导子进程超时并加入启动/退出余量，因此长测不会被默认的短探针超时提前终止。
+
 ## Required Surfaces
 
 完整证据（`coverage.complete`）需要覆盖 **7 个硬件 surface**。每条真实设备 `pass`
@@ -119,14 +169,15 @@ pnpm run smoke:audio-evidence -- --input-dir scripts/fixtures/audio-smoke-eviden
 
 ## Operational Scenario Schema
 
-下面四项始终出现在报告 `operationalScenarioRows` 中，缺记录为 `not-run`，当前不参与 `coverage.complete`。`pass` 仍必须是 `evidenceKind=real-device`，包含 surface、设备、驱动、格式、缓冲、时长、期望/观察状态、artifact/SHA-256、采集时间和输入命令；否则显示 `not-real-device` 或 `invalid-artifact`。少于规定的 30 分钟或 2 小时会显示 `insufficient-duration`。每项还记录 `switchCount`、`underrunCount`、`deviceLostCount`、`recoveryCount`、`notes`。
+下面五项始终出现在报告 `operationalScenarioRows` 中，缺记录为 `not-run`，当前不参与 `coverage.complete`。`pass` 仍必须是 `evidenceKind=real-device`，包含 surface、设备、驱动、格式、缓冲、时长、期望/观察状态、artifact/SHA-256、采集时间和输入命令；否则显示 `not-real-device` 或 `invalid-artifact`。少于规定的 30 分钟或 2 小时会显示 `insufficient-duration`。每项还记录 `switchCount`、`underrunCount`、`deviceLostCount`、`recoveryCount`、`notes`。
 
-| `scenario`              | 最短播放时长 | 结果要求                                                             |
-| ----------------------- | ------------ | -------------------------------------------------------------------- |
-| `track-switch-loop-30m` | 1800 秒      | 记录切歌次数；不得有未报告的中断、掉设备、underrun 或静默 fallback。 |
-| `soak-2h`               | 7200 秒      | 记录持续播放、underrun、掉设备与恢复计数；所有恢复或失败必须可观察。 |
-| `sleep-wake`            | 不适用       | 记录睡眠/唤醒时间与恢复或停止的结构化状态；禁止静默换后端/格式。     |
-| `hotplug`               | 不适用       | 记录拔插/设备丢失与恢复或失败；禁止静默换后端/格式。                 |
+| `scenario`               | 最短播放时长 | 结果要求                                                                           |
+| ------------------------ | ------------ | ---------------------------------------------------------------------------------- |
+| `track-switch-loop-30m`  | 1800 秒      | 记录切歌次数；不得有未报告的中断、掉设备、underrun 或静默 fallback。               |
+| `soak-2h`                | 7200 秒      | 记录持续播放、underrun、掉设备与恢复计数；所有恢复或失败必须可观察。               |
+| `sleep-wake`             | 不适用       | 记录睡眠/唤醒时间与恢复或停止的结构化状态；禁止静默换后端/格式。                   |
+| `hotplug`                | 不适用       | 记录拔插/设备丢失与恢复或失败；禁止静默换后端/格式。                               |
+| `explicit-disappearance` | 不适用       | 记录显式 endpoint 消失后的 fail-closed 与显式重开；受控 hide/show 不等同物理拔插。 |
 
 ## Report Contract
 

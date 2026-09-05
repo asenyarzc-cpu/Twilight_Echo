@@ -1,7 +1,10 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace twilight::audio::miniaudio_backend_detail {
 
@@ -32,13 +35,25 @@ struct CallbackContext {
   void* userData = nullptr;
 };
 
+constexpr size_t kAdapterDeviceIdCapacity = 512;
+
+struct DeviceDescriptor {
+  std::string platformStableId;
+  std::string label;
+  bool isDefault = false;
+  std::array<uint8_t, kAdapterDeviceIdCapacity> adapterDeviceId{};
+  size_t adapterDeviceIdSize = 0;
+};
+
 struct DeviceConfig {
   uint32_t sampleRate = 0;
   uint32_t channels = 0;
   bool shared = true;
   bool noFixedSizedCallback = true;
   bool noAutoConvertSRC = true;
+  bool allowAutomaticReroute = false;
   CallbackContext* callbackContext = nullptr;
+  const DeviceDescriptor* selectedDevice = nullptr;
 };
 
 struct DeviceState {
@@ -56,10 +71,12 @@ struct DeviceState {
   bool sampleRateConverted = false;
   bool channelLayoutConverted = false;
   char deviceName[256] = {};
+  char deviceId[512] = {};
 };
 
 struct Api {
   void* userData = nullptr;
+  int (*enumeratePlaybackDevices)(void* userData, std::vector<DeviceDescriptor>* devices) = nullptr;
   void* (*createDevice)(void* userData) = nullptr;
   void (*destroyDevice)(void* userData, void* device) = nullptr;
   int (*initializeDevice)(void* userData, void* device, const DeviceConfig* config, DeviceState* state) = nullptr;

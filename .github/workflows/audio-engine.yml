@@ -73,7 +73,7 @@ jobs:
         run: pnpm run typecheck
 
       - name: Test plugins
-        run: pnpm run test:plugins
+        run: xvfb-run -a pnpm run test:plugins
 
       - name: Test realtime and offline audio services
         run: pnpm run test:audio-manager

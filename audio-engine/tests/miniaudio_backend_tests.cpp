@@ -1,4 +1,5 @@
 #include "../output/miniaudio/MiniaudioPcmBackend.h"
+#include "../output/OutputBackendFactory.h"
 
 #ifdef NDEBUG
 #undef NDEBUG
@@ -8,9 +9,14 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <string>
 #include <thread>
 #include <vector>
+
+namespace twilight::audio {
+void runDeviceCatalogTests();
+}
 
 using namespace twilight::audio;
 using namespace twilight::audio::miniaudio_backend_detail;
@@ -19,15 +25,29 @@ namespace {
 
 struct FakeDevice {
   DeviceConfig config;
+  std::string selectedDeviceId;
 };
+
+DeviceDescriptor fakeDescriptor(const std::string& id, const std::string& label, bool isDefault = false) {
+  DeviceDescriptor descriptor;
+  descriptor.platformStableId = id;
+  descriptor.label = label;
+  descriptor.isDefault = isDefault;
+  descriptor.adapterDeviceId[0] = 1;
+  descriptor.adapterDeviceIdSize = 1;
+  return descriptor;
+}
 
 struct FakeRuntime {
   DeviceState state;
+  std::vector<DeviceDescriptor> devices;
+  int enumerateResult = 0;
   int initializeResult = 0;
   int readStateResult = 0;
   int startResult = 0;
   int stopResult = 0;
   int createCalls = 0;
+  int enumerateCalls = 0;
   int destroyCalls = 0;
   int initializeCalls = 0;
   int readStateCalls = 0;
@@ -37,6 +57,7 @@ struct FakeRuntime {
   FakeDevice* device = nullptr;
 
   FakeRuntime() {
+    devices.push_back(fakeDescriptor("endpoint-id", "Fake Default Device", true));
     state.callbackSampleRate = 48000;
     state.callbackFormat = DeviceFormat::F32;
     state.callbackChannels = 2;
@@ -71,6 +92,14 @@ struct FakeRuntime {
   }
 };
 
+int fakeEnumerate(void* userData, std::vector<DeviceDescriptor>* devices) {
+  auto* runtime = static_cast<FakeRuntime*>(userData);
+  ++runtime->enumerateCalls;
+  if (runtime->enumerateResult != 0) return runtime->enumerateResult;
+  *devices = runtime->devices;
+  return 0;
+}
+
 void* fakeCreate(void* userData) {
   auto* runtime = static_cast<FakeRuntime*>(userData);
   ++runtime->createCalls;
@@ -92,7 +121,10 @@ int fakeInitialize(void* userData, void* device, const DeviceConfig* config, Dev
   if (runtime->initializeResult != 0) return runtime->initializeResult;
   auto* fakeDevice = static_cast<FakeDevice*>(device);
   fakeDevice->config = *config;
+  fakeDevice->selectedDeviceId = config->selectedDevice ? config->selectedDevice->platformStableId : "";
+  fakeDevice->config.selectedDevice = nullptr;
   *state = runtime->state;
+  std::strncpy(state->deviceId, fakeDevice->selectedDeviceId.c_str(), sizeof(state->deviceId) - 1);
   return 0;
 }
 
@@ -124,6 +156,7 @@ void fakeUninitialize(void* userData, void*) {
 Api fakeApi(FakeRuntime* runtime) {
   Api api;
   api.userData = runtime;
+  api.enumeratePlaybackDevices = fakeEnumerate;
   api.createDevice = fakeCreate;
   api.destroyDevice = fakeDestroy;
   api.initializeDevice = fakeInitialize;
@@ -146,6 +179,7 @@ AudioFormat pcmFormat(int sampleRate = 48000, int channels = 2) {
 void testProductionApiIsLinked() {
   const Api& api = realApi();
 #if defined(TAE_ENABLE_MINIAUDIO)
+  assert(api.enumeratePlaybackDevices != nullptr);
   assert(api.createDevice != nullptr);
   assert(api.destroyDevice != nullptr);
   assert(api.initializeDevice != nullptr);
@@ -158,6 +192,7 @@ void testProductionApiIsLinked() {
   assert(device != nullptr);
   api.destroyDevice(api.userData, device);
 #else
+  assert(api.enumeratePlaybackDevices == nullptr);
   assert(api.createDevice == nullptr);
   assert(api.destroyDevice == nullptr);
   assert(api.initializeDevice == nullptr);
@@ -168,16 +203,10 @@ void testProductionApiIsLinked() {
 #endif
 }
 
-void testDefaultOnlyAndDsdRejection() {
+void testDsdRejection() {
   FakeRuntime runtime;
   MiniaudioPcmBackend backend(fakeApi(&runtime));
   std::string error;
-
-  assert(!backend.open("endpoint-id", pcmFormat(), &error));
-  assert(error.find("MA-103") != std::string::npos);
-  assert(runtime.createCalls == 0);
-
-  error.clear();
   AudioFormat dsd = pcmFormat();
   dsd.sampleRate = 2822400;
   dsd.sampleFormat = AudioSampleFormat::DsdInt8Msb1;
@@ -185,6 +214,89 @@ void testDefaultOnlyAndDsdRejection() {
   assert(!backend.open("auto", dsd, &error));
   assert(error.find("DSD/DoP") != std::string::npos);
   assert(runtime.createCalls == 0);
+}
+
+void testExplicitDeviceUsesStableIdCatalogSelection() {
+  FakeRuntime runtime;
+  runtime.devices = {
+      fakeDescriptor("endpoint-a", "Duplicate DAC", true),
+      fakeDescriptor("endpoint-b", "Duplicate DAC", false)};
+  MiniaudioPcmBackend backend(fakeApi(&runtime));
+  std::string error;
+
+  assert(backend.open("endpoint-b", pcmFormat(), &error));
+  assert(error.empty());
+  assert(runtime.enumerateCalls == 1);
+  assert(runtime.createCalls == 1);
+  assert(runtime.initializeCalls == 1);
+  assert(runtime.device != nullptr);
+  assert(runtime.device->selectedDeviceId == "endpoint-b");
+  backend.close();
+}
+
+void testExplicitDeviceNeverFallsBackToDefault() {
+  {
+    FakeRuntime runtime;
+    runtime.devices.clear();
+    MiniaudioPcmBackend backend(fakeApi(&runtime));
+    std::string error;
+    assert(!backend.open("stale-endpoint", pcmFormat(), &error));
+    assert(error.find("stale-endpoint") != std::string::npos);
+    assert(backend.outputInfo().perfectReasonCode == "device_not_found");
+    assert(runtime.createCalls == 0);
+  }
+
+  {
+    FakeRuntime runtime;
+    runtime.devices = {
+        fakeDescriptor("duplicate-id", "First"),
+        fakeDescriptor("duplicate-id", "Second")};
+    MiniaudioPcmBackend backend(fakeApi(&runtime));
+    std::string error;
+    assert(!backend.open("duplicate-id", pcmFormat(), &error));
+    assert(error.find("重复") != std::string::npos);
+    assert(backend.outputInfo().perfectReasonCode == "device_id_ambiguous");
+    assert(runtime.createCalls == 0);
+  }
+
+  {
+    FakeRuntime runtime;
+    runtime.devices = {fakeDescriptor("removed-during-open", "Transient DAC")};
+    runtime.initializeResult = -204;
+    MiniaudioPcmBackend backend(fakeApi(&runtime));
+    std::string error;
+    assert(!backend.open("removed-during-open", pcmFormat(), &error));
+    assert(error.find("result -204") != std::string::npos);
+    assert(backend.outputInfo().perfectReasonCode == "device_not_found");
+    assert(runtime.initializeCalls == 1);
+    assert(runtime.destroyCalls == 1);
+  }
+}
+
+void testMiniaudioCatalogUsesStableIdsAndRefreshesDefaultRole() {
+  FakeRuntime runtime;
+  runtime.devices = {
+      fakeDescriptor("endpoint-a", "Duplicate DAC", true),
+      fakeDescriptor("endpoint-b", "Duplicate DAC", false),
+      fakeDescriptor("", "Invalid")};
+  Api api = fakeApi(&runtime);
+  std::string error;
+
+  auto devices = enumerateMiniaudioPcmDevices(api, &error);
+  assert(error.empty());
+  assert(devices.size() == 2);
+  assert(devices[0].platformStableId == "endpoint-a");
+  assert(devices[1].platformStableId == "endpoint-b");
+  assert(devices[0].label == devices[1].label);
+  assert(devices[0].isDefault);
+  assert(!devices[1].isDefault);
+
+  runtime.devices[0].isDefault = false;
+  runtime.devices[1].isDefault = true;
+  devices = enumerateMiniaudioPcmDevices(api, &error);
+  assert(!devices[0].isDefault);
+  assert(devices[1].isDefault);
+  assert(runtime.enumerateCalls == 2);
 }
 
 void testOpenUsesSharedFloatCallbackAndObservedFacts() {
@@ -197,8 +309,10 @@ void testOpenUsesSharedFloatCallbackAndObservedFacts() {
   assert(runtime.device->config.shared);
   assert(runtime.device->config.noFixedSizedCallback);
   assert(runtime.device->config.noAutoConvertSRC);
+  assert(!runtime.device->config.allowAutomaticReroute);
   assert(runtime.device->config.sampleRate == 48000);
   assert(runtime.device->config.channels == 2);
+  assert(runtime.device->selectedDeviceId == "endpoint-id");
 
   const AudioFormat callbackFormat = backend.outputFormat();
   assert(callbackFormat.sampleRate == 48000);
@@ -216,16 +330,37 @@ void testOpenUsesSharedFloatCallbackAndObservedFacts() {
   assert(!info.outputPerfect);
   assert(info.outputSampleRate == 48000);
   assert(info.outputBitDepth == 32);
+  assert(info.outputChannels == 2);
+  assert(info.outputSampleFormat == "float32");
   assert(info.actualOutputFormat == "int16");
   assert(info.actualSampleRate == 44100);
   assert(info.actualBitDepth == 16);
   assert(info.actualChannels == 2);
+  assert(info.actualDeviceId == "endpoint-id");
   assert(info.resampled);
   assert(info.conversionInfo.sampleRateConverted);
   assert(info.conversionInfo.sampleFormatConverted);
   assert(!info.conversionInfo.channelLayoutConverted);
   assert(info.conversionInfo.source == "backend-runtime");
   assert(info.perfectReasonCode == "shared_mixer");
+}
+
+void testOpenReportsCallbackAndInternalChannelFactsSeparately() {
+  FakeRuntime runtime;
+  runtime.state.internalChannels = 6;
+  runtime.state.channelLayoutConverted = true;
+  MiniaudioPcmBackend backend(fakeApi(&runtime));
+  std::string error;
+
+  assert(backend.open("auto", pcmFormat(), &error));
+
+  const OutputInfo info = backend.outputInfo();
+  assert(info.outputChannels == 2);
+  assert(info.actualChannels == 6);
+  assert(info.conversionInfo.channelLayoutConverted);
+  assert(info.conversionInfo.source == "backend-runtime");
+
+  backend.close();
 }
 
 void testShortRenderIsSilencedAndCounted() {
@@ -318,6 +453,49 @@ void testNotificationIsDeferredAndRerouteRefreshesFacts() {
   assert(runtime.readStateCalls >= 1);
   assert(!backend.outputInfo().resampled);
   backend.close();
+}
+
+void testUnexpectedStopInvalidatesButExplicitStopIgnoresNotification() {
+  {
+    FakeRuntime runtime;
+    MiniaudioPcmBackend backend(fakeApi(&runtime));
+    std::string error;
+    std::atomic<bool> invalidated{false};
+    assert(backend.open("auto", pcmFormat(), &error));
+    assert(backend.start(
+        [](float*, size_t frames) { return frames; },
+        [&](OutputBackendEvent event, const std::string&) {
+          invalidated.store(event == OutputBackendEvent::DeviceInvalidated, std::memory_order_release);
+        },
+        &error));
+    runtime.fireNotification(NotificationType::Stopped);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    while (!invalidated.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    assert(invalidated.load(std::memory_order_acquire));
+    backend.close();
+  }
+
+  {
+    FakeRuntime runtime;
+    MiniaudioPcmBackend backend(fakeApi(&runtime));
+    std::string error;
+    std::atomic<bool> invalidated{false};
+    assert(backend.open("auto", pcmFormat(), &error));
+    assert(backend.start(
+        [](float*, size_t frames) { return frames; },
+        [&](OutputBackendEvent event, const std::string&) {
+          invalidated.store(event == OutputBackendEvent::DeviceInvalidated, std::memory_order_release);
+        },
+        &error));
+    backend.stop();
+    runtime.fireNotification(NotificationType::Stopped);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    assert(!invalidated.load(std::memory_order_acquire));
+    backend.close();
+  }
 }
 
 void testNotificationCallbackCanCloseAndReopen() {
@@ -413,16 +591,43 @@ void testResultMappingAndLifecycleErrors() {
   }
 }
 
+#if defined(_WIN32) && defined(TAE_ENABLE_MINIAUDIO)
+void testFactorySelectsMiniaudioOnlyForSharedWasapi() {
+  assert(_putenv_s("TWILIGHT_AUDIO_PCM_PROVIDER", "miniaudio") == 0);
+
+  std::string error;
+  auto shared = createOutputBackend("wasapi", &error);
+  assert(shared);
+  assert(error.empty());
+  assert(std::string(shared->id()) == "wasapi");
+  assert(shared->outputInfo().providerImplementation == "miniaudio");
+
+  auto exclusive = createOutputBackend("wasapi-exclusive", &error);
+  assert(exclusive);
+  assert(std::string(exclusive->id()) == "wasapi-exclusive");
+  assert(exclusive->outputInfo().providerImplementation == "legacy-native");
+}
+#endif
+
 }  // namespace
 
 int main() {
+  runDeviceCatalogTests();
   testProductionApiIsLinked();
-  testDefaultOnlyAndDsdRejection();
+  testDsdRejection();
+  testExplicitDeviceUsesStableIdCatalogSelection();
+  testExplicitDeviceNeverFallsBackToDefault();
+  testMiniaudioCatalogUsesStableIdsAndRefreshesDefaultRole();
   testOpenUsesSharedFloatCallbackAndObservedFacts();
+  testOpenReportsCallbackAndInternalChannelFactsSeparately();
   testShortRenderIsSilencedAndCounted();
   testRenderErrorIsDeferred();
   testNotificationIsDeferredAndRerouteRefreshesFacts();
+  testUnexpectedStopInvalidatesButExplicitStopIgnoresNotification();
   testNotificationCallbackCanCloseAndReopen();
   testResultMappingAndLifecycleErrors();
+#if defined(_WIN32) && defined(TAE_ENABLE_MINIAUDIO)
+  testFactorySelectsMiniaudioOnlyForSharedWasapi();
+#endif
   return 0;
 }
