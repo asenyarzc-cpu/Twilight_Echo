@@ -3689,3 +3689,27 @@ html[data-te-liquid-glass-coverage='expanded']
     -webkit-backdrop-filter: none !important;
   }
 }
+
+.detail-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--te-card-border);
+  border-radius: 999px;
+  background: var(--te-card-bg);
+  color: var(--te-chrome-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.detail-back-button:hover {
+  background: var(--te-hover-bg);
+}
+.detail-back-button:focus-visible {
+  outline: 2px solid var(--te-primary-500);
+  outline-offset: 3px;
+}

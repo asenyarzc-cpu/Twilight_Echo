@@ -1194,6 +1194,9 @@ function selectTab(key: StreamingTab): void {
     const newIndex = getStreamingTabIndex(visibleTabs.value, key)
     streamingTransitionName.value = newIndex > oldIndex ? 'stream-page-down' : 'stream-page-up'
     resetDetail({ animate: false })
+  } else {
+    resetDetail()
+    clearSearch()
   }
   activeTab.value = key
 }
@@ -3215,6 +3218,7 @@ onMounted(async () => {
         :logged-in="activeLoggedIn"
         :profile="activeProfile"
         @update:search-query="searchQuery = $event"
+        @back="goBack"
         @clear-search="clearSearch"
         @login="emit('login', activeProvider)"
       />

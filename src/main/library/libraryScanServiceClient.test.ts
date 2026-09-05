@@ -147,3 +147,117 @@ test('local library scan service restarts a stalled worker and skips its active 
   assert.equal((await pending).cancelled, false)
   client.destroy()
 })
+
+test('streaming recovery retains completed batches instead of resetting the library', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const children: ManualUtilityProcess[] = []
+  const client = new LocalLibraryScanServiceClient({
+    serviceEntry: 'libraryScanService.js',
+    scanWatchdogMs: 100,
+    electron: {
+      utilityProcess: {
+        fork: () => {
+          const child = new ManualUtilityProcess()
+          children.push(child)
+          return child
+        }
+      }
+    }
+  })
+  t.after(() => client.destroy())
+  let resets = 0
+  const batches: unknown[] = []
+  const pending = client.scan(
+    'resume-job',
+    { ...scanRequest, streamResults: true },
+    undefined,
+    (batch) => batches.push(batch),
+    undefined,
+    () => {
+      resets++
+    }
+  )
+  children[0].emit('message', { kind: 'ready' })
+  await new Promise((resolve) => setImmediate(resolve))
+  const identities = ['done.mp3', 'stalled.mp3', 'remaining.mp3'].map((name) => ({
+    filePath: `C:\\Music\\${name}`,
+    size: 10,
+    mtimeMs: 1
+  }))
+  children[0].emit('message', {
+    kind: 'identity-batch',
+    requestId: 'resume-job',
+    batch: { identities }
+  } satisfies LocalLibraryScanWorkerMessage)
+  children[0].emit('message', {
+    kind: 'batch',
+    requestId: 'resume-job',
+    batch: {
+      parsedTracks: [{ filePath: identities[0].filePath }],
+      parsedFilePaths: [identities[0].filePath]
+    }
+  } satisfies LocalLibraryScanWorkerMessage)
+  children[0].emit('message', {
+    kind: 'activity',
+    requestId: 'resume-job',
+    activity: { filePaths: [identities[1].filePath] }
+  } satisfies LocalLibraryScanWorkerMessage)
+  t.mock.timers.tick(101)
+  assert.equal(children.length, 2)
+  children[1].emit('message', { kind: 'ready' })
+  assert.equal(resets, 0)
+  assert.equal(batches.length, 1)
+  assert.deepEqual(children[1].messages[0], {
+    kind: 'scan',
+    requestId: 'resume-job',
+    request: {
+      ...scanRequest,
+      streamResults: true,
+      skipParsePaths: [identities[1].filePath],
+      resumeCheckpoint: {
+        identities,
+        completeIdentitySnapshot: true,
+        completedFilePaths: [identities[0].filePath],
+        parsedFileCount: 1
+      }
+    }
+  })
+  client.cancel('resume-job')
+  assert.equal((await pending).cancelled, true)
+})
+
+test('paused scans do not restart when progress arrives or the watchdog interval elapses', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const children: ManualUtilityProcess[] = []
+  const client = new LocalLibraryScanServiceClient({
+    serviceEntry: 'libraryScanService.js',
+    scanWatchdogMs: 100,
+    electron: {
+      utilityProcess: {
+        fork: () => {
+          const child = new ManualUtilityProcess()
+          children.push(child)
+          return child
+        }
+      }
+    }
+  })
+  t.after(() => client.destroy())
+  const pending = client.scan('pause-job', scanRequest)
+  children[0].emit('message', { kind: 'ready' })
+  await new Promise((resolve) => setImmediate(resolve))
+  client.pause('pause-job')
+  children[0].emit('message', {
+    kind: 'activity',
+    requestId: 'pause-job',
+    activity: { filePaths: ['C:\\Music\\slow.mp3'] }
+  } satisfies LocalLibraryScanWorkerMessage)
+  t.mock.timers.tick(60_000)
+  assert.equal(children.length, 1)
+  assert.equal(children[0].killCount, 0)
+  client.resume('pause-job')
+  t.mock.timers.tick(101)
+  assert.equal(children.length, 2)
+  client.cancel('pause-job')
+  assert.equal((await pending).cancelled, true)
+})

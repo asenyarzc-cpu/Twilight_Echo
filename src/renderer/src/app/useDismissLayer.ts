@@ -8,9 +8,13 @@ const escapeStack: Array<() => void> = []
 let escapeListenerAttached = false
 
 function onWindowKeydown(event: KeyboardEvent): void {
-  if (event.key !== 'Escape' || escapeStack.length === 0) return
+  if (event.defaultPrevented || event.key !== 'Escape' || escapeStack.length === 0) return
   event.preventDefault()
   escapeStack[escapeStack.length - 1]()
+}
+
+export function hasDismissLayer(): boolean {
+  return escapeStack.length > 0
 }
 
 function ensureEscapeListener(): void {

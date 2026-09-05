@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "state_revision": 6,
+  "archive_revision": "sha256:0498ff476aebb75b7ccdbb98eb4fa3657e578d415eda474ac35b478e7efbace6",
+  "generated_at": "unix:1788590173",
+  "current_session": {
+    "number": 2,
+    "path": "docs/history-session/2.md",
+    "reason": "当前 ChatGPT 会话档案"
+  },
+  "current_focus": "帮我仔细的，完整的梳理一遍项目的仓库，然后帮我找出关于主进程，音频引擎，IPC，等等可以优化的内容，再去帮我找找项目的性能，启动速度，内存的可优化项目，最后再帮我调查一下项目目前的缺少功能，或者可以改善用户体验，其他播放器有而我的播放器没有的功能，注意，这是一个长时任务，你要在这个窗口内完成调查，请你完整，仔细的完成任务，我不限制任务的时长，请你向我展示发挥你的能力上限  ",
+  "recent_changes": [
+    "docs/history-session/2.md",
+    "本轮定位为调查与审查，不修改业务代码、不覆盖用户未提交改动。",
+    "优先顺序：命令/安全正确性 -> 主线程IO与原生取消回收 -> 首屏依赖与大队列 -> 逐设备Profile/智能歌单/标签与播客完整流程。",
+    "不建议当前先换Electron框架、全盘重写引擎、盲目迁SQLite、引入GPU SDM或把所有IPC改共享内存。",
+    "所有结论区分已执行确认、源码风险推导、产品建议；不虚构启动秒数、RSS、真实DAC结果或性能收益百分比。",
+    "本会话后续每轮任务完成前，继续使用 bootstrap 返回的 session_key 与 current_path 调用 history_session_checkpoint。",
+    "仅在需要早期精确细节时使用 history_session_search 和 history_session_read。",
+    "后续每轮任务完成前，继续使用本次 bootstrap 返回的 session_key 与 current_path 调用 history_session_checkpoint，并传入该轮逐字 raw_user_input。"
+  ],
+  "open_items": [
+    "调查已完成；修复尚未应用，因为用户本轮要求调查而非改代码。",
+    "没有发行包冷启动端到端基线、全应用内存长期采样、真实DAC/ASIO/DSD bit-perfect、macOS/Linux真机验收。",
+    "WSOLA竞态和retired stream累积需专门压力/TSan或资源采样；网络取消需可控停滞端点端到端测试。",
+    "当前工作区两组测试失败仍保留，不能宣称测试全绿。",
+    "向用户交付完整中文报告和证据/复现包，并在回答中说明上述优先问题、实测数据、功能差距及验证边界。",
+    "后续只有用户要求实施时再逐项修复，优先九个IPC await/return及sender信任校验，随后统一错误目录和恢复测试门禁。",
+    "等待用户下一轮项目请求。",
+    "等待用户下一轮项目请求并按既定 history-session 流程执行。"
+  ],
+  "references": [
+    {
+      "number": 1,
+      "path": "docs/history-session/1.md",
+      "reason": "最近历史档案；可按需读取原文"
+    }
+  ]
+}

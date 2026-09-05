@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PlayerControlIcon from '@renderer/components/player-bar/PlayerControlIcon.vue'
 import { ref, computed, onMounted, onBeforeUnmount, watch, type ComponentPublicInstance } from 'vue'
 import { usePlayerStore } from '../stores/usePlayerStore'
 import { useSettingsStore } from '../stores/useSettingsStore'
@@ -1855,15 +1856,8 @@ onBeforeUnmount(() => {
             :disabled="favoriteButtonLoading"
             @click="toggleFavorite"
           >
-            <i
-              :class="
-                favoriteButtonLoading
-                  ? 'pi pi-spin pi-spinner'
-                  : favoriteButtonLiked
-                    ? 'pi pi-heart-fill'
-                    : 'pi pi-heart'
-              "
-            ></i>
+            <i v-if="favoriteButtonLoading" class="pi pi-spin pi-spinner"></i>
+            <PlayerControlIcon v-else name="favorite" :filled="favoriteButtonLiked" />
           </button>
 
           <button
@@ -1924,7 +1918,7 @@ onBeforeUnmount(() => {
               :aria-expanded="volumeOpen"
               @click="toggleVolume"
             >
-              <i :class="volume <= 0.001 ? 'pi pi-volume-off' : 'pi pi-volume-up'"></i>
+              <PlayerControlIcon :name="volume <= 0.001 ? 'muted' : 'volume'" />
             </button>
           </div>
 
@@ -1936,7 +1930,7 @@ onBeforeUnmount(() => {
             aria-label="播放列表"
             @click="togglePlaylist"
           >
-            <i class="pi pi-list"></i>
+            <PlayerControlIcon name="queue" />
           </button>
 
           <button
@@ -1947,7 +1941,7 @@ onBeforeUnmount(() => {
             aria-label="HiFi 控制台"
             @click="toggleMore"
           >
-            <i class="ph ph-faders"></i>
+            <PlayerControlIcon name="hifi" />
           </button>
 
           <button
@@ -1957,7 +1951,7 @@ onBeforeUnmount(() => {
             aria-label="均衡器"
             @click="openEqualizerPage"
           >
-            <i class="ph ph-sliders" aria-hidden="true"></i>
+            <PlayerControlIcon name="equalizer" />
           </button>
 
           <button
@@ -1980,9 +1974,8 @@ onBeforeUnmount(() => {
             :disabled="miniPlayerOpening"
             @click="openMiniPlayer"
           >
-            <i
-              :class="miniPlayerOpening ? 'pi pi-spin pi-spinner' : 'ph ph-picture-in-picture'"
-            ></i>
+            <i v-if="miniPlayerOpening" class="pi pi-spin pi-spinner"></i>
+            <PlayerControlIcon v-else name="miniPlayer" />
           </button>
 
           <button

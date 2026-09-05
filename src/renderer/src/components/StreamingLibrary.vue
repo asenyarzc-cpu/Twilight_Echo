@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useEscapeToClose, useFocusTrap } from '@renderer/app/useDismissLayer'
 import type { MediaProviderPlaylistSummary, MediaProviderProfile } from '../providers/mediaProvider'
 import {
   buildProviderHealthPresentation,
@@ -109,6 +110,7 @@ function isPlaylistPinning(playlist: MediaProviderPlaylistSummary): boolean {
 }
 
 function onPlaylistKeydown(event: KeyboardEvent, playlist: MediaProviderPlaylistSummary): void {
+  if (event.target !== event.currentTarget) return
   if (event.key !== 'Enter' && event.key !== ' ') return
   event.preventDefault()
   emit('openPlaylist', playlist)
@@ -125,6 +127,37 @@ function isPlaylistDeleting(playlist: MediaProviderPlaylistSummary): boolean {
 function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
   return playlist.owned === false ? '取消收藏歌单' : '删除歌单'
 }
+const menuPlaylist = ref<MediaProviderPlaylistSummary | null>(null)
+const menuPosition = ref({ x: 0, y: 0 })
+const menuElement = ref<HTMLElement | null>(null)
+const menuOpen = computed(() => menuPlaylist.value !== null)
+function closePlaylistMenu(): void {
+  menuPlaylist.value = null
+}
+function openPlaylistMenu(event: MouseEvent, playlist: MediaProviderPlaylistSummary): void {
+  if (!canDeletePlaylist()) return
+  const trigger = event.currentTarget as HTMLElement
+  trigger.focus()
+  const rect = trigger.getBoundingClientRect()
+  menuPosition.value = {
+    x: Math.max(
+      8,
+      Math.min(event.type === 'contextmenu' ? event.clientX : rect.left, window.innerWidth - 208)
+    ),
+    y: Math.max(
+      8,
+      Math.min(event.type === 'contextmenu' ? event.clientY : rect.bottom, window.innerHeight - 64)
+    )
+  }
+  menuPlaylist.value = playlist
+}
+function deleteMenuPlaylist(): void {
+  const playlist = menuPlaylist.value
+  closePlaylistMenu()
+  if (playlist && !isPlaylistDeleting(playlist)) emit('deletePlaylist', playlist)
+}
+useEscapeToClose(menuOpen, closePlaylistMenu)
+useFocusTrap(menuElement, menuOpen)
 </script>
 
 <template>
@@ -318,6 +351,7 @@ function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
           tabindex="0"
           @click="emit('openPlaylist', playlist)"
           @keydown="onPlaylistKeydown($event, playlist)"
+          @contextmenu.prevent.stop="openPlaylistMenu($event, playlist)"
         >
           <img v-if="playlist.cover" :src="playlist.cover" class="playlist-item-cover" alt="" />
           <span v-else class="playlist-item-cover playlist-cover-placeholder">
@@ -355,12 +389,16 @@ function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
           <button
             v-if="canDeletePlaylist()"
             type="button"
-            class="playlist-delete-button"
+            class="playlist-more-button"
             :disabled="isPlaylistDeleting(playlist)"
-            :title="deletePlaylistLabel(playlist)"
-            @click.stop="emit('deletePlaylist', playlist)"
+            :aria-label="`更多操作：${playlist.name}`"
+            title="更多操作"
+            aria-haspopup="menu"
+            @click.stop="openPlaylistMenu($event, playlist)"
           >
-            <i :class="isPlaylistDeleting(playlist) ? 'pi pi-spin pi-spinner' : 'pi pi-trash'"></i>
+            <i
+              :class="isPlaylistDeleting(playlist) ? 'pi pi-spin pi-spinner' : 'pi pi-ellipsis-h'"
+            ></i>
           </button>
 
           <div class="playlist-item-arrow">
@@ -370,6 +408,31 @@ function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
       </div>
     </section>
   </div>
+  <Teleport to="body">
+    <div
+      v-if="menuPlaylist"
+      class="playlist-menu-backdrop"
+      @pointerdown.self="closePlaylistMenu"
+      @contextmenu.prevent.self="closePlaylistMenu"
+    >
+      <div
+        ref="menuElement"
+        class="playlist-action-menu"
+        role="menu"
+        :style="{ left: `${menuPosition.x}px`, top: `${menuPosition.y}px` }"
+      >
+        <button
+          type="button"
+          role="menuitem"
+          :disabled="isPlaylistDeleting(menuPlaylist)"
+          @click="deleteMenuPlaylist"
+        >
+          <i class="pi pi-trash" aria-hidden="true"></i>
+          {{ deletePlaylistLabel(menuPlaylist) }}
+        </button>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -882,7 +945,7 @@ function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
   box-shadow: 0 10px 24px rgba(var(--te-primary-rgb, 99, 102, 241), 0.16);
 }
 
-.playlist-delete-button {
+.playlist-more-button {
   position: absolute;
   top: 18px;
   right: 48px;
@@ -890,8 +953,8 @@ function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
   height: 34px;
   border: none;
   border-radius: 10px;
-  background: rgba(244, 63, 94, 0.1);
-  color: #e11d48;
+  background: var(--te-hover-bg);
+  color: var(--te-chrome-text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -902,16 +965,16 @@ function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
     background-color 0.2s var(--te-ease-soft);
 }
 
-.playlist-item:hover .playlist-delete-button,
-.playlist-item:focus-within .playlist-delete-button {
+.playlist-item:hover .playlist-more-button,
+.playlist-item:focus-within .playlist-more-button {
   opacity: 1;
 }
 
-.playlist-delete-button:hover:not(:disabled) {
+.playlist-more-button:hover:not(:disabled) {
   background: rgba(244, 63, 94, 0.18);
 }
 
-.playlist-delete-button:disabled {
+.playlist-more-button:disabled {
   opacity: 1;
   cursor: wait;
 }
@@ -1351,5 +1414,36 @@ function deletePlaylistLabel(playlist: MediaProviderPlaylistSummary): string {
     align-self: flex-end;
     min-width: 0;
   }
+}
+
+.playlist-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+}
+.playlist-action-menu {
+  position: absolute;
+  width: 200px;
+  padding: 6px;
+  border: 1px solid var(--te-card-border);
+  border-radius: 12px;
+  background: var(--te-card-bg);
+  box-shadow: 0 8px 32px #0003;
+}
+.playlist-action-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--te-danger, #dc2626);
+  cursor: pointer;
+}
+.playlist-action-menu button:hover,
+.playlist-action-menu button:focus-visible {
+  background: var(--te-hover-bg);
 }
 </style>

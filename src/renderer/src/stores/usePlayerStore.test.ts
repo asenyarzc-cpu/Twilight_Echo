@@ -1444,7 +1444,7 @@ test('player bar exposes a HiFi console drawer instead of visualization meters',
   assert.match(playerBarSource, /<HiFiSidebar/)
   assert.match(playerBarSource, /class="hifi-overlay"/)
   assert.match(playerBarSource, /title="HiFi 控制台"/)
-  assert.match(playerBarSource, /ph ph-faders/)
+  assert.match(playerBarSource, /<PlayerControlIcon name="hifi"/)
   assert.match(playerBarSource, /openEqualizer/)
   assert.match(playerBarSource, /onReloadLyrics/)
   assert.match(playerBarSource, /setAudioDevice/)

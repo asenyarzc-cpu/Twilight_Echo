@@ -397,7 +397,18 @@ test('preview and failed writes restore the persisted runtime without partially 
       themeStore.indexOf('style.textContent')
   )
   assert.match(themeStore, /previewProfile\.value = null[\s\S]*previewSelection\.value = null/)
-  assert.match(studioEditor, /onBeforeUnmount\([\s\S]*previewTheme\(null\)/)
+  assert.match(studioEditor, /onBeforeUnmount\([\s\S]*clearStudioPreview\(\)/)
+})
+
+test('applying and closing the studio cannot restore stale preview state over the active theme', () => {
+  assert.match(
+    themeStore,
+    /const next = await window\.api\.themes\.setActive[\s\S]*snapshot\.value = next[\s\S]*previewProfile\.value = null[\s\S]*previewSelection\.value = null[\s\S]*await nextTick\(\)[\s\S]*await applyActiveTheme\(true\)/
+  )
+  assert.match(studioEditor, /if \(previewCleanup\) return previewCleanup/)
+  assert.match(studioEditor, /function closeStudio\(\)[\s\S]*void clearStudioPreview\(\)/)
+  assert.match(studioEditor, /onBeforeUnmount\([\s\S]*void clearStudioPreview\(\)/)
+  assert.doesNotMatch(studioEditor, /document\.documentElement\.dataset\.theme = originalTone/)
 })
 
 test('theme archives export v2, accept v1 migration input, and reject unknown versions', () => {
@@ -423,7 +434,7 @@ test('phase seven coalesces previews, records p95, and owns the full Electron ma
   assert.match(themeStore, /JSON\.parse\(JSON\.stringify\(profile\)\) as ThemeProfileV2/)
   assert.match(studioSurfaces, /请先应用主题后再导出/)
   assert.match(studio, /:disabled="!draft \|\| isUnsavedDraft"/)
-  assert.match(studioEditor, /onBeforeUnmount\(\(\) => \{\s*previewScheduler\.cancel\(\)/)
+  assert.match(studioEditor, /function clearStudioPreview\(\)[\s\S]*previewScheduler\.cancel\(\)/)
   assert.match(previewScheduler, /window\.requestAnimationFrame/)
   assert.match(themePerformance, /preview: 32/)
   assert.match(themePerformance, /apply: 100/)

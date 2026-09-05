@@ -46,6 +46,7 @@ import { useExtensionRegistry } from './extensions/registry'
 import { syncPluginProviders, useMediaProviders } from './providers'
 import { useAppNavigation } from './app/useAppNavigation'
 import { useBackStack } from './app/useBackStack'
+import { hasDismissLayer } from '@renderer/app/useDismissLayer'
 import { createPlaybackSessionPersistence } from './app/usePlaybackSessionPersistence'
 import { useSideMenuClearance } from './app/useSideMenuClearance'
 import { useMiniPlayerSync } from './app/useMiniPlayerSync'
@@ -188,8 +189,20 @@ function handleTitleBack(): void {
 }
 
 function onGlobalBackKeydown(event: KeyboardEvent): void {
-  // Browser-style back on Alt+Left. Plain ArrowLeft keeps its existing
-  // meanings (text fields, sliders) and Escape stays with overlay dismissal.
+  if (event.defaultPrevented || event.repeat || event.isComposing) return
+  if (event.key === 'Escape') {
+    if (hasDismissLayer()) return
+    const target = event.target
+    if (
+      target instanceof HTMLElement &&
+      target.closest(
+        'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]'
+      )
+    )
+      return
+    if (backStack.goBack()) event.preventDefault()
+    return
+  }
   if (
     event.key === 'ArrowLeft' &&
     event.altKey &&

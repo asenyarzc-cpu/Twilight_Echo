@@ -245,6 +245,8 @@ window.runAggregateRuntime = async () => {
   const pinnedSaved = window.__aggregateFixture.authoritative.find((item) => item.id === 'pl-pinned')
   expect(pinnedSaved && pinnedSaved.pinnedAt, '既有的置顶时间戳不应被这次写入抹掉')
 
+  await click(document.querySelector('.aggregate-detail-header .detail-back-button'), '返回歌单网格')
+  expect(all('.aggregate-card:not(.aggregate-create-card)').length === 2, '返回应恢复聚合歌单网格')
   console.error('AGGREGATE_RUNTIME_OK')
 }
 `

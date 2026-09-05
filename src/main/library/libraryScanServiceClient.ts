@@ -3,6 +3,7 @@ import { EventEmitter } from 'events'
 import { createRequire } from 'module'
 import type {
   LocalLibraryScanBatch,
+  LocalLibraryFileIdentity,
   LocalLibraryScanIdentityBatch,
   LocalLibraryScanProgress,
   LocalLibraryScanWorkerMessage,
@@ -47,6 +48,10 @@ type PendingScan = {
   lastFilePaths: string[]
   restartCount: number
   restarting: boolean
+  paused: boolean
+  identities: LocalLibraryFileIdentity[]
+  completedFilePaths: Set<string>
+  parsedFileCount: number
 }
 
 export interface LocalLibraryScanRunner {
@@ -121,7 +126,11 @@ export class LocalLibraryScanServiceClient extends EventEmitter implements Local
         request,
         lastFilePaths: [],
         restartCount: 0,
-        restarting: false
+        restarting: false,
+        paused: false,
+        identities: [],
+        completedFilePaths: new Set(),
+        parsedFileCount: 0
       }
       this.pending.set(requestId, pending)
       this.sendPendingScan(requestId, pending, child)
@@ -129,10 +138,21 @@ export class LocalLibraryScanServiceClient extends EventEmitter implements Local
   }
 
   pause(requestId: string): void {
+    const pending = this.pending.get(requestId)
+    if (pending) {
+      pending.paused = true
+      if (pending.watchdog) clearTimeout(pending.watchdog)
+      pending.watchdog = null
+    }
     this.sendControl({ kind: 'pause', requestId })
   }
 
   resume(requestId: string): void {
+    const pending = this.pending.get(requestId)
+    if (pending) {
+      pending.paused = false
+      this.armWatchdog(requestId, pending)
+    }
     this.sendControl({ kind: 'resume', requestId })
   }
 
@@ -250,6 +270,18 @@ export class LocalLibraryScanServiceClient extends EventEmitter implements Local
       const pending = this.pending.get(message.requestId)
       if (!pending) return
       this.touchWatchdog(pending)
+      for (const filePath of message.batch.parsedFilePaths) pending.completedFilePaths.add(filePath)
+      const trackPaths = new Set(
+        message.batch.parsedTracks.flatMap((track) =>
+          track &&
+          typeof track === 'object' &&
+          'filePath' in track &&
+          typeof track.filePath === 'string'
+            ? [track.filePath]
+            : []
+        )
+      )
+      pending.parsedFileCount += trackPaths.size
       pending.onBatch?.(message.batch)
       return
     }
@@ -257,6 +289,7 @@ export class LocalLibraryScanServiceClient extends EventEmitter implements Local
       const pending = this.pending.get(message.requestId)
       if (!pending) return
       this.touchWatchdog(pending)
+      pending.identities.push(...message.batch.identities)
       pending.onIdentityBatch?.(message.batch)
       return
     }
@@ -279,6 +312,7 @@ export class LocalLibraryScanServiceClient extends EventEmitter implements Local
     this.armWatchdog(requestId, pending)
     try {
       child.postMessage({ kind: 'scan', requestId, request: pending.request })
+      if (pending.paused) child.postMessage({ kind: 'pause', requestId })
     } catch (error) {
       this.clearPending(requestId, pending)
       pending.reject(error instanceof Error ? error : new Error(String(error)))
@@ -287,6 +321,7 @@ export class LocalLibraryScanServiceClient extends EventEmitter implements Local
 
   private armWatchdog(requestId: string, pending: PendingScan): void {
     if (pending.watchdog) clearTimeout(pending.watchdog)
+    if (pending.paused) return
     pending.watchdog = setTimeout(() => {
       if (this.pending.get(requestId) !== pending) return
       const skippedPaths = Array.from(new Set(pending.lastFilePaths))
@@ -304,13 +339,37 @@ export class LocalLibraryScanServiceClient extends EventEmitter implements Local
 
       pending.restartCount += 1
       pending.restarting = true
-      pending.onAttemptReset?.()
+      const canResume =
+        pending.request.streamResults === true &&
+        pending.identities.length > 0 &&
+        (pending.request.mode !== 'watch' ||
+          !pending.request.changes?.length ||
+          pending.request.changes.some((change) => change.kind === 'reconcile'))
+      if (!canResume) {
+        pending.onAttemptReset?.()
+        pending.identities = []
+        pending.completedFilePaths.clear()
+        pending.parsedFileCount = 0
+      }
       pending.lastFilePaths = []
       pending.request = {
         ...pending.request,
         skipParsePaths: Array.from(
           new Set([...(pending.request.skipParsePaths ?? []), ...skippedPaths])
-        )
+        ),
+        ...(canResume
+          ? {
+              resumeCheckpoint: {
+                identities: pending.identities,
+                completeIdentitySnapshot:
+                  pending.request.mode !== 'watch' ||
+                  !pending.request.changes?.length ||
+                  pending.request.changes.some((change) => change.kind === 'reconcile'),
+                completedFilePaths: Array.from(pending.completedFilePaths),
+                parsedFileCount: pending.parsedFileCount
+              }
+            }
+          : {})
       }
       this.rejectPendingExcept(requestId, new Error('local library scan service is restarting'))
       if (pending.watchdog) clearTimeout(pending.watchdog)

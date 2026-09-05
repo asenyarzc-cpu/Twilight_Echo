@@ -1,4 +1,4 @@
-import { computed, ref, type ComputedRef, type Ref } from 'vue'
+import { computed, nextTick, ref, type ComputedRef, type Ref } from 'vue'
 import {
   DEFAULT_THEME_TONE_SCHEDULE,
   THEME_MANAGED_DATA_ATTRIBUTES,
@@ -976,9 +976,24 @@ export function useThemeStore(): {
   }
 
   async function setActive(selection: ThemeSelection): Promise<ThemeLibrarySnapshot> {
-    previewProfile.value = null
-    previewSelection.value = null
-    return await runSave((revision) => window.api.themes.setActive(selection, revision))
+    saving.value = true
+    error.value = ''
+    try {
+      const plain = JSON.parse(JSON.stringify(selection)) as ThemeSelection
+      const next = await window.api.themes.setActive(plain, snapshot.value?.revision ?? 0)
+      snapshot.value = next
+      previewProfile.value = null
+      previewSelection.value = null
+      await nextTick()
+      await applyActiveTheme(true)
+      return next
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : '主题应用失败'
+      error.value = message
+      throw cause
+    } finally {
+      saving.value = false
+    }
   }
 
   async function setWindowInheritance(

@@ -1618,6 +1618,16 @@ function getTrackSource(track: Pick<Track, 'id' | 'source'>): string {
         <template v-else>
           <div class="song-list-header">
             <div class="header-left">
+              <button
+                v-if="showDetailBackButton"
+                type="button"
+                class="detail-back-button"
+                data-te-back-button="pill"
+                @click="emit('selectView', props.category, null)"
+              >
+                <i class="pi pi-arrow-left" aria-hidden="true"></i>
+                <span>返回</span>
+              </button>
               <div class="title-group">
                 <div class="title-line">
                   <h2 class="song-list-title">{{ viewTitle }}</h2>

@@ -49,6 +49,12 @@ export interface LocalLibraryWorkerScanRequest {
   // Paths whose metadata parse was terminated by the scan watchdog. They remain
   // in the committed library when already present, but are retried next scan.
   skipParsePaths?: string[]
+  resumeCheckpoint?: {
+    identities: LocalLibraryFileIdentity[]
+    completeIdentitySnapshot: boolean
+    completedFilePaths: string[]
+    parsedFileCount: number
+  }
 }
 
 export interface LocalLibraryScanBatch {

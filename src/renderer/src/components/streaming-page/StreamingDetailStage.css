@@ -41,7 +41,7 @@
   display: grid;
   grid-template-columns: 168px minmax(0, 1fr);
   gap: 28px;
-  align-items: end;
+  align-items: start;
   padding: 8px 4px 4px;
 }
 
@@ -127,7 +127,7 @@
 
 .stage-title {
   margin: 0;
-  max-width: 18ch;
+  max-width: 100%;
   color: var(--stage-ink);
   font-family: var(--te-font-display), Georgia, 'Times New Roman', serif;
   font-size: clamp(28px, 3.6vw, 42px);

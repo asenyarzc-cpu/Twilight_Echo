@@ -406,6 +406,15 @@ function rowNumber(index: number): number {
     <!-- ── 详情视图 ───────────────────────────────────────────────────── -->
     <template v-else>
       <header class="aggregate-header aggregate-detail-header">
+        <button
+          type="button"
+          class="detail-back-button"
+          data-te-back-button="pill"
+          @click="backToGrid"
+        >
+          <i class="pi pi-arrow-left" aria-hidden="true"></i>
+          <span>返回</span>
+        </button>
         <div class="aggregate-heading">
           <h2 class="aggregate-title">
             <i v-if="activePlaylist.pinnedAt" class="pi pi-thumbtack aggregate-pin-mark"></i>

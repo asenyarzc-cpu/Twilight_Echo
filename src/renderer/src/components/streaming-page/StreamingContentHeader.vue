@@ -17,6 +17,7 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
+  back: []
   'clear-search': []
   'update:searchQuery': [value: string]
   login: []
@@ -35,12 +36,20 @@ const avatarLoadFailed = ref(false)
     }"
   >
     <div class="streaming-header-left">
-      <div class="streaming-header-copy">
-        <div v-if="isDetail || isSearching" class="streaming-header-kicker" aria-hidden="true">
+      <button
+        v-if="isDetail"
+        type="button"
+        class="detail-back-button"
+        data-te-back-button="pill"
+        @click="emit('back')"
+      >
+        <i class="pi pi-arrow-left" aria-hidden="true"></i>
+        <span>返回</span>
+      </button>
+      <div v-else class="streaming-header-copy">
+        <div v-if="isSearching" class="streaming-header-kicker" aria-hidden="true">
           <span class="streaming-header-kicker-mark"></span>
-          <span class="streaming-header-kicker-text">
-            {{ isDetail ? '详情' : '搜索' }}
-          </span>
+          <span class="streaming-header-kicker-text"> 搜索 </span>
         </div>
         <h2 class="streaming-content-title">{{ title }}</h2>
         <p v-if="showSubtitle" class="streaming-content-subtitle">

@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import { fork, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  mkdtempSync,
+  openSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  writeSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -19,6 +27,113 @@ import { loadMusicLibraryDocument, persistMusicLibraryDocument } from './library
 
 const WORKER_MESSAGE_TIMEOUT_MS = 30_000
 const WORKER_TERMINATION_TIMEOUT_MS = 5_000
+
+test('scan worker reads duration and trailing tags across a large audio payload', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'twilight-scan-seek-'))
+  const filePath = join(root, 'large.wav')
+  const dataSize = 32 * 1024 * 1024
+  const header = Buffer.alloc(44)
+  header.write('RIFF', 0)
+  header.writeUInt32LE(dataSize + 62, 4)
+  header.write('WAVEfmt ', 8)
+  header.writeUInt32LE(16, 16)
+  header.writeUInt16LE(1, 20)
+  header.writeUInt16LE(1, 22)
+  header.writeUInt32LE(8000, 24)
+  header.writeUInt32LE(16000, 28)
+  header.writeUInt16LE(2, 32)
+  header.writeUInt16LE(16, 34)
+  header.write('data', 36)
+  header.writeUInt32LE(dataSize, 40)
+  const tail = Buffer.alloc(26)
+  tail.write('LIST', 0)
+  tail.writeUInt32LE(18, 4)
+  tail.write('INFOINAM', 8)
+  tail.writeUInt32LE(6, 16)
+  tail.write('Title\0', 20)
+  const fd = openSync(filePath, 'w')
+  try {
+    writeSync(fd, header, 0, header.length, 0)
+    writeSync(fd, tail, 0, tail.length, 44 + dataSize)
+  } finally {
+    closeSync(fd)
+  }
+  const child = await startWorker()
+  try {
+    const response = await sendScan(child, { ...baseRequest(root), mode: 'full' })
+    assert.equal(response.ok, true)
+    if (!response.ok) return
+    const track = response.value.parsedTracks[0] as Record<string, unknown>
+    assert.equal(track.title, 'Title')
+    assert.equal(track.duration, Math.round(dataSize / 16000))
+    assert.equal(track.sampleRate, 8000)
+    assert.equal(track.bitDepth, 16)
+    writeFileSync(
+      join(root, 'large.cue'),
+      'FILE "large.wav" WAVE\nTRACK 01 AUDIO\nTITLE "Part One"\nINDEX 01 00:00:00\nTRACK 02 AUDIO\nTITLE "Part Two"\nINDEX 01 01:00:00\n'
+    )
+    const cueResponse = await sendScan(child, { ...baseRequest(root), mode: 'full' })
+    assert.equal(cueResponse.ok, true)
+    if (!cueResponse.ok) return
+    assert.deepEqual(
+      cueResponse.value.parsedTracks.map((item) => (item as Record<string, unknown>).title),
+      ['Part One', 'Part Two']
+    )
+  } finally {
+    await terminateWorker(child)
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('scan worker resumes a 170000-file checkpoint without reparsing completed files', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'twilight-scan-checkpoint-'))
+  const filePath = join(root, 'remaining.mp3')
+  writeFileSync(filePath, 'not-real-mp3')
+  const info = statSync(filePath)
+  const completed = Array.from({ length: 170_000 }, (_, index) => ({
+    filePath: join(root, `${index}.mp3`),
+    size: 1,
+    mtimeMs: 1
+  }))
+  const child = await startWorker()
+  const messages: LocalLibraryScanWorkerMessage[] = []
+  child.on('message', (message) => messages.push(message as LocalLibraryScanWorkerMessage))
+  try {
+    const response = await sendScan(child, {
+      ...baseRequest(root),
+      mode: 'full',
+      streamResults: true,
+      resumeCheckpoint: {
+        identities: [...completed, { filePath, size: info.size, mtimeMs: info.mtimeMs }],
+        completeIdentitySnapshot: true,
+        completedFilePaths: completed.map((file) => file.filePath),
+        parsedFileCount: completed.length
+      }
+    })
+    assert.equal(response.ok, true)
+    if (!response.ok) return
+    assert.equal(response.value.parsedFileCount, 170_001)
+    assert.deepEqual(
+      messages.flatMap((message) =>
+        message.kind === 'batch' ? message.batch.parsedFilePaths : []
+      ),
+      [filePath]
+    )
+    assert.equal(
+      messages.some((message) => message.kind === 'identity-batch'),
+      false
+    )
+    const progress = messages.flatMap((message) =>
+      message.kind === 'progress' ? [message.progress] : []
+    )
+    assert.ok(progress.length > 0)
+    assert.ok(progress.every((item) => item.phase === 'parsing' && item.current >= 170_000))
+    assert.equal(progress.at(-1)?.current, 170_001)
+  } finally {
+    await terminateWorker(child)
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 test('scan worker parses metadata out of process and returns a complete identity snapshot', async () => {
   const root = mkdtempSync(join(tmpdir(), 'twilight-scan-worker-'))

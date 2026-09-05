@@ -1144,11 +1144,23 @@ export function useThemeStudioEditor(options: ThemeStudioEditorOptions) {
     await themeStore.setPreviewTone(nextTone)
   }
 
+  let previewCleanup: Promise<void> | null = null
+
+  function clearStudioPreview(): Promise<void> {
+    if (previewCleanup) return previewCleanup
+    previewScheduler.cancel()
+    previewCleanup = themeStore
+      .setPreviewTone(null)
+      .then(() => themeStore.previewTheme(null))
+      .finally(() => {
+        previewCleanup = null
+      })
+    return previewCleanup
+  }
+
   function closeStudio(): void {
     if (isDirty.value && !window.confirm('放弃尚未应用的主题修改？')) return
-    previewScheduler.cancel()
-    document.documentElement.dataset.theme = originalTone
-    void themeStore.setPreviewTone(null).then(() => themeStore.previewTheme(null))
+    void clearStudioPreview()
     options.onBack()
   }
 
@@ -1197,12 +1209,10 @@ export function useThemeStudioEditor(options: ThemeStudioEditorOptions) {
   })
 
   onBeforeUnmount(() => {
-    previewScheduler.cancel()
     window.removeEventListener('resize', updateLivePreviewScale)
     previewResizeObserver?.disconnect()
     previewResizeObserver = null
-    document.documentElement.dataset.theme = originalTone
-    void themeStore.setPreviewTone(null).then(() => themeStore.previewTheme(null))
+    void clearStudioPreview()
   })
 
   return {

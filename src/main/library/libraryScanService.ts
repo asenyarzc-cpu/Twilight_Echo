@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from 'crypto'
-import { createReadStream, type Dirent } from 'fs'
+import { type Dirent } from 'fs'
 import { mkdir, readFile, readdir, stat, writeFile } from 'fs/promises'
 import { basename, dirname, extname, join, resolve } from 'path'
-import { parseStream, type IAudioMetadata } from 'music-metadata'
+import { parseFromTokenizer, type IAudioMetadata } from 'music-metadata'
+import { fromFile } from 'strtok3'
 import {
   type LocalLibraryFileIdentity,
   type LocalLibraryScanWorkerMessage,
@@ -116,7 +117,15 @@ async function runScan(
   request: LocalLibraryWorkerScanRequest,
   control: ScanControl
 ): Promise<LocalLibraryWorkerScanResult> {
-  const collected = await collectIdentities(requestId, request, control)
+  const checkpoint = request.resumeCheckpoint
+  const collected = checkpoint
+    ? {
+        identities: checkpoint.identities,
+        byPath: new Map(checkpoint.identities.map((file) => [normalizePath(file.filePath), file])),
+        completeIdentitySnapshot: checkpoint.completeIdentitySnapshot,
+        disappearedFilePaths: []
+      }
+    : await collectIdentities(requestId, request, control)
   if (control.cancelled) return cancelledResult(request.mode, collected.completeIdentitySnapshot)
 
   const plan = createLocalLibraryScanPlan({
@@ -134,18 +143,21 @@ async function runScan(
   const parsedFilePaths: string[] = []
   let pendingTracks: unknown[] = []
   let pendingFilePaths: string[] = []
-  let parsedFileCount = 0
+  let parsedFileCount = checkpoint?.parsedFileCount ?? 0
+  const completedPaths = new Set((checkpoint?.completedFilePaths ?? []).map(normalizePath))
   const skipParsePaths = new Set((request.skipParsePaths ?? []).map(normalizePath))
   const parseFilePaths = plan.parseFilePaths.filter(
-    (filePath) => !skipParsePaths.has(normalizePath(filePath))
+    (filePath) =>
+      !skipParsePaths.has(normalizePath(filePath)) && !completedPaths.has(normalizePath(filePath))
   )
   const skippedFilePaths = plan.parseFilePaths.filter((filePath) =>
     skipParsePaths.has(normalizePath(filePath))
   )
-  const total = parseFilePaths.length
+  const completedCount = completedPaths.size
+  const total = parseFilePaths.length + completedCount
   const report = createProgressReporter(requestId)
 
-  if (streamResults) {
+  if (streamResults && !checkpoint) {
     for (let index = 0; index < collected.identities.length; index += IDENTITY_BATCH_SIZE) {
       await waitUntilRunnable(control)
       if (control.cancelled)
@@ -167,7 +179,7 @@ async function runScan(
     report(
       {
         phase: 'parsing',
-        current: index,
+        current: index + completedCount,
         total,
         parsedFileCount,
         skippedUnchanged: plan.skippedUnchanged
@@ -205,7 +217,7 @@ async function runScan(
       }
     }
 
-    const current = Math.min(index + paths.length, total)
+    const current = Math.min(index + paths.length + completedCount, total)
     report(
       {
         phase: 'parsing',
@@ -226,11 +238,11 @@ async function runScan(
       batch: { parsedTracks: pendingTracks, parsedFilePaths: pendingFilePaths }
     })
   }
-  if (total === 0) {
+  if (parseFilePaths.length === 0) {
     report(
       {
         phase: 'parsing',
-        current: 0,
+        current: completedCount,
         total,
         parsedFileCount,
         skippedUnchanged: plan.skippedUnchanged
@@ -479,22 +491,16 @@ async function yieldToEventLoop(): Promise<void> {
   await new Promise<void>((resolve) => setImmediate(resolve))
 }
 
-async function parseAudioMetadata(filePath: string, fileSize: number): Promise<IAudioMetadata> {
-  const stream = createReadStream(filePath)
-  let timer: NodeJS.Timeout | undefined
-  const parsing = parseStream(stream, { path: filePath, size: fileSize }, { skipCovers: false })
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      const error = new Error(`metadata parsing timed out after ${PARSE_TIMEOUT_MS}ms`)
-      stream.destroy(error)
-      reject(error)
-    }, PARSE_TIMEOUT_MS)
-  })
+async function parseAudioMetadata(filePath: string): Promise<IAudioMetadata> {
+  const tokenizer = await fromFile(filePath)
   try {
-    return await Promise.race([parsing, timeout])
+    return await withTimeout(
+      parseFromTokenizer(tokenizer, { skipCovers: false }),
+      PARSE_TIMEOUT_MS,
+      'metadata parsing'
+    )
   } finally {
-    if (timer) clearTimeout(timer)
-    stream.destroy()
+    await tokenizer.close()
   }
 }
 
@@ -538,7 +544,7 @@ async function parseTrack(
   }
 
   try {
-    const metadata = await parseAudioMetadata(filePath, file.size)
+    const metadata = await parseAudioMetadata(filePath)
     const picture = metadata.common.picture?.[0]
     const embeddedCover = picture
       ? await cacheCoverFromBuffer(Buffer.from(picture.data), coverCacheDir)
@@ -582,12 +588,14 @@ async function parseTrack(
     if (trackNumber !== undefined) track.trackNumber = trackNumber
     if (discNumber !== undefined) track.discNumber = discNumber
     if (audioFingerprint) track.audioFingerprint = audioFingerprint
-    const cueTracks = deriveCueTracks(
-      filePath,
-      Number(metadata.format.duration ?? 0),
-      track,
-      SUPPORTED_EXTENSIONS
-    )
+    const cueTracks = file.cueSignature
+      ? deriveCueTracks(
+          filePath,
+          Number(metadata.format.duration ?? 0),
+          track,
+          SUPPORTED_EXTENSIONS
+        )
+      : null
     if (cueTracks) return cueTracks
     return [track]
   } catch {
