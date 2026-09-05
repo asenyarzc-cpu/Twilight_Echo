@@ -41,7 +41,10 @@ target_compile_definitions(twilight_smtc_node PRIVATE
   NOMINMAX
 )
 target_compile_options(twilight_smtc_node PRIVATE /W4 /permissive- /EHsc /utf-8)
-target_link_libraries(twilight_smtc_node PRIVATE runtimeobject winstring)
+# Modern Windows SDKs no longer ship the legacy winstring/combase split import
+# libraries used by older WinRT samples. The ABI entry points used here are
+# available through runtimeobject on the supported Windows 10/11 SDKs.
+target_link_libraries(twilight_smtc_node PRIVATE runtimeobject shell32)
 set_target_properties(twilight_smtc_node PROPERTIES
   PREFIX ""
   SUFFIX ".node"

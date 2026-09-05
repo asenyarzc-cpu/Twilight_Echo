@@ -1,8 +1,10 @@
 ﻿/*
  * Twilight Echo SMTC (System Media Transport Controls) Node-API addon.
  *
- * Windows-only: registers a hidden window and binds Windows.Media
- * SystemMediaTransportControls to it (ISystemMediaTransportControlsInterop).
+ * Windows-only: registers a hidden worker window for thread dispatch and binds
+ * Windows.Media SystemMediaTransportControls to the Electron BrowserWindow
+ * HWND when one is supplied (falling back to the hidden HWND for standalone
+ * smoke tests).
  * The renderer/main process pushes playback metadata + timeline through
  * Update(); button/seek/shuffle/repeat requests are delivered back to JS
  * through a thread-safe N-API callback.
@@ -21,12 +23,16 @@
 
 #include <windows.h>
 #include <windows.media.h>
+#include <propkey.h>
+#include <shellapi.h>
+#include <shobjidl.h>
 #include <systemmediatransportcontrolsinterop.h>
 #include <wrl.h>
 #include <wrl/client.h>
 #include <node_api.h>
 
 #include <atomic>
+#include <cstdio>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -62,6 +68,7 @@ struct SmtcUpdate {
   int autoRepeatMode = 0;  // 0 none, 1 track, 2 list
   double positionSeconds = 0.0;
   double durationSeconds = 0.0;
+  double playbackRate = 1.0;
   std::wstring title;
   std::wstring artist;
   std::wstring album;
@@ -87,9 +94,14 @@ class SmtcSession {
   // Cross-thread handshake.
   HANDLE readyEvent = nullptr;
   std::atomic<bool> initOk{false};
+  std::atomic<long> initHr{S_OK};
+  std::atomic<const char*> initStage{"not-started"};
 
-  // Worker-thread state; touched only by the worker after creation.
-  HWND hwnd = nullptr;
+  // `targetHwnd` is captured before the worker starts. `messageHwnd` belongs to
+  // the worker STA and is used only to marshal Update/Destroy requests.
+  HWND targetHwnd = nullptr;
+  HWND messageHwnd = nullptr;
+  std::wstring appUserModelId;
   std::thread worker;
   ComPtr<ISystemMediaTransportControls> controls;
   ComPtr<ISystemMediaTransportControls2> controls2;
@@ -149,7 +161,17 @@ void UpdateMetadata(const SmtcUpdate& update) {
   g_session.lastMetadataKey = key;
 
   g_session.display->ClearAll();
-  g_session.display->put_Type(MediaPlaybackType_Music);
+  if (FAILED(g_session.display->put_Type(MediaPlaybackType_Music))) return;
+  // ClearAll invalidates type-specific display properties on some Windows
+  // builds. Reacquire the music property interfaces before writing metadata so
+  // track changes never keep a stale COM object from the previous item.
+  g_session.musicProperties2.Reset();
+  g_session.musicProperties.Reset();
+  if (FAILED(g_session.display->get_MusicProperties(
+          g_session.musicProperties.GetAddressOf()))) {
+    return;
+  }
+  g_session.musicProperties.As(&g_session.musicProperties2);
   if (g_session.musicProperties) {
     if (!update.title.empty()) {
       g_session.musicProperties->put_Title(
@@ -174,7 +196,6 @@ void UpdateMetadata(const SmtcUpdate& update) {
       }
     }
   }
-
   if (!update.coverUri.empty()) {
     ComPtr<IUriRuntimeClassFactory> uriFactory;
     if (SUCCEEDED(GetActivationFactory(
@@ -232,14 +253,16 @@ void UpdateTimeline(const SmtcUpdate& update) {
   timeline->put_MaxSeekTime(endTime);
   timeline->put_Position(position);
   g_session.controls2->UpdateTimelineProperties(timeline.Get());
-  g_session.controls2->put_PlaybackRate(1.0);
 }
 
 void ApplyUpdate(const SmtcUpdate& update) {
   if (!g_session.controls) return;
   const bool active = update.enabled && update.hasTrack;
   if (!active) {
-    if (g_session.display) g_session.display->ClearAll();
+    if (g_session.display) {
+      g_session.display->ClearAll();
+      g_session.display->Update();
+    }
     g_session.controls->put_PlaybackStatus(MediaPlaybackStatus_Closed);
     g_session.controls->put_IsEnabled(FALSE);
     g_session.lastMetadataKey.clear();
@@ -269,6 +292,9 @@ void ApplyUpdate(const SmtcUpdate& update) {
     g_session.controls2->put_ShuffleEnabled(update.shuffle ? TRUE : FALSE);
     g_session.controls2->put_AutoRepeatMode(
         static_cast<MediaPlaybackAutoRepeatMode>(update.autoRepeatMode));
+    double playbackRate = update.playbackRate;
+    if (!std::isfinite(playbackRate) || playbackRate <= 0.0) playbackRate = 1.0;
+    g_session.controls2->put_PlaybackRate(playbackRate);
   }
 
   UpdateMetadata(update);
@@ -277,7 +303,10 @@ void ApplyUpdate(const SmtcUpdate& update) {
 
 void TeardownSmtc() {
   if (g_session.controls) {
-    if (g_session.display) g_session.display->ClearAll();
+    if (g_session.display) {
+      g_session.display->ClearAll();
+      g_session.display->Update();
+    }
     g_session.controls->put_PlaybackStatus(MediaPlaybackStatus_Closed);
     g_session.controls->put_IsEnabled(FALSE);
     if (g_session.buttonToken.value != 0) {
@@ -304,23 +333,51 @@ void TeardownSmtc() {
   g_session.controls.Reset();
 }
 
-bool InitSmtc() {
+HRESULT InitSmtc() {
   ComPtr<ISystemMediaTransportControlsInterop> interop;
+  g_session.initStage.store("GetActivationFactory", std::memory_order_release);
   HRESULT hr = GetActivationFactory(
       HStringReference(L"Windows.Media.SystemMediaTransportControls").Get(),
       &interop);
-  if (FAILED(hr)) return false;
-  hr = interop->GetForWindow(g_session.hwnd, IID_PPV_ARGS(
+  if (FAILED(hr)) return hr;
+  g_session.initStage.store("GetForWindow", std::memory_order_release);
+  const HWND smtcHwnd =
+      g_session.targetHwnd && IsWindow(g_session.targetHwnd)
+          ? g_session.targetHwnd
+          : g_session.messageHwnd;
+  if (smtcHwnd == g_session.targetHwnd && !g_session.appUserModelId.empty()) {
+    g_session.initStage.store("SetWindowAppUserModelId", std::memory_order_release);
+    ComPtr<IPropertyStore> propertyStore;
+    hr = SHGetPropertyStoreForWindow(smtcHwnd, IID_PPV_ARGS(&propertyStore));
+    if (FAILED(hr)) return hr;
+    PROPVARIANT value{};
+    value.vt = VT_LPWSTR;
+    value.pwszVal = const_cast<wchar_t*>(g_session.appUserModelId.c_str());
+    hr = propertyStore->SetValue(PKEY_AppUserModel_ID, value);
+    if (FAILED(hr)) return hr;
+    hr = propertyStore->Commit();
+    if (FAILED(hr)) return hr;
+  }
+  hr = interop->GetForWindow(smtcHwnd, IID_PPV_ARGS(
                                                 g_session.controls.GetAddressOf()));
-  if (FAILED(hr)) return false;
+  if (FAILED(hr)) return hr;
+  g_session.initStage.store("QueryControls2", std::memory_order_release);
   hr = g_session.controls.As(&g_session.controls2);
-  if (FAILED(hr)) return false;
+  if (FAILED(hr)) return hr;
+  g_session.initStage.store("GetDisplayUpdater", std::memory_order_release);
   hr = g_session.controls->get_DisplayUpdater(
       g_session.display.GetAddressOf());
-  if (FAILED(hr)) return false;
+  if (FAILED(hr)) return hr;
+  // MusicProperties is type-specific. On current Windows 11 SDK/runtime builds
+  // get_MusicProperties returns HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED) until
+  // the display updater has first been switched to MediaPlaybackType_Music.
+  g_session.initStage.store("SetDisplayType", std::memory_order_release);
+  hr = g_session.display->put_Type(MediaPlaybackType_Music);
+  if (FAILED(hr)) return hr;
+  g_session.initStage.store("GetMusicProperties", std::memory_order_release);
   hr = g_session.display->get_MusicProperties(
       g_session.musicProperties.GetAddressOf());
-  if (FAILED(hr)) return false;
+  if (FAILED(hr)) return hr;
   g_session.musicProperties.As(&g_session.musicProperties2);
 
   auto buttonHandler =
@@ -364,7 +421,7 @@ bool InitSmtc() {
           });
   if (FAILED(g_session.controls->add_ButtonPressed(
           buttonHandler.Get(), &g_session.buttonToken))) {
-    return false;
+    return E_FAIL;
   }
 
   auto positionHandler =
@@ -384,7 +441,7 @@ bool InitSmtc() {
           });
   if (FAILED(g_session.controls2->add_PlaybackPositionChangeRequested(
           positionHandler.Get(), &g_session.positionToken))) {
-    return false;
+    return E_FAIL;
   }
 
   auto shuffleHandler =
@@ -404,7 +461,7 @@ bool InitSmtc() {
           });
   if (FAILED(g_session.controls2->add_ShuffleEnabledChangeRequested(
           shuffleHandler.Get(), &g_session.shuffleToken))) {
-    return false;
+    return E_FAIL;
   }
 
   auto repeatHandler =
@@ -423,10 +480,11 @@ bool InitSmtc() {
           });
   if (FAILED(g_session.controls2->add_AutoRepeatModeChangeRequested(
           repeatHandler.Get(), &g_session.repeatToken))) {
-    return false;
+    return E_FAIL;
   }
 
-  return true;
+  g_session.initStage.store("ready", std::memory_order_release);
+  return S_OK;
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam,
@@ -457,32 +515,46 @@ bool CreateHiddenWindow() {
   if (!RegisterClassW(&windowClass)) {
     if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
   }
-  g_session.hwnd = CreateWindowExW(0, kWindowClassName, kWindowTitle, 0,
-                                   CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, nullptr,
-                                   nullptr, windowClass.hInstance, nullptr);
-  return g_session.hwnd != nullptr;
+  g_session.messageHwnd = CreateWindowExW(
+      0, kWindowClassName, kWindowTitle, 0, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0,
+      nullptr, nullptr, windowClass.hInstance, nullptr);
+  return g_session.messageHwnd != nullptr;
 }
 
 void CloseHiddenWindow() {
-  if (g_session.hwnd) {
-    DestroyWindow(g_session.hwnd);
-    g_session.hwnd = nullptr;
+  if (g_session.messageHwnd) {
+    DestroyWindow(g_session.messageHwnd);
+    g_session.messageHwnd = nullptr;
   }
   UnregisterClassW(kWindowClassName, GetModuleHandleW(nullptr));
 }
 
 DWORD WINAPI WorkerProc(LPVOID) {
   bool ok = false;
+  g_session.initStage.store("RoInitialize", std::memory_order_release);
   HRESULT hr = RoInitialize(RO_INIT_SINGLETHREADED);
-  if (SUCCEEDED(hr) && CreateHiddenWindow()) {
-    ok = InitSmtc();
+  g_session.initHr.store(hr, std::memory_order_release);
+  if (SUCCEEDED(hr)) {
+    g_session.initStage.store("CreateHiddenWindow", std::memory_order_release);
+    if (CreateHiddenWindow()) {
+      hr = InitSmtc();
+      g_session.initHr.store(hr, std::memory_order_release);
+      ok = SUCCEEDED(hr);
+    } else {
+      hr = HRESULT_FROM_WIN32(GetLastError());
+      g_session.initHr.store(hr, std::memory_order_release);
+    }
   }
   g_session.initOk.store(ok, std::memory_order_release);
   SetEvent(g_session.readyEvent);
   if (!ok) {
-    if (g_session.hwnd) {
-      DestroyWindow(g_session.hwnd);
-      g_session.hwnd = nullptr;
+    // InitSmtc may have acquired a partial COM graph before failing. Release it
+    // on the STA worker before RoUninitialize; leaving those global ComPtrs alive
+    // until DLL/process teardown used to crash with 0xC0000005.
+    TeardownSmtc();
+    if (g_session.messageHwnd) {
+      DestroyWindow(g_session.messageHwnd);
+      g_session.messageHwnd = nullptr;
     }
     UnregisterClassW(kWindowClassName, GetModuleHandleW(nullptr));
     if (SUCCEEDED(hr)) RoUninitialize();
@@ -508,15 +580,7 @@ napi_value MakeUndefined(napi_env env) {
   return value;
 }
 
-std::string GetStringProperty(napi_env env, napi_value object,
-                              const char* name) {
-  napi_value value;
-  bool hasProperty = false;
-  if (napi_has_named_property(env, object, name, &hasProperty) != napi_ok ||
-      !hasProperty ||
-      napi_get_named_property(env, object, name, &value) != napi_ok) {
-    return {};
-  }
+std::string GetStringValue(napi_env env, napi_value value) {
   size_t length = 0;
   if (napi_get_value_string_utf8(env, value, nullptr, 0, &length) != napi_ok ||
       length == 0) {
@@ -530,6 +594,18 @@ std::string GetStringProperty(napi_env env, napi_value object,
   }
   output.resize(written);
   return output;
+}
+
+std::string GetStringProperty(napi_env env, napi_value object,
+                              const char* name) {
+  napi_value value;
+  bool hasProperty = false;
+  if (napi_has_named_property(env, object, name, &hasProperty) != napi_ok ||
+      !hasProperty ||
+      napi_get_named_property(env, object, name, &value) != napi_ok) {
+    return {};
+  }
+  return GetStringValue(env, value);
 }
 
 double GetDoubleProperty(napi_env env, napi_value object, const char* name,
@@ -568,11 +644,25 @@ napi_value CreateBinding(napi_env env, napi_callback_info info) {
     return result;
   }
 
-  size_t argc = 1;
-  napi_value argv[1];
+  size_t argc = 3;
+  napi_value argv[3];
   napi_value callback = nullptr;
   napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
   if (argc >= 1) callback = argv[0];
+
+  g_session.targetHwnd = nullptr;
+  g_session.appUserModelId.clear();
+  if (argc >= 2) {
+    double rawHandle = 0.0;
+    if (napi_get_value_double(env, argv[1], &rawHandle) == napi_ok &&
+        std::isfinite(rawHandle) && rawHandle > 0.0) {
+      g_session.targetHwnd =
+          reinterpret_cast<HWND>(static_cast<uintptr_t>(rawHandle));
+    }
+  }
+  if (argc >= 3) {
+    g_session.appUserModelId = utf8ToWide(GetStringValue(env, argv[2]));
+  }
 
   napi_value resourceName;
   napi_create_string_utf8(env, "twilight-smtc-events", NAPI_AUTO_LENGTH,
@@ -598,6 +688,19 @@ napi_value CreateBinding(napi_env env, napi_callback_info info) {
                   g_session.initOk.load(std::memory_order_acquire);
   CloseHandle(g_session.readyEvent);
   g_session.readyEvent = nullptr;
+
+  // Failed initialization must be fully reclaimable. Previously the exited
+  // worker remained joinable and the TSFN survived until env cleanup, where a
+  // null napi_env was passed into MakeUndefined and crashed the process.
+  if (!ok) {
+    if (g_session.worker.joinable()) g_session.worker.join();
+    if (g_session.tsfn) {
+      napi_release_threadsafe_function(g_session.tsfn, napi_tsfn_abort);
+      g_session.tsfn = nullptr;
+    }
+    g_session.env = nullptr;
+    g_session.initOk.store(false, std::memory_order_release);
+  }
 
   napi_value result;
   napi_get_boolean(env, ok, &result);
@@ -628,6 +731,7 @@ napi_value UpdateBinding(napi_env env, napi_callback_info info) {
       GetDoubleProperty(env, argv[0], "positionSeconds", 0);
   update.durationSeconds =
       GetDoubleProperty(env, argv[0], "durationSeconds", 0);
+  update.playbackRate = GetDoubleProperty(env, argv[0], "playbackRate", 1);
   update.title = utf8ToWide(GetStringProperty(env, argv[0], "title"));
   update.artist = utf8ToWide(GetStringProperty(env, argv[0], "artist"));
   update.album = utf8ToWide(GetStringProperty(env, argv[0], "album"));
@@ -637,9 +741,11 @@ napi_value UpdateBinding(napi_env env, napi_callback_info info) {
       static_cast<int>(GetDoubleProperty(env, argv[0], "trackNumber", 0));
   update.coverUri = utf8ToWide(GetStringProperty(env, argv[0], "coverUri"));
 
-  if (!g_session.hwnd || !IsWindow(g_session.hwnd)) return MakeUndefined(env);
+  if (!g_session.messageHwnd || !IsWindow(g_session.messageHwnd)) {
+    return MakeUndefined(env);
+  }
   auto* payload = new SmtcUpdate(std::move(update));
-  if (!PostMessageW(g_session.hwnd, kUpdateMessage, 0,
+  if (!PostMessageW(g_session.messageHwnd, kUpdateMessage, 0,
                     reinterpret_cast<LPARAM>(payload))) {
     delete payload;
   }
@@ -648,18 +754,31 @@ napi_value UpdateBinding(napi_env env, napi_callback_info info) {
 
 napi_value DestroyBinding(napi_env env, napi_callback_info info) {
   if (g_session.worker.joinable()) {
-    if (g_session.hwnd) {
-      PostMessageW(g_session.hwnd, WM_CLOSE, 0, 0);
+    if (g_session.messageHwnd) {
+      PostMessageW(g_session.messageHwnd, WM_CLOSE, 0, 0);
     }
     g_session.worker.join();
-    if (g_session.tsfn) {
-      napi_release_threadsafe_function(g_session.tsfn, napi_tsfn_abort);
-      g_session.tsfn = nullptr;
-    }
-    g_session.env = nullptr;
-    g_session.initOk.store(false, std::memory_order_release);
   }
-  return MakeUndefined(env);
+  if (g_session.tsfn) {
+    napi_release_threadsafe_function(g_session.tsfn, napi_tsfn_abort);
+    g_session.tsfn = nullptr;
+  }
+  g_session.env = nullptr;
+  g_session.targetHwnd = nullptr;
+  g_session.appUserModelId.clear();
+  g_session.initOk.store(false, std::memory_order_release);
+  return env ? MakeUndefined(env) : nullptr;
+}
+
+napi_value GetLastErrorBinding(napi_env env, napi_callback_info info) {
+  const long hr = g_session.initHr.load(std::memory_order_acquire);
+  const char* stage = g_session.initStage.load(std::memory_order_acquire);
+  char buffer[128];
+  std::snprintf(buffer, sizeof(buffer), "%s: 0x%08lX", stage ? stage : "unknown",
+                static_cast<unsigned long>(hr));
+  napi_value result;
+  napi_create_string_utf8(env, buffer, NAPI_AUTO_LENGTH, &result);
+  return result;
 }
 
 napi_value SelfTestBinding(napi_env env, napi_callback_info info) {
@@ -729,6 +848,7 @@ napi_value Init(napi_env env, napi_value exports) {
   Define(env, exports, "Update", UpdateBinding);
   Define(env, exports, "Destroy", DestroyBinding);
   Define(env, exports, "SelfTest", SelfTestBinding);
+  Define(env, exports, "GetLastError", GetLastErrorBinding);
   return exports;
 }
 

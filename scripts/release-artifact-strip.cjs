@@ -6,6 +6,7 @@ const path = require('node:path')
 const NATIVE_RUNTIME_FILES = Object.freeze([
   'twilight-audio-engine.dll',
   'twilight_audio_node.node',
+  'twilight_smtc_node.node',
   'twilight-asio-helper.exe',
   'twilight-vst3-host.exe',
   'twilight-vst3-scanner.exe'

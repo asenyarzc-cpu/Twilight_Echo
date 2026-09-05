@@ -6,6 +6,9 @@ const LocalDashboard = defineAsyncComponent(() => import('@renderer/components/L
 const ArchiveDashboard = defineAsyncComponent(
   () => import('@renderer/components/local-dashboard/ArchiveDashboard.vue')
 )
+const NightHarborDashboard = defineAsyncComponent(
+  () => import('@renderer/components/local-dashboard/NightHarborDashboard.vue')
+)
 const { presetLayout } = useThemeStore()
 
 const emit = defineEmits<{
@@ -16,7 +19,13 @@ const emit = defineEmits<{
 
 <template>
   <component
-    :is="presetLayout === 'aurora-reference' ? ArchiveDashboard : LocalDashboard"
+    :is="
+      presetLayout === 'aurora-reference'
+        ? ArchiveDashboard
+        : presetLayout === 'obsidian-glass'
+          ? NightHarborDashboard
+          : LocalDashboard
+    "
     @select-view="
       (category: string, filter: string | null) => emit('select-view', category, filter)
     "

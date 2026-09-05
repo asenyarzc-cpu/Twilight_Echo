@@ -3,78 +3,369 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark light" />
-    <title>Twilight Echo · 远程控制</title>
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f5f3ed" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Twilight Echo · 随身听音室</title>
     <link rel="stylesheet" href="/remote.css" />
   </head>
   <body>
-    <main class="app">
+    <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <symbol id="i-play" viewBox="0 0 24 24">
+          <path d="m9 5 11 7-11 7Z" fill="currentColor" stroke="none" />
+        </symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24">
+          <path d="M8 5v14M16 5v14" stroke-width="4" />
+        </symbol>
+        <symbol id="i-next" viewBox="0 0 24 24">
+          <path d="m5 5 10 7-10 7Z" fill="currentColor" stroke="none" />
+          <path d="M18 5v14" stroke-width="2.5" />
+        </symbol>
+        <symbol id="i-prev" viewBox="0 0 24 24">
+          <path d="m19 5-10 7 10 7Z" fill="currentColor" stroke="none" />
+          <path d="M6 5v14" stroke-width="2.5" />
+        </symbol>
+        <symbol id="i-volume" viewBox="0 0 24 24">
+          <path d="M11 4 6 8H3v8h3l5 4ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14" />
+        </symbol>
+        <symbol id="i-mute" viewBox="0 0 24 24">
+          <path d="M11 4 6 8H3v8h3l5 4ZM16 9l6 6m0-6-6 6" />
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24">
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="m16 16 5 5" />
+        </symbol>
+        <symbol id="i-library" viewBox="0 0 24 24">
+          <path d="M4 4v16M9 4v16m5-15 5-1 3 15-5 1Z" />
+        </symbol>
+        <symbol id="i-queue" viewBox="0 0 24 24">
+          <path d="M3 6h18M3 12h12M3 18h9m6-3 4 3-4 3Z" />
+        </symbol>
+        <symbol id="i-disc" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <circle cx="12" cy="12" r="2" />
+          <path d="M5.5 12A6.5 6.5 0 0 1 12 5.5M18.5 12a6.5 6.5 0 0 1-6.5 6.5" />
+        </symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6" /></symbol>
+        <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 12H4m6-6-6 6 6 6" /></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+        <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6" /></symbol>
+        <symbol id="i-refresh" viewBox="0 0 24 24">
+          <path d="M20 5v6h-6M4 19v-6h6M5.3 8a8 8 0 0 1 13-2L20 9M4 15l1.7 3a8 8 0 0 0 13-2" />
+        </symbol>
+        <symbol id="i-device" viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="12" rx="2" />
+          <path d="M8 21h8m-4-5v5" />
+        </symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24">
+          <rect x="5" y="10" width="14" height="11" rx="3" />
+          <path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" />
+        </symbol>
+        <symbol id="i-repeat" viewBox="0 0 24 24">
+          <path d="m16 2 4 4-4 4M4 11V9a3 3 0 0 1 3-3h13M8 22l-4-4 4-4m12-3v4a3 3 0 0 1-3 3H4" />
+        </symbol>
+      </defs>
+    </svg>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <div class="app">
       <header class="header">
-        <div class="brand">Twilight Echo</div>
-        <div id="status-chip" class="chip">未连接</div>
-      </header>
-
-      <section id="pair-panel" class="card">
-        <h1>配对</h1>
-        <p class="muted">在应用设置中开启远程控制，输入 PIN 完成配对。</p>
-        <form id="pair-form" class="row">
-          <input
-            id="pin-input"
-            type="password"
-            inputmode="numeric"
-            autocomplete="one-time-code"
-            maxlength="8"
-            placeholder="6 位 PIN"
-            required
-          />
-          <button type="submit" class="primary">连接</button>
-        </form>
-        <p id="pair-error" class="error" hidden></p>
-      </section>
-
-      <section id="player-panel" class="card" hidden>
-        <div class="meta">
-          <div id="title" class="title">—</div>
-          <div id="artist" class="artist muted">—</div>
-          <div id="album" class="album muted"></div>
-        </div>
-
-        <div class="progress-block">
-          <input id="seek" type="range" min="0" max="1000" value="0" step="1" />
-          <div class="time-row">
-            <span id="pos">0:00</span>
-            <span id="live-badge" class="badge" hidden>LIVE</span>
-            <span id="dur">0:00</span>
-          </div>
-        </div>
-
-        <div class="controls">
-          <button type="button" id="btn-prev" class="icon" title="上一首" aria-label="上一首">
-            ⏮
-          </button>
-          <button
-            type="button"
-            id="btn-play"
-            class="icon primary-icon"
-            title="播放/暂停"
-            aria-label="播放/暂停"
+        <a class="brand" href="/" aria-label="Twilight Echo 首页">
+          <span class="brand-mark" aria-hidden="true">t<span>e</span></span>
+          <span>Twilight Echo<span class="brand-caption">THE LISTENING ROOM</span></span>
+        </a>
+        <div class="header-actions">
+          <span id="status-chip" class="status-chip" role="status"
+            ><span class="status-dot"></span><span id="status-text">正在连接</span></span
           >
-            ▶
-          </button>
-          <button type="button" id="btn-next" class="icon" title="下一首" aria-label="下一首">
-            ⏭
-          </button>
+          <button id="btn-disconnect" class="text-button" type="button" hidden>断开配对</button>
         </div>
-
-        <div class="volume-block">
-          <label for="volume">音量</label>
-          <input id="volume" type="range" min="0" max="100" value="70" step="1" />
+      </header>
+      <main id="main-content">
+        <section id="pair-panel" class="pair-layout" aria-labelledby="pair-heading">
+          <div class="pair-story">
+            <p class="eyebrow"><span class="short-line"></span> YOUR MUSIC, WITHIN REACH</p>
+            <h1>让音乐，<br />随你<span class="serif-word">而动。</span></h1>
+            <p class="story-copy">
+              把喜欢的声音，留在此刻。<br />不必回到电脑前，你的下一首，就在手边。
+            </p>
+            <div class="pair-art" aria-hidden="true">
+              <div class="record">
+                <div class="record-label">
+                  <span>twilight<br /><em>echo</em></span>
+                </div>
+              </div>
+              <div class="record-sleeve">
+                <span>THE ART OF<br />LISTENING.</span>
+                <div class="sleeve-sun"></div>
+                <small>33⅓ &nbsp; / &nbsp; SIDE A</small>
+              </div>
+            </div>
+            <div class="story-footer">
+              <span>DESIGNED FOR YOUR QUIET MOMENTS</span><span>01 — ∞</span>
+            </div>
+          </div>
+          <div class="pair-card">
+            <div class="pair-icon">
+              <svg class="svg-icon"><use href="#i-lock" /></svg>
+            </div>
+            <p class="eyebrow">WELCOME TO YOUR ROOM</p>
+            <h2 id="pair-heading">连接你的听音室</h2>
+            <p class="muted pair-description">
+              在电脑端「设置 → 远程控制」中开启服务，输入屏幕上的 6 位 PIN。
+            </p>
+            <form id="pair-form">
+              <label for="pin-input">配对 PIN</label>
+              <input
+                id="pin-input"
+                type="password"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                pattern="[0-9]{6}"
+                minlength="6"
+                maxlength="6"
+                placeholder="· · · · · ·"
+                aria-describedby="pair-error"
+                required
+              />
+              <p id="pair-error" class="error" role="alert" hidden></p>
+              <button id="pair-submit" type="submit" class="primary pair-submit">
+                <span>进入听音室</span><svg class="svg-icon"><use href="#i-arrow" /></svg>
+              </button>
+            </form>
+            <div class="pair-note">
+              <svg class="svg-icon"><use href="#i-device" /></svg>
+              <p>手机与电脑需连接同一局域网。<br />声音仍由电脑或当前投送设备播放。</p>
+            </div>
+          </div>
+        </section>
+        <div id="session-panel" hidden>
+          <div class="room-heading">
+            <div>
+              <p class="eyebrow">YOUR PERSONAL LISTENING ROOM</p>
+              <h1>好音乐，<span>慢慢听。</span></h1>
+            </div>
+            <p class="room-note">控制在手边，<br />让声音填满房间。</p>
+          </div>
+          <div class="room-layout">
+            <section id="player-panel" class="player-panel" aria-label="正在播放">
+              <div class="player-topline">
+                <span class="eyebrow">ON THE RECORD</span
+                ><span id="playback-label" class="playback-label">等待播放</span>
+              </div>
+              <div id="cover-stage" class="cover-stage">
+                <div class="cover-fallback" aria-hidden="true">
+                  <div class="art-orbit"></div>
+                  <div class="art-sun"></div>
+                  <div class="art-horizon"></div>
+                  <span class="art-caption">a little closer<br /><em>to the music.</em></span
+                  ><span class="art-edition">TWILIGHT ECHO &nbsp; / &nbsp; VOL. 01</span>
+                </div>
+                <img id="cover" alt="当前曲目封面" hidden />
+                <span class="cover-corner" aria-hidden="true"
+                  ><svg class="svg-icon"><use href="#i-disc" /></svg
+                ></span>
+              </div>
+              <div class="track-meta">
+                <p id="album" class="album">属于你的音乐时刻</p>
+                <h2 id="title">挑一首喜欢的歌</h2>
+                <p id="artist" class="artist">从音乐库开始，或继续播放队列</p>
+              </div>
+              <div class="progress-block">
+                <label class="sr-only" for="seek">播放进度</label
+                ><input id="seek" type="range" min="0" max="1000" value="0" step="1" disabled />
+                <div class="time-row">
+                  <span id="pos">0:00</span
+                  ><span id="live-badge" class="live-badge" hidden>LIVE</span
+                  ><span id="dur">0:00</span>
+                </div>
+              </div>
+              <div class="controls">
+                <button
+                  id="btn-prev"
+                  class="icon-button"
+                  type="button"
+                  aria-label="上一首"
+                  title="上一首"
+                >
+                  <svg class="svg-icon"><use href="#i-prev" /></svg></button
+                ><button
+                  id="btn-play"
+                  class="play-button"
+                  type="button"
+                  aria-label="播放"
+                  title="播放"
+                >
+                  <svg class="svg-icon"><use href="#i-play" /></svg></button
+                ><button
+                  id="btn-next"
+                  class="icon-button"
+                  type="button"
+                  aria-label="下一首"
+                  title="下一首"
+                >
+                  <svg class="svg-icon"><use href="#i-next" /></svg>
+                </button>
+              </div>
+              <div class="player-options">
+                <div class="mode-control">
+                  <svg class="svg-icon"><use href="#i-repeat" /></svg
+                  ><label class="sr-only" for="play-mode">播放模式</label
+                  ><select id="play-mode">
+                    <option value="sequence">顺序播放</option>
+                    <option value="loop">列表循环</option>
+                    <option value="single">单曲循环</option>
+                    <option value="shuffle">随机播放</option>
+                  </select>
+                </div>
+                <button id="btn-open-queue" class="text-button" type="button">
+                  <svg class="svg-icon"><use href="#i-queue" /></svg
+                  ><span id="queue-count">队列 · 0</span>
+                </button>
+              </div>
+              <div class="volume-block">
+                <button
+                  id="btn-mute"
+                  class="icon-button"
+                  type="button"
+                  aria-label="静音"
+                  aria-pressed="false"
+                  title="静音"
+                >
+                  <svg class="svg-icon"><use href="#i-volume" /></svg></button
+                ><label class="sr-only" for="volume">音量</label
+                ><input id="volume" type="range" min="0" max="100" value="70" step="1" /><output
+                  id="volume-value"
+                  for="volume"
+                  >70%</output
+                >
+              </div>
+              <div class="output-line">
+                <svg class="svg-icon"><use href="#i-device" /></svg
+                ><span id="cast-line">声音正在电脑端播放</span><span class="output-dot"></span>
+              </div>
+            </section>
+            <section id="browser-panel" class="browser-panel" aria-labelledby="browse-title">
+              <div class="browser-heading">
+                <div>
+                  <p class="eyebrow">MAKE YOUR NEXT SELECTION</p>
+                  <h2 id="browse-title">你的音乐</h2>
+                </div>
+                <button
+                  id="btn-refresh"
+                  class="icon-button outlined"
+                  type="button"
+                  aria-label="刷新列表"
+                  title="刷新列表"
+                >
+                  <svg class="svg-icon"><use href="#i-refresh" /></svg>
+                </button>
+              </div>
+              <nav class="browse-tabs" aria-label="音乐浏览">
+                <button
+                  type="button"
+                  data-view="library"
+                  class="browse-tab active"
+                  aria-current="page"
+                >
+                  音乐库</button
+                ><button type="button" data-view="playlists" class="browse-tab">歌单</button
+                ><button type="button" data-view="queue" class="browse-tab">
+                  播放队列 <span id="tab-queue-count">0</span>
+                </button>
+              </nav>
+              <form id="search-form" class="search-box" role="search">
+                <svg class="svg-icon"><use href="#i-search" /></svg
+                ><label class="sr-only" for="search-input">搜索歌曲、歌手或专辑</label
+                ><input
+                  id="search-input"
+                  type="search"
+                  placeholder="搜索歌曲、歌手或专辑"
+                  autocomplete="off"
+                  maxlength="120"
+                  enterkeyhint="search"
+                /><button
+                  id="search-clear"
+                  class="icon-button"
+                  type="button"
+                  aria-label="清空搜索"
+                  hidden
+                >
+                  <svg class="svg-icon"><use href="#i-close" /></svg>
+                </button>
+              </form>
+              <div class="list-heading">
+                <div class="list-context">
+                  <button
+                    id="playlist-back"
+                    class="icon-button"
+                    type="button"
+                    aria-label="返回歌单"
+                    hidden
+                  >
+                    <svg class="svg-icon"><use href="#i-back" /></svg></button
+                  ><span id="list-label">全部曲目</span
+                  ><span id="result-count" class="count-pill">—</span>
+                </div>
+                <span id="list-hint">选一首，开启此刻</span>
+              </div>
+              <p id="browse-error" class="error browse-error" role="alert" hidden></p>
+              <div id="list-loading" class="list-loading" hidden>
+                <span class="loading-dot"></span>正在整理你的音乐…
+              </div>
+              <div id="list-empty" class="empty-state" hidden>
+                <span class="empty-icon"
+                  ><svg class="svg-icon"><use href="#i-disc" /></svg
+                ></span>
+                <h3 id="empty-title">这里还很安静</h3>
+                <p id="empty-description">在电脑端添加音乐后，就能在这里选歌。</p>
+              </div>
+              <div id="track-list" class="track-list" role="list" aria-label="曲目列表"></div>
+              <div id="pagination" class="pagination" hidden>
+                <button id="page-prev" type="button" class="text-button">
+                  <svg class="svg-icon"><use href="#i-back" /></svg>上一页</button
+                ><span id="page-label"></span
+                ><button id="page-next" type="button" class="text-button">
+                  下一页<svg class="svg-icon"><use href="#i-arrow" /></svg>
+                </button>
+              </div>
+              <div class="browser-footer">
+                <span class="footer-monogram">te.</span>
+                <p>没有打扰，只有音乐。<span>A LITTLE CLOSER TO THE MUSIC.</span></p>
+                <svg class="svg-icon"><use href="#i-disc" /></svg>
+              </div>
+            </section>
+          </div>
+          <div id="mini-player" class="mini-player" hidden>
+            <button id="mini-open" class="mini-open" type="button" aria-label="打开正在播放">
+              <span class="mini-art" aria-hidden="true"
+                ><svg class="svg-icon"><use href="#i-disc" /></svg></span
+              ><span class="mini-meta"
+                ><strong id="mini-title">未在播放</strong
+                ><span id="mini-artist">选择一首歌曲</span></span
+              ></button
+            ><button id="mini-play" class="icon-button" type="button" aria-label="播放">
+              <svg class="svg-icon"><use href="#i-play" /></svg></button
+            ><button id="mini-next" class="icon-button" type="button" aria-label="下一首">
+              <svg class="svg-icon"><use href="#i-next" /></svg>
+            </button>
+          </div>
+          <nav class="mobile-nav" aria-label="远程控制导航">
+            <button type="button" data-mobile="player" class="active" aria-current="page">
+              <svg class="svg-icon"><use href="#i-disc" /></svg>正在播放</button
+            ><button type="button" data-mobile="library">
+              <svg class="svg-icon"><use href="#i-library" /></svg>音乐库</button
+            ><button type="button" data-mobile="queue">
+              <svg class="svg-icon"><use href="#i-queue" /></svg>队列
+            </button>
+          </nav>
         </div>
-
-        <p id="cast-line" class="muted small" hidden></p>
-        <p id="cmd-error" class="error" hidden></p>
-      </section>
-    </main>
+      </main>
+      <footer class="page-footer">
+        <span>TWILIGHT ECHO</span><span>局域网遥控 · 声音留在房间里</span>
+      </footer>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <script src="/remote.js"></script>
   </body>
 </html>

@@ -8,7 +8,10 @@ import { MediaStreamGrantStore, guessAudioContentType } from './mediaTokens.ts'
 import {
   createEmptyRemotePlaybackSnapshot,
   isPrivateOrLocalIp,
+  parseRemoteBrowseRequest,
   parseRemotePlayerCommand,
+  type RemoteBrowseRequest,
+  type RemoteBrowseResult,
   type PlayerRemoteCommand,
   type RemoteControlStatus,
   type RemotePlaybackSnapshot
@@ -19,10 +22,21 @@ import { parseJsonWithNestingLimit } from '../security/jsonSafety.ts'
 export type RemoteServerMode = 'full' | 'mediaOnly'
 
 export type RemoteCommandHandler = (command: PlayerRemoteCommand) => Promise<void> | void
+export type RemoteBrowseHandler = (request: RemoteBrowseRequest) => Promise<RemoteBrowseResult>
+
+export class RemoteCommandError extends Error {
+  readonly status: number
+
+  constructor(message: string, status = 503) {
+    super(message)
+    this.status = status
+  }
+}
 
 export interface RemoteHttpServerOptions {
   staticRoot?: string
   onCommand?: RemoteCommandHandler
+  onBrowse?: RemoteBrowseHandler
   auth?: RemoteAuthSession
   mediaGrants?: MediaStreamGrantStore
   preferredPort?: number
@@ -39,10 +53,13 @@ export class RemoteHttpServer {
   private readonly mediaGrants: MediaStreamGrantStore
   private readonly staticRoot: string
   private onCommand: RemoteCommandHandler | null
+  private onBrowse: RemoteBrowseHandler | null
   private snapshot: RemotePlaybackSnapshot = createEmptyRemotePlaybackSnapshot()
   private readonly sseClients = new Set<ServerResponse>()
   /** S3: SSE 长连接上限，防止局域网内开大量 /api/events 耗尽资源。 */
   private readonly sseMaxClients = 8
+  private browseInFlight = 0
+  private readonly maxBrowseInFlight = 2
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(options: RemoteHttpServerOptions = {}) {
@@ -50,10 +67,15 @@ export class RemoteHttpServer {
     this.mediaGrants = options.mediaGrants ?? new MediaStreamGrantStore()
     this.staticRoot = options.staticRoot ?? join(app.getAppPath(), 'resources', 'remote')
     this.onCommand = options.onCommand ?? null
+    this.onBrowse = options.onBrowse ?? null
   }
 
   setCommandHandler(handler: RemoteCommandHandler | null): void {
     this.onCommand = handler
+  }
+
+  setBrowseHandler(handler: RemoteBrowseHandler | null): void {
+    this.onBrowse = handler
   }
 
   getAuth(): RemoteAuthSession {
@@ -85,8 +107,13 @@ export class RemoteHttpServer {
   }
 
   updatePlaybackSnapshot(snapshot: RemotePlaybackSnapshot): void {
+    const coverChanged = this.snapshot.coverUrl !== snapshot.coverUrl
     this.snapshot = { ...snapshot, updatedAt: Date.now() }
-    this.broadcastSse('state', this.snapshot)
+    if (coverChanged) this.broadcastSse('state', this.snapshot)
+    else {
+      const { coverUrl: _coverUrl, ...state } = this.snapshot
+      this.broadcastSse('state', state)
+    }
   }
 
   getPlaybackSnapshot(): RemotePlaybackSnapshot {
@@ -351,6 +378,34 @@ export class RemoteHttpServer {
         return
       }
 
+      if (req.method === 'GET' && url.pathname === '/api/browse') {
+        if (!this.authorize(req, url)) {
+          this.sendJson(res, 401, { error: 'unauthorized' })
+          return
+        }
+        const browse = parseRemoteBrowseRequest(url.searchParams)
+        if (!browse) {
+          this.sendJson(res, 400, { error: 'invalid_browse_request' })
+          return
+        }
+        if (!this.onBrowse) {
+          this.sendJson(res, 503, { error: 'browse_handler_missing' })
+          return
+        }
+        if (this.browseInFlight >= this.maxBrowseInFlight) {
+          this.sendJson(res, 429, { error: 'browse_busy' })
+          return
+        }
+        this.browseInFlight++
+        try {
+          const result = await this.onBrowse(browse)
+          this.sendJson(res, 200, result)
+        } finally {
+          this.browseInFlight--
+        }
+        return
+      }
+
       if (req.method === 'POST' && url.pathname === '/api/command') {
         if (!this.authorize(req, url)) {
           this.sendJson(res, 401, { error: 'unauthorized' })
@@ -383,8 +438,11 @@ export class RemoteHttpServer {
 
       this.sendJson(res, 404, { error: 'not_found' })
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.sendJson(res, 500, { error: message })
+      if (error instanceof RemoteCommandError) {
+        this.sendJson(res, error.status, { error: error.message })
+        return
+      }
+      this.sendJson(res, 500, { error: 'remote_request_failed' })
     }
   }
 
@@ -610,6 +668,7 @@ export class RemoteHttpServer {
     res.writeHead(status, {
       ...corsHeaders((res as ServerResponse & { teCorsOrigin?: string | null }).teCorsOrigin),
       'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
       'content-length': payload.length
     })
     res.end(payload)

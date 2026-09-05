@@ -1,13 +1,12 @@
-import { nativeImage, type ThumbarButton } from 'electron'
+import { app, nativeImage, type ThumbarButton } from 'electron'
 import { join } from 'path'
-import { app } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { runtime } from '../core/runtime'
 
-// Windows taskbar-thumbnail toolbar (thumbnail hover / taskbar preview). The
-// buttons mirror media-key hardware buttons and use the app's existing
-// `player:shortcut` dispatch so the rendered player store stays the single
-// source of truth.
+// Windows taskbar-thumbnail toolbar (thumbnail hover / taskbar preview).
+// This is deliberately separate from Windows System Media Transport Controls:
+// Thumbar buttons belong to the taskbar window preview while SMTC belongs to the
+// system-wide media session surfaced by Windows media flyouts / lock-screen UI.
 
 function getThumbarIconPath(name: string): string {
   if (process.platform === 'win32') {
@@ -20,7 +19,7 @@ function getThumbarIconPath(name: string): string {
 
 let lastSignature = ''
 
-function buildThumbarButtons(): ThumbarButton[] {
+function buildTaskbarThumbarButtons(): ThumbarButton[] {
   const state = runtime.latestMiniPlayerState
   const hasTrack = state?.track != null
   const isPlaying = state?.isPlaying === true
@@ -52,7 +51,7 @@ function buildThumbarButtons(): ThumbarButton[] {
   ]
 }
 
-export function refreshSmtcButtons(force = false): void {
+export function refreshTaskbarThumbarButtons(force = false): void {
   if (process.platform !== 'win32') return
   const win = runtime.mainWindow
   if (!win || win.isDestroyed()) return
@@ -61,15 +60,15 @@ export function refreshSmtcButtons(force = false): void {
   const signature = `${enabled ? 'on' : 'off'}:${state?.track?.id ?? null}:${state?.isPlaying === true}`
   if (!force && signature === lastSignature) return
   lastSignature = signature
-  win.setThumbarButtons(enabled ? buildThumbarButtons() : [])
+  win.setThumbarButtons(enabled ? buildTaskbarThumbarButtons() : [])
 }
 
-export function createSmtcButtons(): void {
+export function createTaskbarThumbarButtons(): void {
   if (process.platform !== 'win32') return
-  runtime.refreshSmtcButtons = refreshSmtcButtons
-  refreshSmtcButtons(true)
+  runtime.refreshTaskbarThumbarButtons = refreshTaskbarThumbarButtons
+  refreshTaskbarThumbarButtons(true)
 }
 
-export function destroySmtcButtons(): void {
-  runtime.refreshSmtcButtons = null
+export function destroyTaskbarThumbarButtons(): void {
+  runtime.refreshTaskbarThumbarButtons = null
 }

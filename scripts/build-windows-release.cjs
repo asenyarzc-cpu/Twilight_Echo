@@ -8,6 +8,7 @@ const { verifyPackagedDependencyClosure } = require('./verify-packaged-dependenc
 const { verifyWindowsAppBranding } = require('./verify-windows-app-branding.cjs')
 const { preparePackagedAudioStaging } = require('./packaged-audio-staging.cjs')
 const { prepareVst3Msvc } = require('./prepare-vst3-msvc.cjs')
+const { prepareSmtcMsvc } = require('./prepare-smtc-msvc.cjs')
 const {
   verifyReleaseCapabilityConsistency
 } = require('./verify-release-capability-consistency.cjs')
@@ -51,8 +52,11 @@ async function main() {
   console.warn(
     'Windows release is intentionally unsigned; publish the generated SHA-256 and expect SmartScreen warnings.'
   )
+  const smtc = prepareSmtcMsvc({ root, environment: releaseEnvironment, stage: false })
   prepareVst3Msvc({ root, environment: releaseEnvironment })
-  const staging = preparePackagedAudioStaging(root)
+  const staging = preparePackagedAudioStaging(root, {
+    nativeOverrides: { 'twilight_smtc_node.node': smtc.artifactPath }
+  })
   let build
   try {
     build = run(

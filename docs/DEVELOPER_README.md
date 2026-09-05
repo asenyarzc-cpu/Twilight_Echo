@@ -278,3 +278,17 @@ Prettier 配置：单引号、无分号、`printWidth: 100`、无 trailing comma
 renderer import 使用 `@renderer/*` alias 或已有局部模式，避免跨层深度相对路径。主进程、preload、renderer 的类型边界要显式维护，不要让 renderer 直接依赖 main 内部实现。
 
 歌单详情提供页内返回入口：流媒体复用详情栈恢复上一层，本地分类返回集合，聚合歌单返回网格。再次点击当前流媒体栏目会清除详情和搜索。全局 Esc 优先关闭已注册浮层，没有浮层且焦点不在输入控件时返回上一层（长按和输入法组合事件不触发返回）。网易云歌单删除或取消收藏放在右键／更多操作菜单中，继续使用原有确认流程。底栏常用工具图标使用继承按钮颜色的 SVG，避免图标字体加载或字形渲染影响操作入口。
+
+## 局域网远程控制
+
+远程控制默认关闭。完整控制面由 `src/main/remote/httpServer.ts` 提供，PIN 配对后才会暴露带 Bearer token 的状态、SSE、浏览与命令接口；投送模式的 `mediaOnly` bind 仍只服务 capability-token 媒体，绝不开放远控 UI/API。
+
+`GET /api/browse` 接受受限的 `view`（`library`、`playlists`、`queue`）、`query`、`offset`、`limit`（1–100）与可选 `playlistId`，返回分页且经 renderer 生成的展示数据。曲目与歌单 ID 是短生命周期 opaque token，LAN 端不会获得主机路径、真实媒体 URL 或 provider 凭据。远控播放/入队只接受这些 token；不能传入路径或 URL。
+
+主进程通过受信任的 `remote:request` / `remote:rendererResponse` IPC 向已就绪 renderer 请求每页数据或实际播放动作，并以 5 秒 timeout 明确失败，不会静默确认。队列页面和播放状态共享 `queueRevision`；`jumpQueue`、`removeQueue` 必须回传该 revision，陈旧索引返回 `409 queue_changed`。播放模式 API 使用 `sequence`、`loop`、`single`、`shuffle`，renderer 映射到内部 `sequential`、`listLoop`、`repeat`、`shuffle`。
+
+网页位于 `resources/remote/`，采用暖纸白与墨绿的响应式听音室布局：桌面双栏，手机提供正在播放、音乐库、队列导航及浏览时的迷你控制条。音乐库与歌单支持搜索、每页 40 条、点播和入队；队列支持跳转和移除。歌单曲目复用 `getPlaylistTracksById`，包括已保存的 provider 曲目快照，不额外开放在线平台全站搜索或任意 URL 点播。
+
+`remotePlaybackPublisher` 在曲目封面变化时复用现有封面解析，只有不超过 256 KiB 的 PNG/JPEG/WebP data URL 可以发布；不传递本机协议句柄或原始远端地址，缺失或超限封面显示网页内置唱片插画。不变封面不随播放 tick 重复发送。网页配对凭据保留在当前浏览器，断开配对会清除本机保存；仅适用于可信局域网，不应将 HTTP 端口映射到公网。
+
+远控改动至少运行 `pnpm run test:radio-remote` 和 `pnpm run typecheck`。该测试集包含真实 localhost HTTP 认证/分页/并发/错误/mediaOnly 检查、preload 请求回执测试、曲目与歌单选择测试、状态发布测试及网页 DOM 行为测试。

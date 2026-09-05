@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   createEmptyRemotePlaybackSnapshot,
   isPrivateOrLocalIp,
+  parseRemoteBrowseRequest,
   parseRemotePlayerCommand
 } from './remoteControl.ts'
 
@@ -20,9 +21,18 @@ test('parseRemotePlayerCommand accepts known actions', () => {
     action: 'setVolume',
     volume: 0.4
   })
-  assert.deepEqual(parseRemotePlayerCommand({ action: 'jumpQueue', index: 3 }), {
+  assert.deepEqual(parseRemotePlayerCommand({ action: 'jumpQueue', index: 3, revision: 1 }), {
     action: 'jumpQueue',
-    index: 3
+    index: 3,
+    revision: 1
+  })
+  assert.deepEqual(parseRemotePlayerCommand({ action: 'playTrack', id: 'opaque-token' }), {
+    action: 'playTrack',
+    id: 'opaque-token'
+  })
+  assert.deepEqual(parseRemotePlayerCommand({ action: 'setPlayMode', mode: 'shuffle' }), {
+    action: 'setPlayMode',
+    mode: 'shuffle'
   })
 })
 
@@ -31,8 +41,11 @@ test('parseRemotePlayerCommand rejects invalid payloads', () => {
   assert.equal(parseRemotePlayerCommand({ action: 'explode' }), null)
   assert.equal(parseRemotePlayerCommand({ action: 'seek', positionSeconds: -1 }), null)
   assert.equal(parseRemotePlayerCommand({ action: 'setVolume', volume: 'loud' }), null)
-  assert.equal(parseRemotePlayerCommand({ action: 'jumpQueue', index: 1.5 }), null)
-  assert.equal(parseRemotePlayerCommand({ action: 'jumpQueue', index: -2 }), null)
+  assert.equal(parseRemotePlayerCommand({ action: 'jumpQueue', index: 1.5, revision: 1 }), null)
+  assert.equal(parseRemotePlayerCommand({ action: 'jumpQueue', index: -2, revision: 1 }), null)
+  assert.equal(parseRemotePlayerCommand({ action: 'jumpQueue', index: 1 }), null)
+  assert.equal(parseRemotePlayerCommand({ action: 'playTrack', id: '' }), null)
+  assert.equal(parseRemotePlayerCommand({ action: 'setPlayMode', mode: 'heart' }), null)
 })
 
 test('parseRemotePlayerCommand clamps volume into [0,1]', () => {
@@ -44,6 +57,15 @@ test('parseRemotePlayerCommand clamps volume into [0,1]', () => {
     action: 'setVolume',
     volume: 0
   })
+})
+
+test('parseRemoteBrowseRequest validates bounded pagination', () => {
+  const parsed = parseRemoteBrowseRequest(
+    new URLSearchParams({ view: 'library', query: 'Echo', offset: '20', limit: '999' })
+  )
+  assert.deepEqual(parsed, { view: 'library', query: 'Echo', offset: 20, limit: 100 })
+  assert.equal(parseRemoteBrowseRequest(new URLSearchParams({ view: 'files' })), null)
+  assert.equal(parseRemoteBrowseRequest(new URLSearchParams({ view: 'queue', offset: '-1' })), null)
 })
 
 test('isPrivateOrLocalIp recognizes LAN ranges', () => {
@@ -65,4 +87,6 @@ test('createEmptyRemotePlaybackSnapshot fills defaults', () => {
   assert.equal(snap.state, 'stopped')
   assert.equal(snap.volume, 1)
   assert.equal(snap.queueIndex, -1)
+  assert.equal(snap.playMode, 'sequence')
+  assert.equal(snap.queueRevision, 0)
 })

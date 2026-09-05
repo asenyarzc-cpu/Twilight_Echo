@@ -362,6 +362,8 @@ interface MiniPlayerTrackSnapshot {
   title: string
   artist: string
   album: string
+  albumArtist: string
+  trackNumber: number
   cover: string | null
   format: string | null
   sampleRate: number | null
@@ -383,6 +385,7 @@ interface MiniPlayerStateSnapshot {
   isLoading: boolean
   currentTime: number
   duration: number
+  playbackRate: number
   volume: number
   playMode: PlayMode
   favoriteAvailable: boolean
@@ -395,6 +398,8 @@ interface MiniPlayerStateSnapshot {
 
 type MiniPlayerCommand =
   | { type: 'toggle-play' }
+  | { type: 'play' }
+  | { type: 'pause' }
   | { type: 'previous' }
   | { type: 'next' }
   | { type: 'cycle-play-mode' }
@@ -801,6 +806,9 @@ interface OpraAPI {
 }
 
 interface WindowAPI {
+  systemMedia: {
+    getNativeStatus: () => Promise<import('../shared/systemMedia.ts').SystemMediaNativeStatus>
+  }
   sleepTimer: {
     configure: (
       state: import('../shared/sleepTimer.ts').SleepTimerState
@@ -1103,6 +1111,14 @@ interface WindowAPI {
     publishState: (
       snapshot: Partial<import('../shared/remoteControl.ts').RemotePlaybackSnapshot>
     ) => Promise<boolean>
+    onRequest: (
+      callback: (
+        request: import('../shared/remoteControl.ts').RemoteRendererRequest
+      ) =>
+        | Promise<import('../shared/remoteControl.ts').RemoteBrowseResult | void>
+        | import('../shared/remoteControl.ts').RemoteBrowseResult
+        | void
+    ) => () => void
     discoverDlna: () => Promise<import('../shared/remoteControl.ts').DlnaDeviceInfo[]>
     getDlnaDevices: () => Promise<import('../shared/remoteControl.ts').DlnaDeviceInfo[]>
     castToDevice: (payload: {

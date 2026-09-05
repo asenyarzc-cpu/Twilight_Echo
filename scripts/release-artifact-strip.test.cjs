@@ -89,7 +89,7 @@ test('release strip only processes the packaged runtime copy and fails closed', 
 test('release strip rejects a package without the VST3 helper pair', () => {
   const packagedDir = path.resolve('C:/release/no-vst3/resources/audio-engine')
   const exists = (filePath) =>
-    NATIVE_RUNTIME_FILES.slice(0, 3).some((name) => filePath === path.join(packagedDir, name))
+    NATIVE_RUNTIME_FILES.slice(0, 4).some((name) => filePath === path.join(packagedDir, name))
   assert.throws(
     () =>
       stripNativeArtifacts(packagedDir, {

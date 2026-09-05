@@ -13,6 +13,8 @@ function makeTrack(overrides: Partial<Track> = {}): Track {
     title: 'Daydream',
     artist: 'Twilight Echo',
     album: 'Afterglow',
+    albumArtist: 'Twilight Echo',
+    trackNumber: 7,
     fileName: 'daydream.mp3',
     filePath: 'ncm:1',
     duration: 240,
@@ -34,6 +36,7 @@ function makeSource(track: Track | null, currentTime: number) {
     isLoading: false,
     currentTime,
     duration: 240,
+    playbackRate: 1.25,
     volume: 0.7,
     playMode: 'sequential' as const,
     favoriteAvailable: false,
@@ -52,6 +55,9 @@ test('mini player snapshot carries the lyric line active at the snapshot time', 
   assert.equal(snapshot.track?.format, 'FLAC')
   assert.equal(snapshot.track?.sampleRate, 192000)
   assert.equal(snapshot.track?.bitDepth, 24)
+  assert.equal(snapshot.track?.albumArtist, 'Twilight Echo')
+  assert.equal(snapshot.track?.trackNumber, 7)
+  assert.equal(snapshot.playbackRate, 1.25)
 })
 
 test('mini player snapshot keeps quality fields null when the track has none', () => {

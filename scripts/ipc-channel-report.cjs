@@ -183,6 +183,7 @@ function buildReport() {
   const rendererDomains = unique(rendererUses.map((i) => i.domain))
   const knownPreloadDomains = [
     'sleepTimer',
+    'systemMedia',
     'window',
     'dialog',
     'shell',

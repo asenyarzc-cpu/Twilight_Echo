@@ -13,7 +13,11 @@ import {
 import { installAudioDeviceHotplugWatcher } from '../audio/deviceHotplug'
 import { destroyDesktopLyrics } from '../integrations/desktopLyrics'
 import { showMiniPlayer } from '../integrations/miniPlayer.ts'
-import { createSmtcButtons, destroySmtcButtons } from '../integrations/smtc.ts'
+import {
+  createTaskbarThumbarButtons,
+  destroyTaskbarThumbarButtons
+} from '../integrations/taskbarThumbar.ts'
+import { destroyWindowsSmtc, initializeWindowsSmtc } from '../integrations/windowsSmtc.ts'
 import { ClosePersistenceAttemptGate } from './closePersistence.ts'
 import { isSafeExternalUrl } from '../security/externalUrl.ts'
 import type { RendererClosePersistenceOutcome } from '../../shared/closePersistence.ts'
@@ -199,7 +203,8 @@ export function createWindow(): void {
   })
 
   runtime.mainWindow.on('closed', () => {
-    destroySmtcButtons()
+    destroyTaskbarThumbarButtons()
+    destroyWindowsSmtc()
     runtime.mainWindow = null
   })
 
@@ -207,9 +212,14 @@ export function createWindow(): void {
 
   if (process.platform === 'win32') {
     try {
-      createSmtcButtons()
+      createTaskbarThumbarButtons()
     } catch (error) {
-      console.warn('[smtc] unable to initialize taskbar buttons:', error)
+      console.warn('[thumbar] unable to initialize taskbar buttons:', error)
+    }
+    try {
+      initializeWindowsSmtc()
+    } catch (error) {
+      console.warn('[smtc] unable to initialize Windows media session:', error)
     }
   }
 

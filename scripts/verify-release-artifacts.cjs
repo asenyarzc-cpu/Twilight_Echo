@@ -7,6 +7,7 @@ const MIB = 1024 * 1024
 const DEFAULT_BUDGETS = Object.freeze({
   'twilight-audio-engine.dll': 192 * MIB,
   'twilight_audio_node.node': 16 * MIB,
+  'twilight_smtc_node.node': 16 * MIB,
   'twilight-asio-helper.exe': 32 * MIB,
   'twilight-vst3-host.exe': 32 * MIB,
   'twilight-vst3-scanner.exe': 32 * MIB,
@@ -25,7 +26,8 @@ const REQUIRED_NATIVE_BINARIES = Object.freeze([
 const REQUIRED_RELEASE_NATIVE_BINARIES = Object.freeze([
   ...REQUIRED_NATIVE_BINARIES,
   'twilight-vst3-host.exe',
-  'twilight-vst3-scanner.exe'
+  'twilight-vst3-scanner.exe',
+  'twilight_smtc_node.node'
 ])
 const PE_MACHINE_AMD64 = 0x8664
 
@@ -135,9 +137,11 @@ function assertBudget(filePath, maxBytes, label = path.basename(filePath)) {
 }
 
 function listNativeBinaries(nativeDir) {
-  const optional = ['twilight-vst3-host.exe', 'twilight-vst3-scanner.exe'].filter((name) =>
-    fs.existsSync(path.resolve(nativeDir, name))
-  )
+  const optional = [
+    'twilight-vst3-host.exe',
+    'twilight-vst3-scanner.exe',
+    'twilight_smtc_node.node'
+  ].filter((name) => fs.existsSync(path.resolve(nativeDir, name)))
   return [...REQUIRED_NATIVE_BINARIES, ...optional].map((name) => {
     const filePath = path.resolve(nativeDir, name)
     assert.ok(fs.existsSync(filePath), `Missing required native binary: ${filePath}`)

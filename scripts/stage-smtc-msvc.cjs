@@ -28,7 +28,19 @@ mkdirSync(outputDir, { recursive: true })
 for (const file of files) {
   const source = join(sourceDir, file)
   const destination = join(outputDir, file)
-  copyFileSync(source, destination)
+  try {
+    copyFileSync(source, destination)
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : 'unknown'
+    if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') {
+      console.error(`Unable to stage ${file}: ${destination} is currently in use.`)
+      console.error(
+        'Close the running Twilight Echo development app before staging. The fresh build output remains available under audio-engine/build/smtc-msvc-x64/Release.'
+      )
+      process.exit(1)
+    }
+    throw error
+  }
   console.log(`Staged ${file} (${(statSync(destination).size / 1024 / 1024).toFixed(1)} MiB)`)
 }
 

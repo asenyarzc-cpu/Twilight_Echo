@@ -90,6 +90,8 @@ export interface MiniPlayerTrackSnapshot {
   title: string
   artist: string
   album: string
+  albumArtist: string
+  trackNumber: number
   cover: string | null
   /** Source codec label (FLAC / MP3 / DSD...), when the track carries it. */
   format: string | null
@@ -132,6 +134,7 @@ export interface MiniPlayerStateSnapshot {
   isLoading: boolean
   currentTime: number
   duration: number
+  playbackRate: number
   volume: number
   playMode: MiniPlayerPlayMode
   favoriteAvailable: boolean
@@ -144,6 +147,8 @@ export interface MiniPlayerStateSnapshot {
 
 export type MiniPlayerCommand =
   | { type: 'toggle-play' }
+  | { type: 'play' }
+  | { type: 'pause' }
   | { type: 'previous' }
   | { type: 'next' }
   | { type: 'cycle-play-mode' }
@@ -314,6 +319,7 @@ export const EMPTY_MINI_PLAYER_STATE: Readonly<MiniPlayerStateSnapshot> = Object
   isLoading: false,
   currentTime: 0,
   duration: 0,
+  playbackRate: 1,
   volume: 0.7,
   playMode: 'sequential',
   favoriteAvailable: false,
@@ -579,6 +585,7 @@ export function normalizeMiniPlayerStateSnapshot(raw: unknown): MiniPlayerStateS
     isLoading: value.isLoading === true,
     currentTime,
     duration,
+    playbackRate: clampFiniteNumber(value.playbackRate, 0.25, 4, 1),
     volume: clampFiniteNumber(value.volume, 0, 1, EMPTY_MINI_PLAYER_STATE.volume),
     playMode: normalizeMiniPlayerPlayMode(value.playMode) ?? 'sequential',
     favoriteAvailable: value.favoriteAvailable === true,
@@ -624,6 +631,8 @@ export function normalizeMiniPlayerCommand(raw: unknown): MiniPlayerCommand | nu
   const value = asRecord(raw)
   switch (value.type) {
     case 'toggle-play':
+    case 'play':
+    case 'pause':
     case 'previous':
     case 'next':
     case 'cycle-play-mode':
@@ -670,6 +679,8 @@ function normalizeTrack(raw: unknown): MiniPlayerTrackSnapshot | null {
     title: title || '未知曲目',
     artist: normalizeText(value.artist, MAX_TRACK_TEXT_LENGTH) || '未知艺术家',
     album: normalizeText(value.album, MAX_TRACK_TEXT_LENGTH),
+    albumArtist: normalizeText(value.albumArtist, MAX_TRACK_TEXT_LENGTH),
+    trackNumber: clampFiniteNumber(value.trackNumber, 0, 99_999, 0, true),
     cover: cover || null,
     format: format || null,
     sampleRate,

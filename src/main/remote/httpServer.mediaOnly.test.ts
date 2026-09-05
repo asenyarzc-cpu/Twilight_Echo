@@ -62,6 +62,16 @@ test('player queue skip re-casts while a cast session is active', () => {
   assert.match(playerStoreSource, /!castTargetUsn\.value && nativePlaybackActive/)
 })
 
+test('remote HTTP server exposes only authenticated bounded browse and explicit command failures', () => {
+  assert.match(httpServerSource, /url\.pathname === '\/api\/browse'/)
+  assert.match(httpServerSource, /parseRemoteBrowseRequest\(url\.searchParams\)/)
+  assert.match(httpServerSource, /browse_handler_missing/)
+  assert.match(httpServerSource, /error instanceof RemoteCommandError/)
+  assert.match(httpServerSource, /this\.sendJson\(res, error\.status/)
+  assert.match(remoteIpcSource, /RENDERER_REQUEST_TIMEOUT_MS = 5_000/)
+  assert.match(remoteIpcSource, /message === 'queue_changed' \? 409 : 503/)
+})
+
 test('remote HTTP server no longer uses CORS wildcard and caps SSE clients', () => {
   // S2: CORS 只回显同源/回环 Origin，不再无条件 `*`。
   assert.match(httpServerSource, /teCorsOrigin/)

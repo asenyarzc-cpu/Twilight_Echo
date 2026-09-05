@@ -6,7 +6,7 @@ import {
 } from './theme-studio/useThemeStudioEditor'
 import { useBackHandlerWhileMounted } from '../app/useBackStack'
 import EqualizerPage from './EqualizerPage.vue'
-import LocalDashboard from './LocalDashboard.vue'
+import LocalHome from '@renderer/components/local-dashboard/LocalHome.vue'
 import PlayerBar from './PlayerBar.vue'
 import PlayingMusic from './PlayingMusic.vue'
 import SideMenu from './SideMenu.vue'
@@ -356,7 +356,7 @@ void previewViewportRef.value
               class="main-content live-preview-app"
               :class="{ 'menu-open': previewNavigationOpen }"
             >
-              <LocalDashboard />
+              <LocalHome />
             </div>
             <PlayingMusic v-else-if="previewSurface === 'player'" />
             <EqualizerPage v-else />

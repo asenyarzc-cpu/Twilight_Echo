@@ -29,6 +29,7 @@ assert.equal(typeof addon.Create, 'function')
 assert.equal(typeof addon.Update, 'function')
 assert.equal(typeof addon.Destroy, 'function')
 assert.equal(typeof addon.SelfTest, 'function')
+assert.equal(typeof addon.GetLastError, 'function')
 assert.equal(addon.SelfTest(), true)
 
 if (smoke && process.platform === 'win32') {
@@ -54,9 +55,9 @@ if (smoke && process.platform === 'win32') {
       shuffle: false,
       autoRepeatMode: 0
     })
-    addon.Destroy()
   }
-  console.log(`SMTC smoke: Create=${created}`)
+  console.log(`SMTC smoke: Create=${created} ${created ? '' : addon.GetLastError()}`.trim())
+  addon.Destroy()
 }
 
 console.log(`SMTC addon OK: ${addonPath}`)

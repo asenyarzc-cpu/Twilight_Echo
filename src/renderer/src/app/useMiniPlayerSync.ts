@@ -31,6 +31,7 @@ interface MiniPlayerStateSource {
   isLoading: boolean
   currentTime: number
   duration: number
+  playbackRate: number
   volume: number
   playMode: PlayMode
   favoriteAvailable: boolean
@@ -47,6 +48,7 @@ interface MiniPlayerSyncOptions {
   isLoading: Ref<boolean>
   currentTime: Ref<number>
   duration: Ref<number>
+  playbackRate: Ref<number>
   volume: Ref<number>
   playMode: Ref<PlayMode>
   favoriteAvailable: Ref<boolean>
@@ -77,6 +79,8 @@ export function buildMiniPlayerStateSnapshot(
           title: track.title,
           artist: track.artist,
           album: track.album,
+          albumArtist: track.albumArtist ?? '',
+          trackNumber: typeof track.trackNumber === 'number' ? track.trackNumber : 0,
           cover: track.cover,
           format: track.format ?? null,
           sampleRate: typeof track.sampleRate === 'number' ? track.sampleRate : null,
@@ -90,6 +94,7 @@ export function buildMiniPlayerStateSnapshot(
     isLoading: source.isLoading,
     currentTime: source.currentTime,
     duration: source.duration,
+    playbackRate: source.playbackRate,
     volume: source.volume,
     playMode: source.playMode,
     favoriteAvailable: source.favoriteAvailable,
@@ -171,6 +176,7 @@ export function useMiniPlayerSync(options: MiniPlayerSyncOptions): void {
         isLoading: options.isLoading.value,
         currentTime: options.currentTime.value,
         duration: options.duration.value,
+        playbackRate: options.playbackRate.value,
         volume: options.volume.value,
         playMode: options.playMode.value,
         favoriteAvailable: options.favoriteAvailable.value,
@@ -189,6 +195,20 @@ export function useMiniPlayerSync(options: MiniPlayerSyncOptions): void {
         void options.togglePlay().catch((error) => {
           console.error('[mini-player] Failed to toggle playback:', error)
         })
+        break
+      case 'play':
+        if (!options.isPlaying.value) {
+          void options.togglePlay().catch((error) => {
+            console.error('[mini-player] Failed to start playback:', error)
+          })
+        }
+        break
+      case 'pause':
+        if (options.isPlaying.value) {
+          void options.togglePlay().catch((error) => {
+            console.error('[mini-player] Failed to pause playback:', error)
+          })
+        }
         break
       case 'previous':
         options.prev()
@@ -228,6 +248,7 @@ export function useMiniPlayerSync(options: MiniPlayerSyncOptions): void {
       options.isLoading,
       options.currentTime,
       options.duration,
+      options.playbackRate,
       options.volume,
       options.playMode,
       options.favoriteAvailable,

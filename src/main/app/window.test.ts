@@ -28,9 +28,11 @@ test('main window keeps the responsive layout minimum size', async () => {
   assert.match(source, /minHeight:\s*692/)
 })
 
-test('windows main window wires the SMTC taskbar thumbnail buttons', async () => {
+test('windows main window wires taskbar thumbnail buttons separately from native SMTC', async () => {
   const source = await readFile(new URL('./window.ts', import.meta.url), 'utf8')
-  assert.match(source, /createSmtcButtons/)
-  assert.match(source, /destroySmtcButtons/)
-  assert.match(source, /integrations\/smtc/)
+  assert.match(source, /createTaskbarThumbarButtons/)
+  assert.match(source, /destroyTaskbarThumbarButtons/)
+  assert.match(source, /integrations\/taskbarThumbar/)
+  assert.match(source, /initializeWindowsSmtc/)
+  assert.match(source, /destroyWindowsSmtc/)
 })

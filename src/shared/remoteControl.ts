@@ -13,6 +13,41 @@ export const REMOTE_PAIR_WINDOW_MS = 5 * 60_000
 export const REMOTE_MEDIA_TOKEN_TTL_MS = 2 * 60 * 60_000
 export const REMOTE_SSE_HEARTBEAT_MS = 15_000
 
+export const REMOTE_BROWSE_MAX_LIMIT = 100
+
+export type RemoteBrowseView = 'library' | 'playlists' | 'queue'
+export type RemotePlayMode = 'sequence' | 'loop' | 'single' | 'shuffle'
+
+export interface RemoteBrowseRequest {
+  view: RemoteBrowseView
+  query: string
+  offset: number
+  limit: number
+  playlistId?: string
+}
+
+export interface RemoteBrowseItem {
+  id: string
+  title: string
+  artist: string
+  album: string
+  duration: number
+  index?: number
+  trackCount?: number
+}
+
+export interface RemoteBrowseResult {
+  items: RemoteBrowseItem[]
+  total: number
+  offset: number
+  limit: number
+  revision?: number
+}
+
+export type RemoteRendererRequest =
+  | { id: string; kind: 'browse'; payload: RemoteBrowseRequest }
+  | { id: string; kind: 'command'; payload: PlayerRemoteCommand }
+
 export type RemotePlayerCommandAction =
   | 'playPause'
   | 'play'
@@ -22,6 +57,10 @@ export type RemotePlayerCommandAction =
   | 'seek'
   | 'setVolume'
   | 'jumpQueue'
+  | 'removeQueue'
+  | 'playTrack'
+  | 'enqueueTrack'
+  | 'setPlayMode'
 
 export type PlayerRemoteCommand =
   | { action: 'playPause' }
@@ -31,7 +70,11 @@ export type PlayerRemoteCommand =
   | { action: 'next' }
   | { action: 'seek'; positionSeconds: number }
   | { action: 'setVolume'; volume: number }
-  | { action: 'jumpQueue'; index: number }
+  | { action: 'jumpQueue'; index: number; revision: number }
+  | { action: 'removeQueue'; index: number; revision: number }
+  | { action: 'playTrack'; id: string }
+  | { action: 'enqueueTrack'; id: string }
+  | { action: 'setPlayMode'; mode: RemotePlayMode }
 
 export interface RemotePlaybackSnapshot {
   state: 'playing' | 'paused' | 'stopped'
@@ -47,6 +90,8 @@ export interface RemotePlaybackSnapshot {
   coverUrl: string | null
   isLive: boolean
   castTarget: string | null
+  playMode: RemotePlayMode
+  queueRevision: number
   updatedAt: number
 }
 
@@ -88,6 +133,26 @@ export function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
+export function parseRemoteBrowseRequest(params: URLSearchParams): RemoteBrowseRequest | null {
+  const view = params.get('view')
+  if (view !== 'library' && view !== 'playlists' && view !== 'queue') return null
+  const offset = Number(params.get('offset') ?? '0')
+  const limit = Number(params.get('limit') ?? '40')
+  if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1) return null
+  const query = params.get('query') ?? ''
+  const playlistId = params.get('playlistId') ?? undefined
+  if (query.length > 120 || (playlistId && (playlistId.length < 1 || playlistId.length > 512))) {
+    return null
+  }
+  return {
+    view,
+    query,
+    offset,
+    limit: Math.min(limit, REMOTE_BROWSE_MAX_LIMIT),
+    ...(playlistId ? { playlistId } : {})
+  }
+}
+
 export function parseRemotePlayerCommand(value: unknown): PlayerRemoteCommand | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const record = value as Record<string, unknown>
@@ -115,11 +180,36 @@ export function parseRemotePlayerCommand(value: unknown): PlayerRemoteCommand | 
         volume: Math.min(1, Math.max(0, record.volume))
       }
     }
-    case 'jumpQueue': {
-      if (!isFiniteNumber(record.index) || record.index < 0 || !Number.isInteger(record.index)) {
+    case 'jumpQueue':
+    case 'removeQueue': {
+      if (
+        !isFiniteNumber(record.index) ||
+        record.index < 0 ||
+        !Number.isInteger(record.index) ||
+        !isFiniteNumber(record.revision) ||
+        record.revision < 0 ||
+        !Number.isInteger(record.revision)
+      ) {
         return null
       }
-      return { action: 'jumpQueue', index: record.index }
+      return { action, index: record.index, revision: record.revision }
+    }
+    case 'playTrack':
+    case 'enqueueTrack': {
+      if (typeof record.id !== 'string' || record.id.length < 1 || record.id.length > 512)
+        return null
+      return { action, id: record.id }
+    }
+    case 'setPlayMode': {
+      if (
+        record.mode !== 'sequence' &&
+        record.mode !== 'loop' &&
+        record.mode !== 'single' &&
+        record.mode !== 'shuffle'
+      ) {
+        return null
+      }
+      return { action, mode: record.mode }
     }
     default:
       return null
@@ -143,6 +233,8 @@ export function createEmptyRemotePlaybackSnapshot(
     coverUrl: null,
     isLive: false,
     castTarget: null,
+    playMode: 'sequence',
+    queueRevision: 0,
     updatedAt: Date.now(),
     ...overrides
   }

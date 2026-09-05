@@ -10,6 +10,7 @@ import type {
   TrayNavigationTarget
 } from '../types'
 import type { AppStartupSnapshot } from '../../shared/appStartup.ts'
+import type { SystemMediaNativeStatus } from '../../shared/systemMedia.ts'
 import type {
   AppUpdateCheckResult,
   AppUpdateDownloadResult,
@@ -39,6 +40,10 @@ export function bindSystemIpcEvents(): void {
 }
 
 export const systemApi = {
+  systemMedia: {
+    getNativeStatus: (): Promise<SystemMediaNativeStatus> =>
+      ipcRenderer.invoke('systemMedia:getNativeStatus')
+  },
   window: {
     minimize: (): void => ipcRenderer.send('window:minimize'),
     toggleMaximize: (): void => ipcRenderer.send('window:toggleMaximize'),

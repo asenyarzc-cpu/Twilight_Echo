@@ -129,6 +129,8 @@ import { createPlaybackSessionController } from './player/playbackSessionControl
 import { createPlaybackQueueController } from './player/playbackQueueController.ts'
 import { createAudioOutputController } from './player/audioOutputController.ts'
 import { createHeartModeController } from './player/heartModeController.ts'
+import { createRemoteControlBridge } from './player/remoteControlBridge.ts'
+import { createRemotePlaybackPublisher } from './player/remotePlaybackPublisher.ts'
 
 type NativePlaybackInfo = Awaited<ReturnType<typeof window.api.audioEngine.getPlaybackInfo>>
 type NativeOutputInfo = NativePlaybackInfo['outputInfo']
@@ -144,6 +146,8 @@ const watch = ((...args: unknown[]): WatchStopHandle => {
   return stop!
 }) as typeof vueWatch
 const PLAYER_RUNTIME_OWNERSHIP_KEY = Symbol.for('twilight-echo.player-store-runtime')
+let remoteControlBridge: ReturnType<typeof createRemoteControlBridge> | null = null
+let removeRemoteRequestListener: (() => void) | null = null
 type ProviderSourceReliability = Record<string, number>
 export type PersonalizedStreamKey = 'fm' | 'radar'
 export interface PersonalizedStreamSession {
@@ -2704,43 +2708,6 @@ function setupAudioEngineListeners(): void {
     )
   }
 
-  // Publish playback snapshot for LAN web remote / SSE.
-  let lastRemotePublishAt = 0
-  const publishRemoteSnapshot = (): void => {
-    const remoteApi = window.api?.remote
-    if (!remoteApi?.publishState) return
-    const now = Date.now()
-    if (now - lastRemotePublishAt < 400) return
-    lastRemotePublishAt = now
-    const track = currentTrack.value
-    const isLive =
-      track?.source === 'radio' ||
-      (typeof track?.duration === 'number' && track.duration <= 0 && duration.value <= 0)
-    void remoteApi.publishState({
-      state: isPlaying.value ? 'playing' : track ? 'paused' : 'stopped',
-      title: track?.title ?? '',
-      artist: track?.artist ?? '',
-      album: track?.album ?? '',
-      position: currentTime.value,
-      duration: duration.value,
-      volume: volume.value,
-      muted: muted.value,
-      queueIndex: queueIndex.value,
-      queueLength: queue.value.length,
-      coverUrl: null,
-      isLive: Boolean(isLive),
-      castTarget: castTargetName.value,
-      updatedAt: now
-    })
-  }
-  cleanupFns.push(
-    watch(
-      [isPlaying, currentTime, duration, volume, muted, queueIndex, () => currentTrack.value?.id],
-      () => publishRemoteSnapshot()
-    )
-  )
-  publishRemoteSnapshot()
-
   if (settingsApi?.onChanged) {
     cleanupFns.push(
       settingsApi.onChanged((snapshot) => {
@@ -2774,6 +2741,9 @@ function dismissAudioEngineRecoveryNotice(): void {
 }
 
 function disposePlayerStoreRuntime(): void {
+  removeRemoteRequestListener?.()
+  removeRemoteRequestListener = null
+  remoteControlBridge = null
   // Release IPC subscriptions first: stale modules must never keep advancing
   // their own playback clock after a hot replacement has taken ownership.
   for (const cleanup of cleanupFns.splice(0).reverse()) {
@@ -3237,6 +3207,7 @@ async function handlePlayerShortcutAction(
   }
   if (action.action === 'setVolume') {
     volume.value = Math.min(1, Math.max(0, action.volume))
+    muted.value = false
     return
   }
   if (action.action === 'jumpQueue') {
@@ -3458,10 +3429,64 @@ function enforceAbLoop(time: number): void {
 let playerIntegrationSideEffectsSetup = false
 let mediaSessionHandlersBound = false
 let mediaSessionMetadataKey = ''
+let systemMediaBackendResolved = false
+let nativeSystemMediaActive = false
 let discordPlayStartTimestamp: number | null = null
 
-function updateMediaSessionPlaybackState(): void {
+function rendererOwnsMediaSession(): boolean {
+  return systemMediaBackendResolved && !nativeSystemMediaActive
+}
+
+function clearRendererMediaSession(): void {
   if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
+  navigator.mediaSession.metadata = null
+  navigator.mediaSession.playbackState = 'none'
+  if (!mediaSessionHandlersBound) return
+  for (const action of [
+    'play',
+    'pause',
+    'previoustrack',
+    'nexttrack',
+    'seekto',
+    'seekbackward',
+    'seekforward'
+  ] as MediaSessionAction[]) {
+    try {
+      navigator.mediaSession.setActionHandler(action, null)
+    } catch {
+      // Older Chromium builds may not expose every action.
+    }
+  }
+  mediaSessionHandlersBound = false
+  mediaSessionMetadataKey = ''
+}
+
+async function resolveSystemMediaBackendPreference(): Promise<void> {
+  try {
+    const status = await window.api.systemMedia.getNativeStatus()
+    nativeSystemMediaActive = status.active === true
+  } catch {
+    // Native status IPC is best-effort; Chromium MediaSession remains the fallback.
+    nativeSystemMediaActive = false
+  } finally {
+    systemMediaBackendResolved = true
+  }
+
+  if (nativeSystemMediaActive) {
+    clearRendererMediaSession()
+    return
+  }
+  if (appSettings.value?.smtcEnabled) setupMediaSessionHandlers()
+  updateMediaSessionMetadata()
+}
+
+function updateMediaSessionPlaybackState(): void {
+  if (
+    typeof navigator === 'undefined' ||
+    !('mediaSession' in navigator) ||
+    !rendererOwnsMediaSession()
+  )
+    return
   navigator.mediaSession.playbackState =
     appSettings.value?.smtcEnabled && currentTrack.value
       ? isPlaying.value
@@ -3474,6 +3499,7 @@ function updateMediaSessionPositionState(): void {
   if (
     typeof navigator === 'undefined' ||
     !('mediaSession' in navigator) ||
+    !rendererOwnsMediaSession() ||
     !appSettings.value?.smtcEnabled ||
     !currentTrack.value ||
     duration.value <= 0 ||
@@ -3494,7 +3520,12 @@ function updateMediaSessionPositionState(): void {
 }
 
 function updateMediaSessionMetadata(): void {
-  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
+  if (
+    typeof navigator === 'undefined' ||
+    !('mediaSession' in navigator) ||
+    !rendererOwnsMediaSession()
+  )
+    return
   if (!appSettings.value?.smtcEnabled) {
     mediaSessionMetadataKey = ''
     navigator.mediaSession.metadata = null
@@ -3536,7 +3567,12 @@ function updateMediaSessionMetadata(): void {
 }
 
 function setupMediaSessionHandlers(): void {
-  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
+  if (
+    typeof navigator === 'undefined' ||
+    !('mediaSession' in navigator) ||
+    !rendererOwnsMediaSession()
+  )
+    return
   if (mediaSessionHandlersBound) return
   mediaSessionHandlersBound = true
   const ms = navigator.mediaSession
@@ -3594,6 +3630,7 @@ function updateDiscordActivity(): void {
 function setupPlayerIntegrationSideEffects(): void {
   if (playerIntegrationSideEffectsSetup) return
   playerIntegrationSideEffectsSetup = true
+  void resolveSystemMediaBackendPreference()
   void lyricsManagement.ensureLoaded()
   if (window.api.sleepTimer) {
     void window.api.sleepTimer.getState().then((state) => {
@@ -4065,6 +4102,52 @@ export function usePlayerStore(): {
 
   function setPlayMode(mode: PlayMode): void {
     setPlayModeInternal(mode)
+  }
+
+  if (!remoteControlBridge) {
+    const musicStore = useMusicStore()
+    remoteControlBridge = createRemoteControlBridge({
+      tracks: musicStore.tracks,
+      playlists: musicStore.playlists,
+      getPlaylistTracks: musicStore.getPlaylistTracksById,
+      queue,
+      queueIndex,
+      playMode,
+      playTrack: async (track, trackList) => playTrack(track, trackList ?? musicStore.tracks.value),
+      enqueueTrack,
+      jumpQueue,
+      removeQueueItem,
+      setPlayMode
+    })
+    const remoteApi = window.api?.remote
+    if (remoteApi?.publishState) {
+      cleanupFns.push(
+        createRemotePlaybackPublisher({
+          currentTrack,
+          isPlaying,
+          currentTime,
+          duration,
+          volume,
+          muted,
+          queueIndex,
+          queue,
+          playMode,
+          castTarget: castTargetName,
+          snapshotExtras: () =>
+            remoteControlBridge?.snapshot() ?? { playMode: 'sequence', queueRevision: 0 },
+          publish: remoteApi.publishState,
+          resolveCover
+        })
+      )
+    }
+  }
+  if (!removeRemoteRequestListener && window.api.remote?.onRequest) {
+    removeRemoteRequestListener = window.api.remote.onRequest(async (request) => {
+      if (!remoteControlBridge) throw new Error('renderer_not_ready')
+      if (request.kind === 'browse') return remoteControlBridge.browse(request.payload)
+      await remoteControlBridge.command(request.payload)
+      return undefined
+    })
   }
 
   async function togglePlay(): Promise<void> {

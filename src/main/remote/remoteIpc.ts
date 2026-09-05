@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { assertTrustedIpcSender } from '../security/electronSecurity.ts'
@@ -11,10 +12,12 @@ import {
   createEmptyRemotePlaybackSnapshot,
   type DlnaDeviceInfo,
   type PlayerRemoteCommand,
+  type RemoteBrowseRequest,
+  type RemoteBrowseResult,
   type RemoteControlStatus,
   type RemotePlaybackSnapshot
 } from '../../shared/remoteControl.ts'
-import { RemoteHttpServer } from './httpServer.ts'
+import { RemoteCommandError, RemoteHttpServer } from './httpServer.ts'
 import {
   discoverDlnaDevices,
   dlnaPause,
@@ -42,6 +45,16 @@ let server: RemoteHttpServer | null = null
 let lastDlnaDevices: DlnaDeviceInfo[] = []
 let activeCastUsn: string | null = null
 let syncDesiredEnabled: boolean | null = null
+const rendererRequests = new Map<
+  string,
+  {
+    resolve: (value: RemoteBrowseResult | null) => void
+    reject: (error: Error) => void
+    timer: ReturnType<typeof setTimeout>
+    webContentsId: number
+  }
+>()
+const RENDERER_REQUEST_TIMEOUT_MS = 5_000
 
 function getStaticRoot(): string {
   return join(app.getAppPath(), 'resources', 'remote')
@@ -53,15 +66,55 @@ function ensureServer(): RemoteHttpServer {
       staticRoot: getStaticRoot(),
       onCommand: async (command) => {
         await dispatchRemoteCommand(command)
-      }
+      },
+      onBrowse: requestRemoteBrowse
     })
   }
   return server
 }
 
 function sendPlayerCommand(action: PlayerShortcutAction): void {
-  if (runtime.mainWindow?.isDestroyed() === false) {
-    runtime.mainWindow.webContents.send('player:shortcut', action)
+  if (runtime.mainWindow?.isDestroyed() !== false)
+    throw new RemoteCommandError('renderer_not_ready')
+  runtime.mainWindow.webContents.send('player:shortcut', action)
+}
+
+function requestRenderer<T>(kind: 'browse' | 'command', payload: unknown): Promise<T> {
+  const window = runtime.mainWindow
+  if (!window || window.isDestroyed())
+    return Promise.reject(new RemoteCommandError('renderer_not_ready'))
+  const id = randomUUID()
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      rendererRequests.delete(id)
+      reject(new RemoteCommandError('renderer_timeout'))
+    }, RENDERER_REQUEST_TIMEOUT_MS)
+    rendererRequests.set(id, {
+      resolve: (value) => resolve(value as T),
+      reject,
+      timer,
+      webContentsId: window.webContents.id
+    })
+    try {
+      window.webContents.send('remote:request', { id, kind, payload })
+    } catch {
+      rendererRequests.delete(id)
+      clearTimeout(timer)
+      reject(new RemoteCommandError('renderer_not_ready'))
+    }
+  })
+}
+
+function requestRemoteBrowse(request: RemoteBrowseRequest): Promise<RemoteBrowseResult> {
+  return requestRenderer<RemoteBrowseResult>('browse', request)
+}
+
+function rejectRendererRequests(webContentsId?: number): void {
+  for (const [id, pending] of rendererRequests) {
+    if (webContentsId !== undefined && pending.webContentsId !== webContentsId) continue
+    rendererRequests.delete(id)
+    clearTimeout(pending.timer)
+    pending.reject(new RemoteCommandError('renderer_not_ready'))
   }
 }
 
@@ -96,7 +149,11 @@ async function dispatchRemoteCommand(command: PlayerRemoteCommand): Promise<void
       if (activeCastUsn) await tryDlnaVolume(command.volume)
       return
     case 'jumpQueue':
-      sendPlayerCommand({ action: 'jumpQueue', index: command.index })
+    case 'removeQueue':
+    case 'playTrack':
+    case 'enqueueTrack':
+    case 'setPlayMode':
+      await requestRenderer<void>('command', command)
       return
   }
 }
@@ -273,6 +330,40 @@ export function getRemoteControlStatus(): RemoteControlStatus {
 
 export function setupRemoteIpc(): void {
   ensureServer()
+  const webContents = runtime.mainWindow?.webContents
+  if (webContents) {
+    const webContentsId = webContents.id
+    webContents.once('destroyed', () => rejectRendererRequests(webContentsId))
+  }
+
+  ipcMain.handle(
+    'remote:rendererResponse',
+    async (event, id: unknown, ok: unknown, value: unknown) => {
+      assertTrustedIpcSender(event, 'remote renderer response')
+      if (typeof id !== 'string') return false
+      const pending = rendererRequests.get(id)
+      if (!pending || pending.webContentsId !== event.sender.id) return false
+      rendererRequests.delete(id)
+      clearTimeout(pending.timer)
+      if (ok !== true) {
+        const message =
+          typeof value === 'string' &&
+          [
+            'queue_changed',
+            'queue_item_not_found',
+            'track_not_found',
+            'playlist_not_found',
+            'renderer_not_ready'
+          ].includes(value)
+            ? value
+            : 'renderer_request_failed'
+        pending.reject(new RemoteCommandError(message, message === 'queue_changed' ? 409 : 503))
+        return true
+      }
+      pending.resolve(value as RemoteBrowseResult | null)
+      return true
+    }
+  )
 
   ipcMain.handle('remote:getStatus', async (event) => {
     assertTrustedIpcSender(event, 'remote control IPC')
@@ -563,6 +654,7 @@ export function setupRemoteIpc(): void {
 }
 
 export async function destroyRemoteIpc(): Promise<void> {
+  rejectRendererRequests()
   activeCastUsn = null
   lastDlnaDevices = []
   syncDesiredEnabled = null

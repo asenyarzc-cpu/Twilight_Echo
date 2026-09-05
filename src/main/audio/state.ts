@@ -231,7 +231,11 @@ export async function updateAppSettings(patch: Partial<AppSettings>): Promise<Se
   }
 
   if (Object.prototype.hasOwnProperty.call(patch, 'taskbarThumbarButtonsEnabled')) {
-    runtime.refreshSmtcButtons?.()
+    runtime.refreshTaskbarThumbarButtons?.()
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'smtcEnabled')) {
+    runtime.refreshWindowsSmtc?.()
   }
 
   if (

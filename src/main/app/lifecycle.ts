@@ -28,6 +28,11 @@ import {
 } from '../integrations/desktopLyrics'
 import { restoreMainWindowFromMiniPlayer, setupMiniPlayerIpc } from '../integrations/miniPlayer'
 import { setupTrayPlayerIpc } from '../integrations/trayPlayer'
+import { destroyWindowsSmtc, setupWindowsSmtcIpc } from '../integrations/windowsSmtc.ts'
+import {
+  ensureWindowsShellIdentity,
+  WINDOWS_APP_USER_MODEL_ID
+} from '../integrations/windowsAppIdentity.ts'
 import { setupNcmIpc } from '../ncm/api'
 import { ensureAudioEngineRuntime, setupAudioEngineIpc } from '../audio/engineIpc'
 import { AudioAnalysisServiceClient } from '../audioAnalysisServiceClient.ts'
@@ -52,7 +57,7 @@ import type { SettingsFileLoadIssue } from '../persistence/settingsFile.ts'
 
 export function startApp(): void {
   app.setName('TwilightEcho')
-  electronApp.setAppUserModelId('com.TwilightEcho.music')
+  electronApp.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID)
   runtime.launchSettings = { ...runtime.appSettings }
 
   if (!runtime.appSettings.hardwareAcceleration) {
@@ -184,6 +189,13 @@ export function startApp(): void {
     })
 
     app.whenReady().then(async () => {
+      const shellIdentity = ensureWindowsShellIdentity()
+      if (!shellIdentity.ok) {
+        console.warn(
+          '[app-identity] unable to register Windows Shell identity:',
+          shellIdentity.error
+        )
+      }
       installElectronSecurity()
       await initializeLocalPathGrants(runtime.launchSettings)
 
@@ -331,6 +343,7 @@ export function startApp(): void {
       setupDesktopLyricsIpc()
       setupMiniPlayerIpc()
       setupTrayPlayerIpc()
+      setupWindowsSmtcIpc()
 
       setupAudioEngineIpc()
       runtime.audioAnalysisService = new AudioAnalysisServiceClient({
@@ -385,6 +398,7 @@ export function startApp(): void {
 
     app.on('will-quit', () => {
       destroyDesktopLyrics()
+      destroyWindowsSmtc()
       unregisterPlayerShortcuts()
       destroyTray()
       void runtime.pluginManager?.destroy()

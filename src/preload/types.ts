@@ -8,6 +8,7 @@
 } from '../shared/audioEngineTypes.ts'
 import type { PlaybackResumeMode, AppSettings } from '../shared/appSettings.ts'
 import type { TrackData } from '../shared/track.ts'
+export type { RemoteRendererRequest } from '../shared/remoteControl.ts'
 export type {
   AudioOutputId,
   PlayMode,

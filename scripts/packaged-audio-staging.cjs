@@ -29,7 +29,7 @@ function refreshAudioCapabilityArtifacts(nativeDir, runtimeStatus) {
   )
 }
 
-function preparePackagedAudioStaging(root) {
+function preparePackagedAudioStaging(root, { nativeOverrides = {} } = {}) {
   const sourceDir = join(root, 'resources', 'audio-engine')
   const vst3 = stagedVst3Files(root)
   if (!vst3.complete) {
@@ -50,7 +50,7 @@ function preparePackagedAudioStaging(root) {
     }
   }
   for (const name of NATIVE_RUNTIME_FILES) {
-    const sourcePath = join(sourceDir, name)
+    const sourcePath = nativeOverrides[name] || join(sourceDir, name)
     if (!existsSync(sourcePath)) continue
     const workingPath = join(temporaryDir, `${name}.strip-input`)
     copyFileSync(sourcePath, workingPath)

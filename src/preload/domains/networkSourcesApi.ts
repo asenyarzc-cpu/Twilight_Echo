@@ -8,9 +8,34 @@ import type {
 } from '../../shared/networkSources.ts'
 import type {
   DlnaDeviceInfo,
+  RemoteBrowseResult,
+  RemoteRendererRequest,
   RemoteControlStatus,
   RemotePlaybackSnapshot
 } from '../../shared/remoteControl.ts'
+
+const remoteRequestCallbacks = new Set<
+  (request: RemoteRendererRequest) => Promise<RemoteBrowseResult | void> | RemoteBrowseResult | void
+>()
+
+ipcRenderer.on('remote:request', async (_event, request: RemoteRendererRequest) => {
+  const callback = Array.from(remoteRequestCallbacks).at(-1)
+  if (!callback) {
+    await ipcRenderer.invoke('remote:rendererResponse', request.id, false, 'renderer_not_ready')
+    return
+  }
+  try {
+    const value = await callback(request)
+    await ipcRenderer.invoke('remote:rendererResponse', request.id, true, value ?? null)
+  } catch (error) {
+    await ipcRenderer.invoke(
+      'remote:rendererResponse',
+      request.id,
+      false,
+      error instanceof Error ? error.message : 'renderer_request_failed'
+    )
+  }
+})
 
 export const networkSourcesApi = {
   networkSources: {
@@ -70,6 +95,14 @@ export const networkSourcesApi = {
     }> => ipcRenderer.invoke('remote:rotatePin'),
     publishState: (snapshot: Partial<RemotePlaybackSnapshot>): Promise<boolean> =>
       ipcRenderer.invoke('remote:publishState', snapshot),
+    onRequest: (
+      callback: (
+        request: RemoteRendererRequest
+      ) => Promise<RemoteBrowseResult | void> | RemoteBrowseResult | void
+    ): (() => void) => {
+      remoteRequestCallbacks.add(callback)
+      return () => remoteRequestCallbacks.delete(callback)
+    },
     discoverDlna: (): Promise<DlnaDeviceInfo[]> => ipcRenderer.invoke('remote:discoverDlna'),
     getDlnaDevices: (): Promise<DlnaDeviceInfo[]> => ipcRenderer.invoke('remote:getDlnaDevices'),
     castToDevice: (payload: {

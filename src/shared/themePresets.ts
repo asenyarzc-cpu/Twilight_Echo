@@ -649,8 +649,8 @@ export const BUILT_IN_THEME_PRESETS: readonly ThemeProfileV2[] = Object.freeze([
   ),
   builtInThemePreset(
     'builtin:obsidian-glass',
-    'Obsidian Glass',
-    '深渊般的纯黑玻璃与冰青断口微光，在厚重阴影中折射出锋利而克制的奢华。',
+    '夜港 · Night Harbor',
+    '一间为深夜聆听而生的唱片厅：黑胶、暖光、细密秩序与沉浸式播放舞台。',
     {
       pureWhite: {
         'color.primary.500': '#67e8f9',

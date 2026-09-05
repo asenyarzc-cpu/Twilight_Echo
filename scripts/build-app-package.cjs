@@ -5,6 +5,7 @@ const { verifyPackagedDependencyClosure } = require('./verify-packaged-dependenc
 const { verifyWindowsAppBranding } = require('./verify-windows-app-branding.cjs')
 const { preparePackagedAudioStaging } = require('./packaged-audio-staging.cjs')
 const { prepareVst3Msvc } = require('./prepare-vst3-msvc.cjs')
+const { prepareSmtcMsvc } = require('./prepare-smtc-msvc.cjs')
 
 const root = path.resolve(__dirname, '..')
 const electronBuilder = require.resolve('electron-builder/out/cli/cli.js')
@@ -25,10 +26,18 @@ function run(args, environment = process.env) {
 function main(args = process.argv.slice(2)) {
   const windowsPackage = targetsWindows(args)
   if (windowsPackage && process.platform !== 'win32') {
-    throw new Error('Windows packaging with VST3 helpers must run on Windows x64.')
+    throw new Error('Windows packaging with native VST3/SMTC helpers must run on Windows x64.')
   }
-  if (windowsPackage) prepareVst3Msvc({ root })
-  const staging = windowsPackage ? preparePackagedAudioStaging(root) : null
+  let smtc = null
+  if (windowsPackage) {
+    smtc = prepareSmtcMsvc({ root, stage: false })
+    prepareVst3Msvc({ root })
+  }
+  const staging = windowsPackage
+    ? preparePackagedAudioStaging(root, {
+        nativeOverrides: { 'twilight_smtc_node.node': smtc.artifactPath }
+      })
+    : null
   let result
   try {
     result = run(staging ? [...args, '--config', staging.configPath] : args, {

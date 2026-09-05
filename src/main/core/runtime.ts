@@ -72,5 +72,6 @@ export const runtime = {
   lastDiscordActivity: null as DiscordActivityData | null,
   coversMissingNotified: false,
   libraryWatcherDebounceMs: 2000,
-  refreshSmtcButtons: null as (() => void) | null
+  refreshTaskbarThumbarButtons: null as (() => void) | null,
+  refreshWindowsSmtc: null as (() => void) | null
 }
