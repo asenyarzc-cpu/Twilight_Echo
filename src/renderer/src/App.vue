@@ -11,7 +11,9 @@ import {
 import TitleBar from './components/TitleBar.vue'
 import SideMenu from './components/SideMenu.vue'
 const PlayerBar = defineAsyncComponent(() => import('./components/PlayerBar.vue'))
-const LocalDashboard = defineAsyncComponent(() => import('./components/LocalDashboard.vue'))
+const LocalDashboard = defineAsyncComponent(
+  () => import('@renderer/components/local-dashboard/LocalHome.vue')
+)
 const SongList = defineAsyncComponent(() => import('./components/SongList.vue'))
 const AggregatePlaylistPage = defineAsyncComponent(
   () => import('./components/aggregate-playlist/AggregatePlaylistPage.vue')

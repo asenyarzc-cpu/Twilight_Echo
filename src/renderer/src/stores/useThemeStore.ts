@@ -851,6 +851,7 @@ export function useThemeStore(): {
   snapshot: Ref<ThemeLibrarySnapshot | null>
   profiles: ComputedRef<ThemeProfileV2[]>
   activeTheme: ComputedRef<ThemeSelection>
+  presetLayout: ComputedRef<string>
   activeProfile: ComputedRef<ThemeProfileV2 | null>
   previewProfile: Ref<ThemeProfileV2 | null>
   previewSelection: Ref<ThemeSelection | null>
@@ -884,6 +885,10 @@ export function useThemeStore(): {
     return selection.kind === 'user'
       ? (profiles.value.find((profile) => profile.id === selection.id) ?? null)
       : null
+  })
+  const presetLayout = computed(() => {
+    const selection = previewSelection.value ?? activeTheme.value
+    return resolvePresetLayout(selection, getSelectedProfile(selection))
   })
 
   async function load(): Promise<void> {
@@ -1035,6 +1040,7 @@ export function useThemeStore(): {
     snapshot,
     profiles,
     activeTheme,
+    presetLayout,
     activeProfile,
     previewProfile,
     previewSelection,

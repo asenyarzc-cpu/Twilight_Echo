@@ -1,1145 +1,126 @@
-/* Layout identity for builtin:aurora-reference. All rules scoped to html[data-te-preset-layout='aurora-reference']. */
-
-/* ══════════════════════════════════════════════════════════════════════
-   暮光档案 / Solstice Ledger
-   The opposite of a floating aurora: nothing levitates, everything is set.
-   The navigation becomes a flush spine with a masthead, the dashboard is an
-   asymmetric editorial grid with numbered index blocks, the playing page
-   opens as a two-page book spread with the lyrics on the left, and the
-   player bar drops to a full-bleed bottom strip whose progress reads as a
-   tape counter. Structure, rules and type carry the identity — not glow.
-   Zero color literals — tokens + color-mix only.
-   ══════════════════════════════════════════════════════════════════════ */
-
-/* ── 0) Shared print language ─────────────────────────────────────────
-   The dashboard and streaming home each declare their own --home-radius-*
-   in (0,1,0) rules; re-point them at the preset's card radius so the whole
-   surface set turns hard-edged in one place. */
-
-html[data-te-preset-layout='aurora-reference'] .home,
-html[data-te-preset-layout='aurora-reference'] .home-view {
-  --home-radius-lg: var(--te-card-radius, 4px);
-  --home-radius-md: var(--te-card-radius, 4px);
-  --home-shadow: none;
-  --home-shadow-lift: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home {
-  --home-shadow-color: transparent;
-  --home-shadow-strong: transparent;
-}
-
-/* ── 1) App shell — flush spine with a masthead ─────────────────────── */
-
 html[data-te-preset-layout='aurora-reference'] body .side-menu.side-menu {
   top: 32px;
   left: 0;
   bottom: var(--te-side-menu-bottom, 0px);
+  border: 0;
+  border-right: 1px solid var(--te-card-border);
   border-radius: 0;
-  border-right: 1px solid var(--te-navigation-border);
   background: var(--te-navigation-bg);
-  background-image: none;
   box-shadow: none;
   backdrop-filter: none;
-  -webkit-backdrop-filter: none;
 }
-
-/* Masthead lockup: the brand owns the top band, ruled off underneath. */
 html[data-te-preset-layout='aurora-reference'] body .side-menu .navigation-brand {
   height: auto;
-  padding: 18px 16px 14px;
-  gap: 8px;
-  border-bottom: 1px solid var(--te-navigation-border);
+  padding: 24px 17px 22px;
+  gap: 9px;
 }
-
 html[data-te-preset-layout='aurora-reference'] body .side-menu .navigation-brand img {
-  width: 22px;
-  height: 22px;
-  border-radius: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
 }
-
 html[data-te-preset-layout='aurora-reference'] body .side-menu .navigation-brand span {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: var(--te-navigation-text);
+  font-family: var(--te-font-rounded);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
-
-/* Full-bleed entries: no rounded inset, no pill. */
 html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-items {
-  padding: 8px 0 12px;
-  max-width: none;
+  padding: 8px 10px 18px;
   min-width: 0;
 }
-
 html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-nav {
-  gap: 0;
+  gap: 5px;
 }
-
 html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-item {
   width: 100%;
-  height: 38px;
+  height: 40px;
   margin-left: 0;
-  padding: 0 14px 0 16px;
-  border-radius: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--te-navigation-border) 55%, transparent);
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--te-navigation-radius);
+  font-size: 12px;
 }
-
-html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-item:hover {
-  transform: none;
-  background: var(--te-navigation-hover);
-}
-
 html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-item.active {
-  background: var(--te-navigation-active);
   font-weight: 600;
-}
-
-/* The indicator becomes a printed tab against the spine, not a dot. */
-html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-item.active::before {
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  border-radius: 0;
-  opacity: 1;
-  box-shadow: none;
-  animation: none;
-}
-
-/* Ledger index: 01 / 02 / 03 ahead of every primary entry. */
-html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-nav {
-  counter-reset: te-ledger-nav;
-}
-
-html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-nav .menu-item {
-  counter-increment: te-ledger-nav;
-}
-
-html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-nav .item-label::before {
-  content: counter(te-ledger-nav, decimal-leading-zero);
-  margin-right: 10px;
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 10px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.08em;
-  color: var(--te-navigation-icon);
-}
-
-html[data-te-preset-layout='aurora-reference']
-  body
-  .side-menu
-  .menu-nav
-  .menu-item.active
-  .item-label::before {
+  background: var(--te-navigation-active);
   color: var(--te-navigation-active-text);
 }
-
-html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-item .item-icon {
-  width: 18px;
-  height: 18px;
-  font-size: 15px;
+html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-item.active::before {
+  display: none;
 }
-
+html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-item:hover,
 html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-item:hover .item-icon {
   transform: none;
 }
-
 html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-separator {
   height: 1px;
-  margin: 10px 0;
-  background: var(--te-navigation-border);
-}
-
-html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-bottom {
-  padding-top: 0;
-}
-
-/* ── 2) Local dashboard — editorial grid ────────────────────────────── */
-
-html[data-te-preset-layout='aurora-reference'] .home .home-inner {
-  width: 100%;
-  max-width: none;
-  gap: clamp(20px, 2.4vw, 30px);
-  counter-reset: te-ledger-block;
-}
-
-/* Masthead band: kicker over a serif headline, ruled off at the baseline. */
-html[data-te-preset-layout='aurora-reference'] .home .masthead {
-  align-items: flex-end;
-  gap: 20px;
-  padding-bottom: 14px;
-  border-bottom: 2px solid var(--te-navigation-indicator);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .masthead-kicker {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.26em;
-  text-transform: uppercase;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .masthead-title {
-  margin-top: 6px;
-  letter-spacing: -0.015em;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .masthead-shuffle {
-  border-radius: 2px;
-  border: 1px solid var(--te-card-border);
-  background: var(--te-card-bg);
-  box-shadow: none;
-}
-
-/* Hero: a full-bleed spread, copy left, artwork right, hairline between. */
-html[data-te-preset-layout='aurora-reference'] .home .feature-card {
-  border-radius: var(--te-card-radius, 4px);
-  border: 1px solid var(--te-card-border);
-  box-shadow: none;
-  overflow: hidden;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .feature-card .feature-backdrop {
-  filter: blur(var(--te-background-cover-blur, 40px)) saturate(115%);
-  opacity: 0.5;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .hero-inner {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(200px, 0.46fr);
-  gap: 0;
-  align-items: stretch;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .hero-copy {
-  padding: clamp(20px, 2.4vw, 32px);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .hero-eyebrow {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .hero-art {
-  border-left: 1px solid var(--te-card-border);
-  background: color-mix(in srgb, var(--te-subtle-bg) 70%, transparent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(16px, 2vw, 26px);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .hero-art-echo {
-  display: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .hero-art-frame {
-  border-radius: 2px;
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .hero-format {
-  border-radius: 0 0 2px 0;
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 9px;
-  letter-spacing: 0.16em;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .hero-progress-track,
-html[data-te-preset-layout='aurora-reference'] .home .hero-progress-track span {
-  border-radius: 0;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .hero-time {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.06em;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .transport-button {
-  border-radius: 2px;
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .hero-ghost-action {
-  border-radius: 2px;
-  border: 1px solid var(--te-card-border);
-  box-shadow: none;
-}
-
-/* Library figures: a rule-separated ledger strip instead of floating tiles. */
-html[data-te-preset-layout='aurora-reference'] .home .figures {
-  gap: 0;
-  padding: 0;
-  border-top: 1px solid var(--te-card-border);
-  border-bottom: 1px solid var(--te-card-border);
-  background: color-mix(in srgb, var(--te-card-bg) 55%, transparent);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .figures .figure {
-  flex: 1 1 0;
-  padding: 14px 18px 16px;
-  border-radius: 0;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .figures .figure strong {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .figures .figure span {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .figures .figure-sep {
-  width: 1px;
-  height: auto;
-  align-self: stretch;
+  margin: 15px 13px;
   background: var(--te-card-border);
 }
-
-/* Signal path: a flat ruled panel, no lift, no glow. */
-html[data-te-preset-layout='aurora-reference'] .home .signal-card {
-  border-radius: var(--te-card-radius, 4px);
-  border: 1px solid var(--te-card-border);
-  background: color-mix(in srgb, var(--te-card-bg) 62%, transparent);
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .signal-card:hover {
-  transform: none;
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .signal-kicker {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-}
-
-/* Content blocks: numbered index headings over dense grids. */
-html[data-te-preset-layout='aurora-reference'] .home .content-block {
-  counter-increment: te-ledger-block;
-  gap: 0;
-  padding-top: 4px;
-  border-top: 1px solid var(--te-card-border);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .block-head {
-  align-items: baseline;
-  margin-bottom: 14px;
-  padding-top: 14px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .block-copy h3::before {
-  content: counter(te-ledger-block, decimal-leading-zero) ' · ';
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.2em;
-  vertical-align: 0.14em;
-  color: var(--te-primary-500);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .block-more {
-  border-radius: 2px;
-}
-
-/* Dense wrapping indices — no horizontal rails, no scroll snapping. */
-html[data-te-preset-layout='aurora-reference'] .home .fresh-grid,
-html[data-te-preset-layout='aurora-reference'] .home .gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: 1px;
-  background: color-mix(in srgb, var(--te-card-border) 60%, transparent);
-  border: 1px solid var(--te-card-border);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .fresh-tile,
-html[data-te-preset-layout='aurora-reference'] .home .gallery-tile {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 0;
-  background: color-mix(in srgb, var(--te-card-bg) 78%, transparent);
-  text-align: left;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .fresh-cover,
-html[data-te-preset-layout='aurora-reference'] .home .gallery-cover {
-  border-radius: 2px;
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .fresh-cover img,
-html[data-te-preset-layout='aurora-reference'] .home .gallery-cover img {
-  border-radius: 2px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .fresh-tile:hover,
-html[data-te-preset-layout='aurora-reference'] .home .gallery-tile:hover {
-  transform: none;
-  background: var(--te-hover-bg);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .fresh-tile:hover .fresh-cover img,
-html[data-te-preset-layout='aurora-reference'] .home .gallery-tile:hover .gallery-cover img {
-  transform: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .fresh-format,
-html[data-te-preset-layout='aurora-reference'] .home .gallery-count {
-  border-radius: 0;
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 9px;
-  letter-spacing: 0.14em;
-}
-
-/* Footprint: two ruled columns sharing a hairline gutter. */
-html[data-te-preset-layout='aurora-reference'] .home .footprint-grid {
-  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
-  gap: 1px;
-  background: color-mix(in srgb, var(--te-card-border) 60%, transparent);
-  border: 1px solid var(--te-card-border);
-  border-radius: 2px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .chart-panel,
-html[data-te-preset-layout='aurora-reference'] .home .cal-panel {
-  border: 0;
-  border-radius: 0;
-  background: color-mix(in srgb, var(--te-card-bg) 78%, transparent);
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .panel-kicker {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  letter-spacing: 0.28em;
-}
-
-/* Chart rows read as ledger lines: rank, cover, title, plays. */
-html[data-te-preset-layout='aurora-reference'] .home .chart-row {
-  border-radius: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--te-card-border) 55%, transparent);
-  background: transparent;
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .chart-row:hover {
-  transform: none;
-  background: var(--te-hover-bg);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .chart-rank {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.08em;
-  border-radius: 0;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .chart-cover {
-  border-radius: 2px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .chart-bar,
-html[data-te-preset-layout='aurora-reference'] .home .chart-bar span {
-  border-radius: 0;
-}
-
-/* Calendar: ruled squares instead of rounded heat blobs. */
-html[data-te-preset-layout='aurora-reference'] .home .cal-grid {
-  gap: 3px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .cal-cell {
-  border-radius: 1px;
-  border: 1px solid color-mix(in srgb, var(--te-card-border) 50%, transparent);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .cal-cell.is-today {
-  border-color: var(--te-primary-500);
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .cal-weekdays {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 9px;
-  letter-spacing: 0.16em;
-}
-
-/* ── 3) Streaming home — broadsheet banner ──────────────────────────── */
-
-html[data-te-preset-layout='aurora-reference'] .home-view .home-flow {
-  gap: clamp(18px, 2.2vw, 28px);
-  max-width: none;
-  margin: 0;
-  counter-reset: te-ledger-shelf;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .home-flow > section {
-  animation: none;
-}
-
-/* Hero banner: copy and collage split by a hairline, corners squared. */
-html[data-te-preset-layout='aurora-reference'] .home-view .hero {
-  border-radius: var(--te-card-radius, 4px);
-  border: 1px solid var(--te-card-border);
-  background: color-mix(in srgb, var(--te-card-bg) 66%, transparent);
-  box-shadow: none;
-  overflow: hidden;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .hero-ambient {
-  opacity: 0.42;
-  filter: blur(var(--te-background-cover-blur, 40px)) saturate(115%);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .hero-inner {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.5fr);
-  gap: 0;
-  align-items: stretch;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .hero-copy {
-  padding: clamp(20px, 2.6vw, 34px);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .hero-kicker {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .hero-kicker-day {
-  font-family: var(--te-font-display, var(--te-font-sans));
-  font-variant-numeric: tabular-nums;
-  border-radius: 2px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .hero-stage {
-  border-left: 1px solid var(--te-card-border);
-  background: color-mix(in srgb, var(--te-subtle-bg) 70%, transparent);
-  padding: clamp(16px, 2vw, 26px);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .hero-collage-card {
-  border-radius: 2px;
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .hero-play,
-html[data-te-preset-layout='aurora-reference'] .home-view .hero-open {
-  border-radius: 2px;
-  box-shadow: none;
-}
-
-/* Section heads: a numbered rule rather than a floating title. */
-html[data-te-preset-layout='aurora-reference'] .home-view .section-head {
-  align-items: baseline;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--te-card-border);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .section-head-copy h3::after {
-  content: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .shelf {
-  counter-increment: te-ledger-shelf;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .shelf .section-head-copy h3::before {
-  content: counter(te-ledger-shelf, decimal-leading-zero) ' · ';
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.2em;
-  color: var(--te-primary-500);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .section-more {
-  border-radius: 2px;
-}
-
-/* Duo: two columns sharing a hairline, no stacked-card illusion. */
-html[data-te-preset-layout='aurora-reference'] .home-view .duo {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  background: color-mix(in srgb, var(--te-card-border) 60%, transparent);
-  border: 1px solid var(--te-card-border);
-  border-radius: 2px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .duo-card {
-  border-radius: 0;
-  border: 0;
-  background: color-mix(in srgb, var(--te-card-bg) 78%, transparent);
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .duo-card:hover {
-  transform: none;
-  background: var(--te-hover-bg);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .duo-stack-cover {
-  border-radius: 2px;
-}
-
-/* Chart index: two ruled columns of tracks. */
-html[data-te-preset-layout='aurora-reference'] .home-view .chart {
-  padding: 0;
-  border: 1px solid var(--te-card-border);
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--te-card-bg) 62%, transparent);
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .chart .section-head {
-  padding: 14px clamp(14px, 1.6vw, 20px) 10px;
-  border-bottom: 1px solid var(--te-card-border);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .chart-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1px;
-  padding: 0;
-  background: color-mix(in srgb, var(--te-card-border) 55%, transparent);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .chart-row {
-  border-radius: 0;
-  border: 0;
-  padding: 10px clamp(12px, 1.4vw, 18px);
-  background: color-mix(in srgb, var(--te-card-bg) 78%, transparent);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .chart-row:hover {
-  transform: none;
-  background: var(--te-hover-bg);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .chart-index {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .chart-cover,
-html[data-te-preset-layout='aurora-reference'] .home-view .chart-cover-action {
-  border-radius: 2px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .chart-duration {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-variant-numeric: tabular-nums;
-}
-
-/* Playlist shelf: a wrapping index grid, not a horizontal rail. */
-html[data-te-preset-layout='aurora-reference'] .home-view .shelf-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 1px;
-  margin-top: 14px;
-  background: color-mix(in srgb, var(--te-card-border) 60%, transparent);
-  border: 1px solid var(--te-card-border);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .shelf-tile {
-  padding: 12px;
-  border-radius: 0;
-  background: color-mix(in srgb, var(--te-card-bg) 78%, transparent);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .shelf-tile:hover {
-  transform: none;
-  background: var(--te-hover-bg);
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .shelf-cover {
-  border-radius: 2px;
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .shelf-tile:hover .shelf-cover img {
-  transform: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home-view .shelf-count {
-  border-radius: 0;
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 9px;
-  letter-spacing: 0.14em;
-}
-
-/* Streaming sidebar shares the flush spine language with the local nav. */
-html[data-te-preset-layout='aurora-reference']
-  body
-  .streaming-page
-  .streaming-sidebar.streaming-sidebar {
-  top: 32px;
-  left: 0;
-  bottom: var(--te-side-menu-bottom, 0px);
-  border-radius: 0;
-  border-right: 1px solid var(--te-navigation-border);
-  background: var(--te-navigation-bg);
-  background-image: none;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .streaming-page .streaming-sidebar-inner {
-  padding-top: 12px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .streaming-page .streaming-menu-item {
-  border-radius: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--te-navigation-border) 55%, transparent);
-}
-
-/* ── 4) Playing page — a two-page spread ────────────────────────────── */
-
-html[data-te-preset-layout='aurora-reference'][data-te-player-layout='split']
-  .playing-music
-  .layout {
-  grid-template-columns: minmax(0, 1.42fr) minmax(288px, 0.58fr);
-  gap: 0;
-  align-items: stretch;
-}
-
-/* Lyrics take the left page, the cover the right — inverted from the default. */
-html[data-te-preset-layout='aurora-reference'][data-te-player-layout='split']
-  .playing-music
-  .lyrics-column {
-  order: 1;
-  min-width: 0;
-  padding-right: clamp(20px, 3vw, 52px);
-}
-
-html[data-te-preset-layout='aurora-reference'][data-te-player-layout='split']
-  .playing-music
-  .cover-column {
-  order: 2;
-  width: auto;
-  justify-self: stretch;
-  align-self: start;
-  transform: none;
-  padding: clamp(4px, 1vw, 12px) 0 clamp(4px, 1vw, 12px) clamp(20px, 2.4vw, 40px);
-  border-left: 1px solid var(--te-card-border);
-}
-
-html[data-te-preset-layout='aurora-reference'][data-te-player-layout='split']
-  .playing-music
-  .cover-column::before {
-  content: none;
-}
-
-html[data-te-preset-layout='aurora-reference'][data-te-player-layout='split']
-  .playing-music
-  .cover-frame {
-  border-radius: var(--te-playback-cover-radius, 3px);
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'][data-te-player-layout='split']
-  .playing-music
-  .cover-meta {
-  text-align: left;
-  gap: 2px;
-}
-
-html[data-te-preset-layout='aurora-reference'][data-te-player-layout='split']
-  .playing-music
-  .track-title {
-  font-family: var(--te-font-display, var(--te-font-sans));
-  font-size: clamp(19px, 1.7vw, 26px);
-  line-height: 1.16;
-}
-
-html[data-te-preset-layout='aurora-reference'] .playing-music .track-artist,
-html[data-te-preset-layout='aurora-reference'] .playing-music .track-album {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-html[data-te-preset-layout='aurora-reference'] .playing-music .lyrics-head {
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--te-card-border);
-}
-
-html[data-te-preset-layout='aurora-reference'] .playing-music .lyrics-head .time-chip {
-  border-radius: 2px;
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.1em;
-}
-
-/* Lyric lines stack tightly and read flush left, like typeset verse. */
-html[data-te-preset-layout='aurora-reference'] .playing-music .lyrics-list {
-  max-width: none;
-  gap: 2px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .playing-music .lyric-row {
-  align-items: flex-start;
-  border-radius: 0;
-  padding: 9px 0 9px 18px;
-  text-align: left;
-  transform: none;
-  filter: none;
-  opacity: 1;
-}
-
-/**
- * The accent rule rides `::before`, never the row's own border or background:
- * main.css pins active lyric rows to a text-led treatment with `!important`,
- * so any surface or border set on the element itself is stripped back out.
- */
-html[data-te-preset-layout='aurora-reference'] .playing-music .lyric-row::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 14%;
-  bottom: 14%;
-  width: 2px;
-  background: transparent;
-}
-
-html[data-te-preset-layout='aurora-reference'] .playing-music .lyric-row.active::before {
-  background: var(--te-playback-accent);
-}
-
-html[data-te-preset-layout='aurora-reference'] .playing-music .lyric-row.active {
-  box-shadow: none;
-  transform: none;
-  filter: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .playing-music .lyric-row.active .lyric-text {
-  color: var(--te-playback-lyric-active-text, var(--te-playback-accent));
-  font-weight: 600;
-  transform: none;
-  text-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .playing-music .lyric-row .lyric-translation,
-html[data-te-preset-layout='aurora-reference'] .playing-music .lyric-row .lyric-romanization {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 11px;
-  letter-spacing: 0.04em;
-}
-
-html[data-te-preset-layout='aurora-reference'] .playing-music .visualizer-toggle-button {
-  border-radius: 2px;
-}
-
-/* ── 5) Player bar — full-bleed bottom ledger strip ─────────────────── */
-
 html[data-te-preset-layout='aurora-reference'] body .player-bar-shell.player-bar-shell {
   bottom: 0;
   left: 0;
   right: 0;
 }
-
 html[data-te-preset-layout='aurora-reference'] body .player-bar-shell.player-bar-shell.menu-open {
   left: var(--te-menu-width);
-  right: 0;
 }
-
 html[data-te-preset-layout='aurora-reference'] body .player-bar-shell .player-bar.player-bar {
-  height: 76px;
+  height: 82px;
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: 0 clamp(14px, 2vw, 26px);
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 1.5fr) minmax(0, 1fr);
-  column-gap: clamp(16px, 2.4vw, 36px);
+  padding: 0 clamp(18px, 2.4vw, 32px);
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 1.3fr) minmax(0, 1fr);
+  column-gap: 25px;
   border: 0;
   border-top: 1px solid var(--te-card-border);
   border-radius: 0;
   background: var(--te-glass-bg-strong);
   box-shadow: none;
   backdrop-filter: none;
-  -webkit-backdrop-filter: none;
 }
-
-/* Cover chip: a ruled square, not a glowing puck. */
 html[data-te-preset-layout='aurora-reference'] .player-bar .player-cover-slot {
-  width: 44px;
-  height: 44px;
-  border-radius: 2px;
-  border: 1px solid var(--te-card-border);
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
   box-shadow: none;
   overflow: hidden;
 }
-
-html[data-te-preset-layout='aurora-reference'] .player-bar .player-cover-slot .player-cover,
-html[data-te-preset-layout='aurora-reference'] .player-bar .player-cover-slot img.player-cover {
-  border-radius: 0;
-}
-
 html[data-te-preset-layout='aurora-reference'] .player-bar .player-title {
-  font-family: var(--te-font-display, var(--te-font-sans));
-  font-size: 14px;
-  line-height: 1.2;
+  font-size: 12px;
+  font-weight: 500;
 }
-
 html[data-te-preset-layout='aurora-reference'] .player-bar .player-artist {
-  font-family: var(--te-font-rounded, var(--te-font-sans));
   font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
-
-/* Tape counter: a thick rule with tick marks, times always on. */
 html[data-te-preset-layout='aurora-reference'] .player-bar .progress-area {
-  gap: 12px;
-  height: 26px;
+  gap: 10px;
 }
-
-html[data-te-preset-layout='aurora-reference'] .player-bar .progress-slider-wrap {
-  height: 26px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .player-bar .progress-track {
-  position: relative;
-  height: var(--te-player-progress-height, 8px);
-  border-radius: 0;
-  border: 1px solid var(--te-card-border);
-  overflow: hidden;
-}
-
-html[data-te-preset-layout='aurora-reference'] .player-bar .progress-track::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(90deg, var(--te-card-border) 0 1px, transparent 1px 10px);
-}
-
+html[data-te-preset-layout='aurora-reference'] .player-bar .progress-track,
 html[data-te-preset-layout='aurora-reference'] .player-bar .progress-fill {
-  border-radius: 0;
+  height: 3px;
+  border: 0;
+  border-radius: 999px;
 }
-
-html[data-te-preset-layout='aurora-reference'] .player-bar .progress-slider::-webkit-slider-thumb {
-  width: 3px;
-  height: 16px;
-  border-radius: 0;
-  background: var(--te-playback-accent);
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .player-bar .progress-area .time-label {
-  min-width: 42px;
-  font-family: var(--te-font-rounded, var(--te-font-sans));
-  font-size: 11px;
+html[data-te-preset-layout='aurora-reference'] .player-bar .time-display {
+  font-family: var(--te-font-rounded);
+  font-size: 9px;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.08em;
-  opacity: 1;
 }
-
-html[data-te-preset-layout='aurora-reference'] .player-bar .player-center {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  transform: none;
+html[data-te-preset-layout='aurora-reference'] .home-view {
+  --home-radius-lg: 12px;
+  --home-radius-md: 7px;
 }
-
-html[data-te-preset-layout='aurora-reference'] .player-bar .player-controls {
-  gap: 6px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .player-bar .ctrl-btn,
-html[data-te-preset-layout='aurora-reference'] .player-bar .icon-btn,
-html[data-te-preset-layout='aurora-reference'] .player-bar .mode-btn-right {
-  border-radius: 2px;
+html[data-te-preset-layout='aurora-reference'] .home-view .hero-card {
   box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .player-bar .btn-play {
-  border-radius: 2px;
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .player-bar .ctrl-btn:hover,
-html[data-te-preset-layout='aurora-reference'] .player-bar .icon-btn:hover,
-html[data-te-preset-layout='aurora-reference'] .player-bar .mode-btn-right:hover,
-html[data-te-preset-layout='aurora-reference'] .player-bar .btn-play:hover {
-  transform: none;
-}
-
-/* Companion panels follow the same flat ruled language. */
-html[data-te-preset-layout='aurora-reference'] .player-bar-shell .playlist-panel.playlist-panel {
-  border-radius: var(--te-card-radius, 4px);
-  border: 1px solid var(--te-card-border);
-  margin-bottom: 1px;
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .player-bar-shell .volume-drawer {
-  border-radius: 2px;
   border: 1px solid var(--te-card-border);
 }
-
-html[data-te-preset-layout='aurora-reference'] body .hifi-overlay.hifi-overlay {
-  top: 32px;
-  right: 0;
-  bottom: 0;
-  border-radius: 0;
-  border-left: 1px solid var(--te-navigation-border);
-  box-shadow: none;
-}
-
-/* ── 6) Secondary surfaces ─────────────────────────────────────────── */
-
-html[data-te-preset-layout='aurora-reference'] .home .dsp-route-dialog {
-  border-radius: var(--te-dialog-radius, 3px);
-  border: 1px solid var(--te-card-border);
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .dsp-route-strip,
-html[data-te-preset-layout='aurora-reference'] .home .dialog-node-row {
-  border-radius: 2px;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .empty-stage {
-  border-radius: var(--te-card-radius, 4px);
-  border: 1px solid var(--te-card-border);
-  box-shadow: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .empty-orb {
-  display: none;
-}
-
-html[data-te-preset-layout='aurora-reference'] .home .empty-cta {
-  border-radius: 2px;
-  box-shadow: none;
-}
-
-/* ── 7) Reduced effects — no ambient drift, no heavy blur ───────────── */
-
-html[data-te-preset-layout='aurora-reference'][data-te-effects-mode='reduced']
-  .home
-  .feature-backdrop,
-html[data-te-preset-layout='aurora-reference'][data-te-effects-mode='reduced']
-  .home-view
-  .hero-ambient {
-  display: none;
-}
-
-html[data-te-preset-layout='aurora-reference'][data-te-effects-mode='reduced'] body .side-menu,
-html[data-te-preset-layout='aurora-reference'][data-te-effects-mode='reduced']
-  body
-  .streaming-page
-  .streaming-sidebar,
-html[data-te-preset-layout='aurora-reference'][data-te-effects-mode='reduced']
-  body
-  .player-bar-shell
-  .player-bar {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html[data-te-preset-layout='aurora-reference'] .player-bar .ctrl-btn,
-  html[data-te-preset-layout='aurora-reference'] .player-bar .icon-btn,
-  html[data-te-preset-layout='aurora-reference'] .player-bar .btn-play {
-    transition: none;
-  }
-}
-
-/* ── 8) Small windows — collapse the spread, keep the rules ─────────── */
-
-@media (max-width: 1080px) {
-  html[data-te-preset-layout='aurora-reference'] .home .footprint-grid,
-  html[data-te-preset-layout='aurora-reference'] .home-view .duo {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  html[data-te-preset-layout='aurora-reference'][data-te-player-layout='split']
-    .playing-music
-    .layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  html[data-te-preset-layout='aurora-reference'][data-te-player-layout='split']
-    .playing-music
-    .cover-column {
-    order: 1;
-    padding: 0 0 clamp(16px, 3vw, 28px);
-    border-left: 0;
-    border-bottom: 1px solid var(--te-card-border);
-  }
-
-  html[data-te-preset-layout='aurora-reference'][data-te-player-layout='split']
-    .playing-music
-    .lyrics-column {
-    order: 2;
-    padding-right: 0;
-    padding-top: clamp(16px, 3vw, 28px);
-  }
-}
-
-@media (max-width: 900px) {
-  html[data-te-preset-layout='aurora-reference'] .home .hero-inner,
-  html[data-te-preset-layout='aurora-reference'] .home-view .hero-inner {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  html[data-te-preset-layout='aurora-reference'] .home .hero-art,
-  html[data-te-preset-layout='aurora-reference'] .home-view .hero-stage {
-    border-left: 0;
-    border-top: 1px solid var(--te-card-border);
-  }
-
-  html[data-te-preset-layout='aurora-reference'] .home .figures {
-    flex-wrap: wrap;
-  }
-
-  html[data-te-preset-layout='aurora-reference'] .home .figures .figure {
-    flex: 1 1 40%;
-  }
-
-  html[data-te-preset-layout='aurora-reference'] .home .figures .figure-sep {
-    display: none;
-  }
-
+@media (max-width: 1000px) {
   html[data-te-preset-layout='aurora-reference'] body .player-bar-shell .player-bar.player-bar {
-    height: 70px;
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 1.4fr) minmax(0, 1fr);
-  }
-
-  html[data-te-preset-layout='aurora-reference'] body .side-menu .menu-item {
-    height: 40px;
+    column-gap: 14px;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 1.3fr) minmax(0, 0.7fr);
+    height: 76px;
   }
 }
