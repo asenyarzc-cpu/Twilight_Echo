@@ -178,7 +178,7 @@ test('theme studio is a dedicated navigable settings surface', () => {
 
 test('theme studio live preview mounts real application surfaces instead of a mock shell', () => {
   for (const component of [
-    'LocalDashboard',
+    'LocalHome',
     'PlayingMusic',
     'EqualizerPage',
     'PlayerBar',
